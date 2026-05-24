@@ -3,16 +3,16 @@ import type { Message } from "./store";
 // Tools classified as search/read (informational, non-mutating)
 const SEARCH_READ_TOOLS = new Set([
   "EntrySearch",
-  "GrepEntries",
   "EntryRead",
-  "ReadOutline",
-  "ReadChapter",
+  "OutlineRead",
   "ListFiles",
   "FileRead",
-  "QueryRelations",    // Phase 4 — read-only graph query
-  "TraverseGraph",     // Phase 4 — read-only BFS traversal
+  "ExploreGraph",      // Phase 4/5 — read-only graph exploration (direct + BFS)
+  "TraverseGraph",     // Phase 4 — legacy, kept for collapsed display in old convos
   "ConsistencyCheck",  // Phase 4 — read-only constraint matching
   "UseSkill",          // Phase 4 — informational skill lookup (no side effects)
+  "ListTimelines",     // Phase 5 — read-only timeline listing
+  "ListEvents",        // Phase 5 — read-only event listing
 ]);
 
 /** A collapsed group of consecutive assistant messages that only contain search/read tool calls. */
@@ -50,7 +50,7 @@ function buildLabel(calls: NonNullable<Message["toolCalls"]>): string {
 
   for (const c of calls) {
     const input = c.input as Record<string, unknown> | undefined;
-    if (c.name === "EntrySearch" || c.name === "GrepEntries") {
+    if (c.name === "EntrySearch") {
       searchCount++;
     } else if (c.name === "QueryRelations" || c.name === "TraverseGraph" || c.name === "ConsistencyCheck") {
       graphCount++;

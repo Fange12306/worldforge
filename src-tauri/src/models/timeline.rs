@@ -205,6 +205,9 @@ pub enum RelationChangeType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     pub id: String,
+    /// Human-readable slug unique within this timeline (e.g. "着陆失败-黎明号").
+    /// Used as the primary identifier by LLM tools. Auto-generated from summary if omitted.
+    pub name: String,
     pub timeline_id: String,
 
     /// 8-segment zero-padded time string, e.g. "000-3-000225-05-15-00-00-00"

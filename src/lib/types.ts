@@ -26,6 +26,7 @@ export type Constraint = {
 };
 
 export type ChapterInfo = {
+  id: string;                              // UUID — immutable identity
   order: number;
   title: string;
   status: string;
@@ -122,6 +123,7 @@ export type RelationChange = {
 
 export type WorldEvent = {  // "Event" conflicts with DOM Event — use WorldEvent
   id: string;
+  name: string; // human-readable slug, unique within timeline (e.g. "着陆失败-黎明号")
   timeline_id: string;
   time_point: string;
   precision?: number;          // unit index in time_format.units; null = full precision
@@ -151,9 +153,11 @@ export type EntityTypeRef = "entry" | "outline" | "timeline" | "event";
 export type EntityRef = {
   type: EntityTypeRef;
   id: string;
+  name?: string; // resolved display name (may be absent for internal edges)
 };
 
 export type RelationEdge = {
+  id: string;           // UUID — immutable identity
   from: EntityRef;
   to: EntityRef;
   description: string;

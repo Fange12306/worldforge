@@ -226,8 +226,7 @@ pub fn create_entry(world_path: String, name: String, entry_type: String) -> Res
     let dir = type_dir(&entries_root, &t);
     fs::create_dir_all(&dir).map_err(|e| format!("创建目录失败: {}", e))?;
 
-    let slug = name_to_slug(&name);
-    let fp = PathBuf::from(&dir).join(format!("{}.md", slug));
+    let fp = PathBuf::from(&dir).join(format!("{}.md", id));
 
     let now = Utc::now().to_rfc3339();
     let content = format!(
@@ -264,20 +263,8 @@ pub fn update_entry(world_path: String, entry_id: String, name: String, body: St
         existing.tags.join(", ")
     );
     let body_content = if body.is_empty() { format!("# {}", name) } else { body };
-    fs::write(&fp, format!("---\n{}---\n\n{}", fm, body_content))
+    let _ = fs::write(&fp, format!("---\n{}---\n\n{}", fm, body_content))
         .map_err(|e| format!("写入失败: {}", e))?;
-
-    // Rename file if slug changed (keep UUID, just update the human-readable filename)
-    let new_slug = name_to_slug(&name);
-    let old_slug = fp.file_stem().unwrap_or_default().to_string_lossy().to_string();
-    if new_slug != old_slug {
-        let new_fp = fp.parent().unwrap().join(format!("{}.md", new_slug));
-        if !new_fp.exists() {
-            fs::rename(&fp, &new_fp).map_err(|e| format!("重命名失败: {}", e))?;
-            update_index(&world_path)?;
-            return parse_entry_file(&new_fp);
-        }
-    }
 
     update_index(&world_path)?;
     parse_entry_file(&fp)
@@ -586,7 +573,12 @@ pub fn update_index(world_path: &str) -> Result<(), String> {
             for entry in read.flatten() {
                 let fname = entry.file_name().to_string_lossy().to_string();
                 if !fname.ends_with(".md") { continue; }
-                let name = fname.trim_end_matches(".md").replace('-', " ");
+                // Read display name from frontmatter, fallback to filename
+                let name = if let Ok(raw) = fs::read_to_string(entry.path()) {
+                    if let Ok((data, _)) = extract_frontmatter(&raw) {
+                        data["name"].as_str().unwrap_or("未命名").to_string()
+                    } else { "未命名".to_string() }
+                } else { "未命名".to_string() };
                 lines.push(format!(
                     "- [{}](./entries/{}/{}) — type: {}",
                     name, dir_name, fname, label

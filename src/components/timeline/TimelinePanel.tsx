@@ -102,9 +102,12 @@ function collectAllKeys(nodes: TreeNode[]): string[] {
 }
 
 // ── Popover ──
-function Popover({ ev, tl, anchor, onClose, onNavE, onNavO }: {
+function Popover({ ev, tl, anchor, onClose, onNavE, onNavO, entryNames, chapterTitles, storyNames }: {
   ev: WorldEvent; tl: Timeline | null; anchor: HTMLElement;
   onClose: () => void; onNavE?: (id: string) => void; onNavO?: (sid: string, o: number) => void;
+  entryNames: Map<string, string>;
+  chapterTitles: Map<string, string>;
+  storyNames: Map<string, string>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const r = anchor.getBoundingClientRect();
@@ -125,21 +128,29 @@ function Popover({ ev, tl, anchor, onClose, onNavE, onNavO }: {
       <div className="absolute left-1/2 -top-[7px] w-3.5 h-3.5 bg-surface-900 border-l border-t border-surface-600 transform rotate-45 -translate-x-1/2" />
       <div className="p-4 space-y-2.5 overflow-y-auto" style={{ maxHeight: p.maxH }}>
         <p className="text-[13px] text-ink-secondary leading-relaxed">{ev.summary || ""}</p>
-        <div className="text-[11px] text-ink-muted font-mono">{fmtTime(ev.time_point, tl, ev.precision)}</div>
+        <div className="flex items-center gap-2">
+          <div className="text-[11px] text-ink-muted font-mono">{fmtTime(ev.time_point, tl, ev.precision)}</div>
+          <span className="px-1.5 py-0.5 rounded bg-surface-800/50 text-ink-muted/50 font-mono text-[10px] select-all">{ev.id}</span>
+        </div>
         {les.length > 0 && (<div><p className="text-[10px] tracking-wider text-ink-muted/40 mb-1">词条 ({les.length})</p>
-          <div className="flex flex-col gap-0.5">{les.map(le => (
-            <button key={le.entry_id} onClick={() => { onClose(); onNavE?.(le.entry_id); }} className="text-[11px] text-left text-amber-500 hover:text-amber-400 py-0.5 break-all">{le.entry_id}{le.perspective_summary ? ` — ${le.perspective_summary}` : ""}</button>
+          <div className="flex flex-col gap-0.5">{les.map((le: any) => (
+            <button key={le.entry_id} onClick={() => { onClose(); onNavE?.(le.entry_id); }} className="text-[11px] text-left text-amber-500 hover:text-amber-400 py-0.5 break-all">{entryNames.get(le.entry_id) || le.entry_id.slice(0, 8)}{le.perspective_summary ? ` — ${le.perspective_summary}` : ""}</button>
           ))}</div></div>)}
         {lcs.length > 0 && (<div><p className="text-[10px] tracking-wider text-ink-muted/40 mb-1">大纲 ({lcs.length})</p>
-          <div className="flex flex-col gap-0.5">{lcs.map(ch => (
-            <button key={`${ch.story_id}-${ch.chapter_order}`} onClick={() => { onClose(); onNavO?.(ch.story_id, ch.chapter_order); }} className="text-[11px] text-left text-amber-500 hover:text-amber-400 py-0.5">第{ch.chapter_order}章</button>
-          ))}</div></div>)}
+          <div className="flex flex-col gap-0.5">{lcs.map((ch: any) => {
+            const chTitle = chapterTitles.get(`${ch.story_id}:${ch.chapter_order}`);
+            return (
+            <button key={`${ch.story_id}-${ch.chapter_order}`} onClick={() => { onClose(); onNavO?.(ch.story_id, ch.chapter_order); }} className="text-[11px] text-left text-amber-500 hover:text-amber-400 py-0.5">
+              第{ch.chapter_order}章{chTitle ? ` ${chTitle}` : ""}
+            </button>
+            );
+          })}</div></div>)}
         {rcs.length > 0 && (<div><p className="text-[10px] tracking-wider text-ink-muted/40 mb-1">关联变化</p>
           <div className="flex flex-col gap-0.5">{rcs.map((rc: any, i: number) => (
             <span key={i} className={`text-[10px] ${rc.change_type === "add" ? "text-emerald-500" : rc.change_type === "delete" ? "text-red-500 line-through" : "text-amber-500"}`}>
-              {rc.change_type === "add" ? "+" : rc.change_type === "delete" ? "−" : "~"} {rc.entry_a}↔{rc.entry_b}: {rc.relation}</span>
+              {rc.change_type === "add" ? "+" : rc.change_type === "delete" ? "−" : "~"} {entryNames.get(rc.entry_a) || rc.entry_a.slice(0, 8)}↔{entryNames.get(rc.entry_b) || rc.entry_b.slice(0, 8)}: {rc.relation}</span>
           ))}</div></div>)}
-        {bts.length > 0 && <p className="text-[10px] text-ink-muted/40">故事: {bts.join(", ")}</p>}
+        {bts.length > 0 && <p className="text-[10px] text-ink-muted/40">故事: {bts.map((sid: string) => storyNames.get(sid) || sid.slice(0, 8)).join(", ")}</p>}
       </div>
     </div>, document.body);
 }
@@ -191,11 +202,11 @@ function TreeNodeRow({ node, tl, openNodes, toggleNode, openEventId, setOpenEven
 // ── Props ──
 type Props = {
   worldPath: string; onClose: () => void; sidebarOpen: boolean; rightOpen: boolean;
-  initialEventId?: string;
+  initialEventId?: string; initialTimelineId?: string;
   onNavigateEntry?: (id: string) => void; onNavigateOutline?: (sid: string, o: number) => void;
 };
 
-export function TimelinePanel({ worldPath, onClose, sidebarOpen, rightOpen, initialEventId, onNavigateEntry, onNavigateOutline }: Props) {
+export function TimelinePanel({ worldPath, onClose, sidebarOpen, rightOpen, initialEventId, initialTimelineId, onNavigateEntry, onNavigateOutline }: Props) {
   const [timelines, setTimelines] = useState<Timeline[]>([]);
   const [activeId, setActiveId] = useState("");
   const [events, setEvents] = useState<WorldEvent[]>([]);
@@ -205,12 +216,67 @@ export function TimelinePanel({ worldPath, onClose, sidebarOpen, rightOpen, init
   const [openNodes, setOpenNodes] = useState<Set<string>>(new Set());
   const [openEventId, setOpenEventId] = useState<string | null>(null);
   const anchorRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const [entryNames, setEntryNames] = useState<Map<string, string>>(new Map());
+  const [chapterTitles, setChapterTitles] = useState<Map<string, string>>(new Map()); // "story_id:chapter_order" -> title
+  const [storyNames, setStoryNames] = useState<Map<string, string>>(new Map());
+
+  // 加载词条名称映射
+  useEffect(() => {
+    if (!worldPath) return;
+    invoke<any[]>("list_entries", { worldPath })
+      .then((entries) => {
+        const map = new Map<string, string>();
+        if (Array.isArray(entries)) {
+          for (const e of entries) map.set(e.id, e.name);
+        }
+        setEntryNames(map);
+      })
+      .catch(() => {});
+  }, [worldPath]);
+
+  // 加载故事名称映射
+  useEffect(() => {
+    if (!worldPath) return;
+    invoke<Array<{id: string; title: string}>>("load_stories", { worldPath })
+      .then((stories) => {
+        const map = new Map<string, string>();
+        if (Array.isArray(stories)) {
+          for (const s of stories) map.set(s.id, s.title);
+        }
+        setStoryNames(map);
+      })
+      .catch(() => {});
+  }, [worldPath]);
+
+  // 加载章节标题映射 (for linked_chapters in popover)
+  useEffect(() => {
+    if (!worldPath || events.length === 0) return;
+    const storyIds = new Set<string>();
+    for (const ev of events) {
+      for (const ch of a(ev.linked_chapters)) {
+        if (ch.story_id) storyIds.add(ch.story_id);
+      }
+    }
+    if (storyIds.size === 0) return;
+    (async () => {
+      const map = new Map<string, string>();
+      for (const sid of storyIds) {
+        try {
+          const chs = await invoke<Array<{ order: number; title: string }>>("read_outline", { worldPath, storyId: sid });
+          for (const ch of chs) {
+            map.set(`${sid}:${ch.order}`, ch.title);
+          }
+        } catch {}
+      }
+      setChapterTitles(map);
+    })();
+  }, [worldPath, events]);
 
   useEffect(() => {
     if (!worldPath) return;
     setLoading(true); setErr("");
     invoke<Timeline[]>("list_timelines", { worldPath })
-      .then(tls => { setTimelines(tls); if (tls.length > 0) setActiveId((tls.find(t => t.is_default) || tls[0]).id); setLoading(false); })
+      .then(tls => { setTimelines(tls); if (tls.length > 0) { const target = initialTimelineId && tls.find(t => t.id === initialTimelineId); setActiveId((target || tls.find(t => t.is_default) || tls[0]).id); } setLoading(false); })
       .catch(e => { setErr(String(e)); setLoading(false); });
   }, [worldPath]);
 
@@ -224,8 +290,21 @@ export function TimelinePanel({ worldPath, onClose, sidebarOpen, rightOpen, init
   const tl = timelines.find(t => t.id === activeId) || null;
   const tree = useMemo(() => buildTree(events, tl), [events, tl]);
 
-  useEffect(() => { if (tree.length > 0) setOpenNodes(new Set(collectAllKeys(tree))); }, [tree.length]);
-  useEffect(() => { if (initialEventId && events.length > 0) setOpenEventId(initialEventId); }, [initialEventId, events.length]);
+  // Always keep all nodes expanded by default
+  useEffect(() => { setOpenNodes(new Set(collectAllKeys(tree))); }, [tree]);
+  // Highlight and scroll to initial event
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (initialEventId && events.length > 0) {
+      setOpenEventId(initialEventId);
+      setTimeout(() => {
+        const el = anchorRefs.current.get(initialEventId);
+        if (el && scrollRef.current) {
+          el.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+      }, 300);
+    }
+  }, [initialEventId, events.length]);
 
   const toggle = useCallback((k: string) => {
     setOpenNodes(p => { const n = new Set(p); if (n.has(k)) n.delete(k); else n.add(k); return n; });
@@ -258,16 +337,18 @@ export function TimelinePanel({ worldPath, onClose, sidebarOpen, rightOpen, init
         <input className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-20 text-ink placeholder:text-ink-muted/30" placeholder="故事" value={fStory} onChange={e => setFStory(e.target.value)} />
         <input className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-24 text-ink placeholder:text-ink-muted/30" placeholder="章(sid:1)" value={fChap} onChange={e => setFChap(e.target.value)} />
       </div>
-      <div className="flex-1 overflow-auto" style={{ paddingRight: pr }}>
+      <div ref={scrollRef} className="flex-1 overflow-auto" style={{ paddingRight: pr }}>
         {tree.length === 0 ? (
           <div className="flex items-center justify-center h-full text-sm text-ink-muted">此时间轴上还没有事件</div>
         ) : (<div className="py-4">{tree.map(n => (
           <TreeNodeRow key={n.key} node={n} tl={tl} openNodes={openNodes} toggleNode={toggle}
             openEventId={openEventId} setOpenEventId={setOpenEventId} anchorRefs={anchorRefs}
             onNavE={onNavigateEntry} onNavO={onNavigateOutline} />
-        ))}</div>)}
+        ))}
+          <div style={{ height: "25vh" }} />
+        </div>)}
       </div>
-      {openEventId && (() => { const ev = events.find(e => e.id === openEventId); const el = anchorRefs.current.get(openEventId); return (ev && el) ? <Popover ev={ev} tl={tl} anchor={el} onClose={() => setOpenEventId(null)} onNavE={onNavigateEntry} onNavO={onNavigateOutline} /> : null; })()}
+      {openEventId && (() => { const ev = events.find(e => e.id === openEventId); const el = anchorRefs.current.get(openEventId); return (ev && el) ? <Popover ev={ev} tl={tl} anchor={el} onClose={() => setOpenEventId(null)} onNavE={onNavigateEntry} onNavO={onNavigateOutline} entryNames={entryNames} chapterTitles={chapterTitles} storyNames={storyNames} /> : null; })()}
     </div>
   );
 }

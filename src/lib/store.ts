@@ -54,8 +54,7 @@ export type Message = {
 
 // ── ID generators ──────────────────────────────────
 
-let _id = 0;
-const nextId = (prefix: string) => `${prefix}_${++_id}`;
+const nextId = () => crypto.randomUUID();
 
 // ── Store ──────────────────────────────────────────
 
@@ -144,7 +143,7 @@ export const useStore = create<AppStore>((set, get) => ({
   activeWorldId: null,
 
   openWorld: (name, path) => {
-    const id = nextId("world");
+    const id = nextId();
     const world: World = {
       id,
       name,
@@ -173,12 +172,6 @@ export const useStore = create<AppStore>((set, get) => ({
 
   hydrateStories: (worldId, stories) => {
     let firstConvId: string | null = null;
-    // Collect all existing IDs to advance the counter and prevent ID reuse
-    const existingIds: string[] = [];
-    for (const st of stories) {
-      existingIds.push(st.id);
-      for (const c of (st.conversations || [])) existingIds.push(c.id);
-    }
     set((s) => ({
       worlds: s.worlds.map((w) =>
         w.id === worldId
@@ -208,23 +201,15 @@ export const useStore = create<AppStore>((set, get) => ({
       ),
       activeConversationId: firstConvId,
     }));
-    // Prevent ID counter reuse after hydration
-    for (const id of existingIds) {
-      const num = parseInt(id.replace(/^[a-z]+_/, ""), 10);
-      if (!isNaN(num) && num > _id) _id = num;
-    }
     return firstConvId;
   },
 
-  syncIdCounter: (existingIds) => {
-    for (const id of existingIds) {
-      const num = parseInt(id.replace(/^[a-z]+_/, ""), 10);
-      if (!isNaN(num) && num > _id) _id = num;
-    }
+  syncIdCounter: (_existingIds) => {
+    // No-op: crypto.randomUUID() prevents collisions naturally
   },
 
   addStory: (worldId, title, storyId) => {
-    const id = storyId || nextId("story");
+    const id = storyId || nextId();
     set((s) => ({
       worlds: s.worlds.map((w) =>
         w.id === worldId
@@ -284,7 +269,7 @@ export const useStore = create<AppStore>((set, get) => ({
   activeConversationId: null,
 
   createConversation: (storyId) => {
-    const id = nextId("conv");
+    const id = nextId();
     set((s) => ({
       worlds: s.worlds.map((w) => ({
         ...w,
@@ -345,7 +330,7 @@ export const useStore = create<AppStore>((set, get) => ({
                         ...c,
                         messages: [
                           ...c.messages,
-                          { ...msg, id: nextId("msg"), timestamp: Date.now() },
+                          { ...msg, id: nextId(), timestamp: Date.now() },
                         ],
                       }
                     : c,

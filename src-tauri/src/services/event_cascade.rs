@@ -9,6 +9,7 @@
 use std::collections::HashSet;
 use std::fs;
 
+use uuid::Uuid;
 use crate::models::graph::{EntityRef, EntityType, RelationEdge};
 use crate::models::timeline::{Event, RelationChangeType};
 use crate::services::graph_storage;
@@ -36,7 +37,7 @@ fn outline_dir(world_path: &str, story_id: &str) -> std::path::PathBuf {
 
 /// Ensure Entry↔Event graph edges exist for all linked_entries.
 fn sync_entry_event_edges(world_path: &str, event: &Event) -> Result<(), String> {
-    let event_ref = EntityRef {
+    let event_ref = EntityRef { name: None, 
         entity_type: EntityType::Event,
         id: event.id.clone(),
     };
@@ -60,14 +61,16 @@ fn sync_entry_event_edges(world_path: &str, event: &Event) -> Result<(), String>
 
     // Add missing edges
     for entry_id in desired_ids.difference(&existing_entry_ids) {
-        let from = EntityRef {
+        let from = EntityRef { name: None, 
             entity_type: EntityType::Entry,
             id: entry_id.clone(),
         };
         let edge = RelationEdge {
+            id: Uuid::new_v4().to_string(),
             from,
             to: event_ref.clone(),
             description: "参与事件".into(),
+            timeline_id: Some(event.timeline_id.clone()),
             active_period: None,
         };
         graph_storage::with_graph(world_path, |g| {
@@ -78,7 +81,7 @@ fn sync_entry_event_edges(world_path: &str, event: &Event) -> Result<(), String>
 
     // Remove stale edges
     for entry_id in existing_entry_ids.difference(&desired_ids) {
-        let from = EntityRef {
+        let from = EntityRef { name: None, 
             entity_type: EntityType::Entry,
             id: entry_id.clone(),
         };
@@ -91,59 +94,71 @@ fn sync_entry_event_edges(world_path: &str, event: &Event) -> Result<(), String>
     Ok(())
 }
 
+/// Look up a chapter's UUID by reading its frontmatter from the chapter file.
+fn find_chapter_id(world_path: &str, story_id: &str, order: i32) -> Option<String> {
+    let dir = outline_dir(world_path, story_id);
+    if !dir.exists() { return None; }
+    let prefix = format!("{:02}-", order);
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.starts_with(&prefix) && name.ends_with(".md") {
+                if let Ok(content) = fs::read_to_string(entry.path()) {
+                    let trimmed = content.trim_start();
+                    if trimmed.starts_with("---") {
+                        let rest = &trimmed[3..];
+                        if let Some(end) = rest.find("---") {
+                            let fm_text = &rest[..end].trim();
+                            for line in fm_text.lines() {
+                                if let Some((key, value)) = line.split_once(':') {
+                                    if key.trim() == "id" {
+                                        let v = value.trim().trim_matches('"');
+                                        if !v.is_empty() { return Some(v.to_string()); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Ensure Outline↔Event graph edges exist for all linked_chapters.
 fn sync_outline_event_edges(world_path: &str, event: &Event) -> Result<(), String> {
-    let event_ref = EntityRef {
+    let event_ref = EntityRef { name: None, 
         entity_type: EntityType::Event,
         id: event.id.clone(),
     };
 
-    let graph = graph_storage::load_graph(world_path)?;
-    let existing_chapter_keys: HashSet<(String, i32)> = graph.edges.iter()
-        .filter(|e| {
-            (e.from == event_ref && e.to.entity_type == EntityType::Outline)
-            || (e.to == event_ref && e.from.entity_type == EntityType::Outline)
-        })
-        .map(|e| {
-            if e.from.entity_type == EntityType::Outline {
-                // Parse chapter id: "story_id/chN"
-                parse_chapter_ref(&e.from.id)
-            } else {
-                parse_chapter_ref(&e.to.id)
-            }
-        })
-        .collect();
+    // Add missing: create edges for each linked_chapter that doesn't have one
+    for ch in &event.linked_chapters {
+        let chapter_id = match find_chapter_id(world_path, &ch.story_id, ch.chapter_order) {
+            Some(id) => id,
+            None => continue, // chapter doesn't exist yet, skip
+        };
 
-    let desired_keys: HashSet<(String, i32)> = event.linked_chapters.iter()
-        .map(|c| (c.story_id.clone(), c.chapter_order))
-        .collect();
-
-    // Add missing
-    for (story_id, order) in desired_keys.difference(&existing_chapter_keys) {
-        let to = EntityRef {
+        let to = EntityRef { name: None, 
             entity_type: EntityType::Outline,
-            id: format!("{}/ch{}", story_id, order),
+            id: chapter_id,
         };
         let edge = RelationEdge {
+            id: Uuid::new_v4().to_string(),
             from: event_ref.clone(),
             to,
             description: "章节描绘".into(),
+            timeline_id: Some(event.timeline_id.clone()),
             active_period: None,
         };
         graph_storage::with_graph(world_path, |g| {
-            g.add_edge(edge);
-            Ok(())
-        })?;
-    }
-
-    // Remove stale
-    for (story_id, order) in existing_chapter_keys.difference(&desired_keys) {
-        let to = EntityRef {
-            entity_type: EntityType::Outline,
-            id: format!("{}/ch{}", story_id, order),
-        };
-        graph_storage::with_graph(world_path, |g| {
-            g.remove_edge(&event_ref, &to, "章节描绘");
+            // Check by (from, to, description) to avoid duplicates
+            if !g.edges.iter().any(|e|
+                e.from == edge.from && e.to == edge.to && e.description == edge.description
+            ) {
+                g.add_edge(edge);
+            }
             Ok(())
         })?;
     }
@@ -151,21 +166,14 @@ fn sync_outline_event_edges(world_path: &str, event: &Event) -> Result<(), Strin
     Ok(())
 }
 
-fn parse_chapter_ref(id: &str) -> (String, i32) {
-    let parts: Vec<&str> = id.rsplitn(2, "/ch").collect();
-    let story_id = if parts.len() >= 2 { parts[1].to_string() } else { String::new() };
-    let order: i32 = parts[0].parse().unwrap_or(0);
-    (story_id, order)
-}
-
 /// Apply relationship_changes as Entry↔Entry edges in relations/index.json.
 fn apply_entry_entry_edges(world_path: &str, event: &Event) -> Result<(), String> {
     for rc in &event.relationship_changes {
-        let from = EntityRef {
+        let from = EntityRef { name: None, 
             entity_type: EntityType::Entry,
             id: rc.entry_a.clone(),
         };
-        let to = EntityRef {
+        let to = EntityRef { name: None, 
             entity_type: EntityType::Entry,
             id: rc.entry_b.clone(),
         };
@@ -180,9 +188,11 @@ fn apply_entry_entry_edges(world_path: &str, event: &Event) -> Result<(), String
                         !(e.from == from && e.to == to && e.description == desc)
                     });
                     g.add_edge(RelationEdge {
+                        id: Uuid::new_v4().to_string(),
                         from,
                         to,
                         description: rc.relation.clone(),
+                        timeline_id: Some(event.timeline_id.clone()),
                         active_period: None,
                     });
                     Ok(())
@@ -190,7 +200,7 @@ fn apply_entry_entry_edges(world_path: &str, event: &Event) -> Result<(), String
             }
             RelationChangeType::Delete => {
                 graph_storage::with_graph(world_path, |g| {
-                    g.remove_edge(&from, &to, desc);
+                    g.remove_edge_scoped(&from, &to, desc, Some(&event.timeline_id));
                     Ok(())
                 })?;
             }
@@ -201,7 +211,7 @@ fn apply_entry_entry_edges(world_path: &str, event: &Event) -> Result<(), String
 
 /// Remove all Entry↔Event and Outline↔Event edges for a deleted event.
 fn remove_event_edges(world_path: &str, event: &Event) -> Result<(), String> {
-    let event_ref = EntityRef {
+    let event_ref = EntityRef { name: None, 
         entity_type: EntityType::Event,
         id: event.id.clone(),
     };
@@ -211,6 +221,26 @@ fn remove_event_edges(world_path: &str, event: &Event) -> Result<(), String> {
         });
         Ok(())
     })?;
+    Ok(())
+}
+
+/// Remove Entry↔Entry edges created from this event's relationship_changes.
+fn remove_relationship_change_edges(world_path: &str, event: &Event) -> Result<(), String> {
+    for rc in &event.relationship_changes {
+        let from = EntityRef { name: None, 
+            entity_type: EntityType::Entry,
+            id: rc.entry_a.clone(),
+        };
+        let to = EntityRef { name: None, 
+            entity_type: EntityType::Entry,
+            id: rc.entry_b.clone(),
+        };
+        let desc = rc.description.as_deref().unwrap_or(&rc.relation);
+        graph_storage::with_graph(world_path, |g| {
+            g.remove_edge_scoped(&from, &to, desc, Some(&event.timeline_id));
+            Ok(())
+        })?;
+    }
     Ok(())
 }
 
@@ -242,7 +272,7 @@ fn recalc_entry_timeline_summary(world_path: &str, entry_id: &str) -> Result<(),
     let (mut front, body) = parse_entry_frontmatter(&raw)?;
 
     // Collect all linked events via relations/index.json
-    let entity = EntityRef {
+    let entity = EntityRef { name: None, 
         entity_type: EntityType::Entry,
         id: entry_id.to_string(),
     };
@@ -455,6 +485,7 @@ pub fn on_event_created(world_path: &str, event: &Event) -> Result<(), String> {
 /// Called after Event update. Removes old edges and applies new ones.
 pub fn on_event_updated(world_path: &str, old: &Event, new: &Event) -> Result<(), String> {
     // For simplicity, rebuild: remove old event's edges, add new ones.
+    remove_relationship_change_edges(world_path, old)?;
     remove_event_edges(world_path, old)?;
 
     // Recalc for both old and new linked_entries (some may have been removed)
@@ -475,6 +506,7 @@ pub fn on_event_updated(world_path: &str, old: &Event, new: &Event) -> Result<()
 
 /// Called after Event deletion.
 pub fn on_event_deleted(world_path: &str, event: &Event) -> Result<(), String> {
+    remove_relationship_change_edges(world_path, event)?;
     remove_event_edges(world_path, event)?;
     remove_chapter_linked_events(world_path, event)?;
     for le in &event.linked_entries {

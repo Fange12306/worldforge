@@ -44,7 +44,7 @@ fn entity_key(entity_type: &EntityType, id: &str) -> String {
 impl GraphIndex {
     /// Build a GraphIndex from the full list of edges.
     /// Edges are treated as undirected for traversal purposes.
-    pub fn build(edges: &[crate::models::graph::RelationEdge]) -> Self {
+    pub fn build(edges: &[&crate::models::graph::RelationEdge]) -> Self {
         let mut adjacency: HashMap<String, Vec<(String, String)>> = HashMap::new();
         let mut node_map: HashMap<String, EntityRef> = HashMap::new();
 

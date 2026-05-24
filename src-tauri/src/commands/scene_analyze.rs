@@ -88,8 +88,9 @@ pub struct SceneAnalysis {
 }
 
 #[tauri::command]
-pub fn scene_analyze(world_path: String, scene_text: String) -> Result<SceneAnalysis, String> {
+pub fn scene_analyze(world_path: String, scene_text: String, aspect: Option<String>) -> Result<SceneAnalysis, String> {
     let root = expand(&world_path);
+    let aspect = aspect.unwrap_or_else(|| "all".to_string());
 
     // Basic text stats
     let word_count = scene_text.chars().count();
@@ -117,7 +118,11 @@ pub fn scene_analyze(world_path: String, scene_text: String) -> Result<SceneAnal
     };
 
     // Cross-reference with entries
-    let entries = load_index_entries(&root);
+    let entries = if aspect == "all" || aspect == "characters" || aspect == "structure" {
+        load_index_entries(&root)
+    } else {
+        Vec::new()
+    };
     let mut referenced_entries: Vec<String> = Vec::new();
     for entry in &entries {
         if !entry.name.is_empty() && scene_text.contains(&entry.name) {
@@ -134,20 +139,24 @@ pub fn scene_analyze(world_path: String, scene_text: String) -> Result<SceneAnal
         }
     }
 
-    // Structure hints
+    // Structure hints — filtered by aspect
     let mut structure_hints: Vec<String> = Vec::new();
-    if word_count < 200 {
+    let show_structure = aspect == "all" || aspect == "structure";
+    let show_characters = aspect == "all" || aspect == "characters";
+    let show_pacing = aspect == "all" || aspect == "pacing";
+
+    if show_structure && word_count < 200 {
         structure_hints.push("场景较短，可能需要扩展描写".into());
     }
-    if dialogue_ratio > 0.7 {
+    if show_pacing && dialogue_ratio > 0.7 {
         structure_hints.push("对话比例较高，考虑增加叙述和描写".into());
-    } else if dialogue_ratio < 0.1 && word_count > 500 {
+    } else if show_pacing && dialogue_ratio < 0.1 && word_count > 500 {
         structure_hints.push("对话比例很低，纯叙述可能让读者感到疏离".into());
     }
-    if paragraph_count > 0 && (word_count / paragraph_count) > 300 {
+    if show_structure && paragraph_count > 0 && (word_count / paragraph_count) > 300 {
         structure_hints.push("段落较长，考虑拆分以提升可读性".into());
     }
-    if referenced_entries.is_empty() && word_count > 100 {
+    if show_characters && referenced_entries.is_empty() && word_count > 100 {
         structure_hints.push("未检测到已有词条的引用，确认场景是否充分利用了设定".into());
     }
 

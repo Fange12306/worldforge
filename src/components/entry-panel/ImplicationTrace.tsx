@@ -22,22 +22,57 @@ export function ImplicationTrace({ worldPath, entryId, entryName, timelineSummar
   const [loading, setLoading] = useState(false);
   const [timelineExpanded, setTimelineExpanded] = useState(true);
   const [graphExpanded, setGraphExpanded] = useState(true);
+  const [allTls, setAllTls] = useState<any[]>([]);
+  const [activeGraphTlId, setActiveGraphTlId] = useState("");
+  const [entryNames, setEntryNames] = useState<Map<string, string>>(new Map());
 
-  // 从图数据库加载补充关联（不重复 timeline 里已有的）
+  // 加载词条名称映射
+  useEffect(() => {
+    if (!worldPath) return;
+    invoke<any[]>("list_entries", { worldPath })
+      .then((entries) => {
+        const map = new Map<string, string>();
+        if (Array.isArray(entries)) {
+          for (const e of entries) map.set(e.id, e.name);
+        }
+        setEntryNames(map);
+      })
+      .catch(() => {});
+  }, [worldPath]);
+
+  // 加载时间线列表
+  useEffect(() => {
+    if (!worldPath) return;
+    invoke<any[]>("list_timelines", { worldPath })
+      .then((tls) => {
+        setAllTls(Array.isArray(tls) ? tls : []);
+        if (!activeGraphTlId && tls && tls.length > 0) {
+          const def = tls.find((t: any) => t.is_default) || tls[0];
+          if (def) setActiveGraphTlId(def.id);
+        }
+      })
+      .catch(() => {});
+  }, [worldPath]);
+
+  // 从图数据库加载关联。传 timelineId 时只返回跨时间轴边 + 该时间轴的事件边
   useEffect(() => {
     if (!worldPath) return;
     let cancelled = false;
     setLoading(true);
-    invoke<any[]>("traverse_graph", { worldPath, entityType: "entry", entityId: entryId, maxDepth: 1 })
+    const params: Record<string, unknown> = { worldPath, entityType: "entry", entityId: entryId, maxDepth: 1 };
+    if (activeGraphTlId) params.timelineId = activeGraphTlId;
+    invoke<any[]>("traverse_graph", params)
       .then((results) => {
         if (!cancelled) { setGraphRelatives(Array.isArray(results) ? results : []); setLoading(false); }
       })
       .catch(() => { if (!cancelled) { setGraphRelatives([]); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [worldPath, entryId]);
+  }, [worldPath, entryId, activeGraphTlId]);
 
   const hasTimeline = timelineSummary && timelineSummary.length > 0;
-  const hasGraph = graphRelatives.length > 0;
+  // Filter graph results: only show entries (exclude events, timelines, outline)
+  const graphEntries = useMemo(() => graphRelatives.filter((r: any) => r.entity.type === "entry"), [graphRelatives]);
+  const hasGraph = graphEntries.length > 0;
 
   // 增量 diff：每段只展示相对于上一段的变化
   const diffs = useMemo(() => {
@@ -92,7 +127,7 @@ export function ImplicationTrace({ worldPath, entryId, entryName, timelineSummar
                   {initial && tp.relationships && tp.relationships.length > 0 && (
                     <div className="flex flex-wrap gap-1 ml-1">
                       {tp.relationships.map((r, j) => (
-                        <RelBadge key={j} r={r} onNavigate={onNavigate} />
+                        <RelBadge key={j} r={r} onNavigate={onNavigate} entryNames={entryNames} />
                       ))}
                     </div>
                   )}
@@ -100,10 +135,10 @@ export function ImplicationTrace({ worldPath, entryId, entryName, timelineSummar
                   {!initial && hasChanges && (
                     <div className="flex flex-wrap gap-1 ml-1">
                       {added.map((r, j) => (
-                        <RelBadge key={`add-${j}`} r={r} onNavigate={onNavigate} added />
+                        <RelBadge key={`add-${j}`} r={r} onNavigate={onNavigate} added entryNames={entryNames} />
                       ))}
                       {removed.map((r, j) => (
-                        <RelBadge key={`rem-${j}`} r={r} onNavigate={onNavigate} removed />
+                        <RelBadge key={`rem-${j}`} r={r} onNavigate={onNavigate} removed entryNames={entryNames} />
                       ))}
                     </div>
                   )}
@@ -125,11 +160,19 @@ export function ImplicationTrace({ worldPath, entryId, entryName, timelineSummar
             {graphExpanded ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
             <Share2 className="w-3 h-3 text-ink-muted" />
             <span className="text-[11px] text-ink-muted font-medium">全量关联</span>
-            <span className="text-[10px] text-ink-muted/50">{graphRelatives.length} 个关联实体</span>
+            <span className="text-[10px] text-ink-muted/50">{graphEntries.length} 个关联词条</span>
+            {allTls.length > 1 && (
+              <select className="text-[10px] bg-surface-800 border border-surface-700 rounded px-1.5 py-0.5 ml-auto"
+                value={activeGraphTlId}
+                onChange={e => { e.stopPropagation(); setActiveGraphTlId(e.target.value); }}
+                onClick={e => e.stopPropagation()}>
+                {allTls.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            )}
           </button>
           {graphExpanded && (
             <div className="mt-1 space-y-1">
-              {groupBy(graphRelatives, "via_description").map(([relation, entities]) => (
+              {groupBy(graphEntries, "via_description").map(([relation, entities]) => (
                 <div key={relation} className="pl-4">
                   <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-0.5">{relation}</p>
                   <div className="flex flex-wrap gap-1">
@@ -139,7 +182,7 @@ export function ImplicationTrace({ worldPath, entryId, entryName, timelineSummar
                         onClick={() => onNavigate?.("entry", r.entity.id)}
                         className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-surface-800/50 text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
                       >
-                        {r.entity.id}
+                        {r.entity.name || entryNames.get(r.entity.id) || `${r.entity.entity_type}:${r.entity.id.slice(0, 8)}`}
                       </button>
                     ))}
                   </div>
@@ -201,11 +244,13 @@ function RelBadge({
   onNavigate,
   added,
   removed,
+  entryNames,
 }: {
   r: { target: string; description: string };
   onNavigate?: (entityType: string, entityId: string) => void;
   added?: boolean;
   removed?: boolean;
+  entryNames: Map<string, string>;
 }) {
   let badgeCls = "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded transition-colors bg-surface-800/50 text-ink-muted hover:text-ink hover:bg-surface-800";
   let prefix = "";
@@ -224,7 +269,7 @@ function RelBadge({
       {prefix && <span>{prefix}</span>}
       {r.description}
       <span className="text-ink-muted/50">→</span>
-      {r.target}
+      {entryNames.get(r.target) || r.target.slice(0, 8)}
     </button>
   );
 }

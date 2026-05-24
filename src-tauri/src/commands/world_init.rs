@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
+use uuid::Uuid;
 
 /// Calendar epoch definition for the world's timeline system.
 /// Reserved for Phase 6 — stored but not interpreted yet.
@@ -34,10 +35,14 @@ pub struct CalendarEpoch {
 /// World metadata stored in world.json
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WorldMeta {
+    #[serde(default)]
+    pub id: String,              // UUID — immutable identity
     pub name: String,
     pub description: String,
+    #[serde(default)]
     pub default_timeline: String,
     pub created_at: String,
+    #[serde(default)]
     pub language: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub calendar: Option<CalendarConfig>,
@@ -87,6 +92,7 @@ pub fn init_world(path: String, name: String) -> Result<WorldMeta, String> {
     // Create world.json
     let now = chrono::Utc::now().to_rfc3339();
     let meta = WorldMeta {
+        id: Uuid::new_v4().to_string(),
         name: name.clone(),
         description: String::new(),
         default_timeline: String::new(),

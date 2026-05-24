@@ -92,6 +92,7 @@ pub fn run() {
             relations::traverse_graph,
             // Consistency check (Phase 4)
             consistency::check_consistency,
+            consistency::check_consistency_semantic,
             // Timeline & Events (Phase 5)
             timeline::create_timeline,
             timeline::update_timeline,

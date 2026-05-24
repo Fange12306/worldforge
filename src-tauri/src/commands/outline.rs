@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use uuid::Uuid;
 
 fn expand(path: &str) -> PathBuf {
     if path.starts_with("~/") {
@@ -50,6 +51,8 @@ impl ChapterStatus {
 /// Each chapter lives as its own .md file under outline/<storyId>/
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct ChapterInfo {
+    #[serde(default)]
+    id: String,                            // UUID — immutable identity
     order: i32,
     title: String,
     status: String,
@@ -103,12 +106,13 @@ fn strip_body_frontmatter(body: &str) -> &str {
 }
 
 fn build_chapter_md(
-    title: &str, order: i32, status: &str, summary: &str, body: &str,
+    id: &str, title: &str, order: i32, status: &str, summary: &str, body: &str,
     time_period: Option<&str>, involved_entries: &[String],
     linked_events: &[String],
 ) -> String {
     let mut md = String::new();
     md.push_str("---\n");
+    md.push_str(&format!("id: \"{}\"\n", id));
     md.push_str(&format!("title: \"{}\"\n", title));
     md.push_str(&format!("order: {}\n", order));
     md.push_str(&format!("status: {}\n", status));
@@ -150,6 +154,7 @@ fn scan_chapters(dir: &PathBuf) -> Result<Vec<ChapterInfo>, String> {
         if path.extension().map_or(false, |e| e == "md") {
             if let Ok(content) = fs::read_to_string(&path) {
                 let (fields, body) = parse_chapter_file(&content);
+                let id = fields.get("id").cloned().unwrap_or_default();
                 let order: i32 = fields.get("order").and_then(|v| v.parse().ok()).unwrap_or(0);
                 let title = fields.get("title").cloned().unwrap_or_default();
                 let status = fields.get("status").cloned().unwrap_or_else(|| "outline".into());
@@ -175,7 +180,7 @@ fn scan_chapters(dir: &PathBuf) -> Result<Vec<ChapterInfo>, String> {
                         .filter(|s| !s.is_empty())
                         .collect::<Vec<_>>()
                 }).unwrap_or_default();
-                chapters.push(ChapterInfo { order, title, status, summary, has_body, word_count, time_period, involved_entries, linked_events });
+                chapters.push(ChapterInfo { id, order, title, status, summary, has_body, word_count, time_period, involved_entries, linked_events });
             }
         }
     }
@@ -215,7 +220,7 @@ fn migrate_old_outline(root: &PathBuf, story_id: &str) -> Result<(), String> {
             // Flush previous chapter
             if !current_title.is_empty() {
                 order += 1;
-                let md = build_chapter_md(&current_title, order, "outline", "", &current_body, None, &[], &[]);
+                let md = build_chapter_md(&Uuid::new_v4().to_string(), &current_title, order, "outline", "", &current_body, None, &[], &[]);
                 let filename = sanitize_filename(&current_title);
                 let _ = fs::write(dir.join(format!("{:02}-{}.md", order, filename)), &md);
             }
@@ -229,7 +234,8 @@ fn migrate_old_outline(root: &PathBuf, story_id: &str) -> Result<(), String> {
     // Flush last chapter
     if !current_title.is_empty() {
         order += 1;
-        let md = build_chapter_md(&current_title, order, "outline", "", &current_body, None, &[], &[]);        let filename = sanitize_filename(&current_title);
+        let md = build_chapter_md(&Uuid::new_v4().to_string(), &current_title, order, "outline", "", &current_body, None, &[], &[]);
+        let filename = sanitize_filename(&current_title);
         let _ = fs::write(dir.join(format!("{:02}-{}.md", order, filename)), &md);
     }
     // Delete old file after successful migration
@@ -302,6 +308,9 @@ pub fn write_outline(
         // Update existing chapter — merge fields
         let content = fs::read_to_string(&existing).map_err(|e| format!("读取章节失败: {}", e))?;
         let (mut fields, old_body) = parse_chapter_file(&content);
+        // Preserve existing UUID or generate one for legacy chapters without id
+        let chapter_id = fields.get("id").cloned().filter(|s| !s.is_empty())
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
         let old_title = fields.get("title").cloned().unwrap_or_default();
         fields.insert("title".into(), title.clone());
         fields.insert("order".into(), chapter_order.to_string());
@@ -322,6 +331,7 @@ pub fn write_outline(
         }
         let new_body = body.unwrap_or(old_body);
         let new_md = build_chapter_md(
+            &chapter_id,
             &title,
             chapter_order,
             &fields.get("status").cloned().unwrap_or_else(|| "outline".into()),
@@ -342,7 +352,7 @@ pub fn write_outline(
         }
 
         // 🆕 Phase 5: Sync linked events — backfill event.linked_chapters
-        sync_outline_event_links(&world_path, &story_id, chapter_order, &linked_evts)?;
+        sync_outline_event_links(&world_path, &story_id, chapter_order, &chapter_id, &linked_evts)?;
         Ok(())
     } else {
         // Create new chapter file
@@ -350,12 +360,13 @@ pub fn write_outline(
         let st = status.unwrap_or_else(|| "outline".into());
         let sm = summary.unwrap_or_default();
         let bd = body.unwrap_or_default();
-        let md = build_chapter_md(&title, chapter_order, &st, &sm, &bd, time_period.as_deref(), &inv_entries, &linked_evts);
+        let chapter_id = Uuid::new_v4().to_string();
+        let md = build_chapter_md(&chapter_id, &title, chapter_order, &st, &sm, &bd, time_period.as_deref(), &inv_entries, &linked_evts);
         let path = dir.join(format!("{:02}-{}.md", chapter_order, filename));
         fs::write(&path, &md).map_err(|e| format!("写入失败: {}", e))?;
 
         // 🆕 Phase 5: Sync linked events
-        sync_outline_event_links(&world_path, &story_id, chapter_order, &linked_evts)
+        sync_outline_event_links(&world_path, &story_id, chapter_order, &chapter_id, &linked_evts)
     }
 }
 
@@ -365,6 +376,7 @@ fn sync_outline_event_links(
     world_path: &str,
     story_id: &str,
     chapter_order: i32,
+    chapter_id: &str,
     linked_events: &[String],
 ) -> Result<(), String> {
     use crate::models::graph::{EntityRef, EntityType, RelationEdge};
@@ -420,22 +432,26 @@ fn sync_outline_event_links(
             .map_err(|e| format!("写入事件失败: {}", e))?;
 
         // Create Outline↔Event graph edge
-        let from = EntityRef {
+        let from = EntityRef { name: None, 
             entity_type: EntityType::Outline,
-            id: format!("{}/ch{}", story_id, chapter_order),
+            id: chapter_id.to_string(),
         };
-        let to = EntityRef {
+        let to = EntityRef { name: None, 
             entity_type: EntityType::Event,
             id: event_id.to_string(),
         };
         let edge = RelationEdge {
+            id: Uuid::new_v4().to_string(),
             from,
             to,
             description: "章节描绘".into(),
+            timeline_id: None,
             active_period: None,
         };
         graph_storage::with_graph(world_path, |g| {
-            if !g.edges.iter().any(|e| e == &edge) {
+            if !g.edges.iter().any(|e|
+                e.from == edge.from && e.to == edge.to && e.description == edge.description
+            ) {
                 g.add_edge(edge);
             }
             Ok(())

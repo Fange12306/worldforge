@@ -99,6 +99,88 @@ pub async fn test_connection(
     }
 }
 
+/// Non-streaming LLM call — sends one request, waits for full response, returns text.
+/// Used for independent LLM judgment (e.g. consistency check) where the caller
+/// doesn't need streaming deltas.
+pub async fn single_chat(
+    system_prompt: String,
+    user_message: String,
+    provider: String,
+    model: String,
+    max_tokens: u32,
+) -> Result<String, String> {
+    let api_key = crate::commands::api_key::get_api_key(provider.clone())
+        .map_err(|e| format!("未配置 API Key: {}", e))?;
+
+    let client = reqwest::Client::new();
+
+    if provider == "anthropic" {
+        let body = serde_json::json!({
+            "model": model,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": user_message}],
+            "system": system_prompt,
+            "stream": false,
+        });
+        let resp = client
+            .post("https://api.anthropic.com/v1/messages")
+            .header("x-api-key", &api_key)
+            .header("anthropic-version", "2023-06-01")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("请求失败: {}", e))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("API 错误 {}: {}", status, text));
+        }
+
+        let json: serde_json::Value = resp.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
+        json["content"][0]["text"]
+            .as_str()
+            .map(String::from)
+            .ok_or_else(|| format!("无法提取响应文本: {}", json))
+    } else {
+        let msgs = vec![
+            serde_json::json!({"role": "system", "content": system_prompt}),
+            serde_json::json!({"role": "user", "content": user_message}),
+        ];
+        let body = serde_json::json!({
+            "model": model,
+            "messages": msgs,
+            "max_tokens": max_tokens,
+            "stream": false,
+        });
+        let api_url = match provider.as_str() {
+            "openai" => "https://api.openai.com/v1/chat/completions",
+            "deepseek" => "https://api.deepseek.com/v1/chat/completions",
+            _ => return Err(format!("未知 Provider: {}", provider)),
+        };
+        let resp = client
+            .post(api_url)
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("请求失败: {}", e))?;
+
+        let status = resp.status();
+        if !status.is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            return Err(format!("API 错误 {}: {}", status, text));
+        }
+
+        let json: serde_json::Value = resp.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
+        json["choices"][0]["message"]["content"]
+            .as_str()
+            .map(String::from)
+            .ok_or_else(|| format!("无法提取响应文本: {}", json))
+    }
+}
+
 /// Call LLM API with streaming — retry wrapper.
 #[tauri::command]
 pub async fn stream_chat(

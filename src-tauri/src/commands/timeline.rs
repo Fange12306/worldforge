@@ -275,11 +275,22 @@ pub fn create_event(
     timeline_id: String,
     time_point: String,
     summary: String,
-    precision: Option<usize>,              // unit index in time_format
+    name: Option<String>,                    // human-readable slug, auto-generated from summary if omitted
+    precision: Option<usize>,
     linked_entries: Option<String>,
     linked_chapters: Option<String>,
     relationship_changes: Option<String>,
 ) -> Result<Event, String> {
+    // Generate name from summary if not provided
+    let event_name = name.unwrap_or_else(|| {
+        // Simple slug: take first 30 chars of summary, replace problematic chars
+        let s = summary.chars().take(30).collect::<String>();
+        s.chars()
+            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+            .collect::<String>()
+            .trim_matches('-')
+            .to_string()
+    });
     // Verify timeline exists
     let index = load_index(&world_path)?;
     let timeline = index.timelines.iter()
@@ -308,6 +319,7 @@ pub fn create_event(
 
     let event = Event {
         id: Uuid::new_v4().to_string(),
+        name: event_name,
         timeline_id: timeline_id.clone(),
         time_point,
         precision: precision.map(|p| if p > 0 { Some(p) } else { None }).flatten(),
@@ -335,18 +347,28 @@ pub fn create_event(
 pub fn update_event(
     world_path: String,
     timeline_id: String,
-    event_id: String,
+    event_id: Option<String>,      // UUID or name for lookup; supports both
+    event_name: Option<String>,    // readable slug for lookup by name
     time_point: Option<String>,
     summary: Option<String>,
+    name_update: Option<String>,   // rename the event
     precision: Option<usize>,
     linked_entries: Option<String>,
     linked_chapters: Option<String>,
     relationship_changes: Option<String>,
 ) -> Result<Event, String> {
     let mut event_list = load_events(&world_path, &timeline_id)?;
-    let pos = event_list.events.iter()
-        .position(|e| e.id == event_id)
-        .ok_or_else(|| format!("事件 {} 不存在", event_id))?;
+    let pos = if let Some(ref name) = event_name {
+        event_list.events.iter()
+            .position(|e| e.name == *name)
+            .ok_or_else(|| format!("事件 {} 不存在", name))?
+    } else if let Some(ref id) = event_id {
+        event_list.events.iter()
+            .position(|e| e.id == *id)
+            .ok_or_else(|| format!("事件 {} 不存在", id))?
+    } else {
+        return Err("必须提供 event_id 或 event_name".into());
+    };
 
     // Save old state for cascade diff
     let old_event = event_list.events[pos].clone();
@@ -367,6 +389,7 @@ pub fn update_event(
     {
         let event = &mut event_list.events[pos];
         if let Some(tp) = time_point { event.time_point = tp; }
+        if let Some(ref n) = name_update { event.name = n.clone(); }
         if let Some(s) = summary { event.summary = s; }
         if precision.is_some() { event.precision = precision; }
         if linked_entries.is_some() {
@@ -403,15 +426,25 @@ pub fn update_event(
 pub fn delete_event(
     world_path: String,
     timeline_id: String,
-    event_id: String,
+    event_id: Option<String>,
+    event_name: Option<String>,
 ) -> Result<(), String> {
     let mut event_list = load_events(&world_path, &timeline_id)?;
-    let event = event_list.events.iter()
-        .find(|e| e.id == event_id)
-        .cloned()
-        .ok_or_else(|| format!("事件 {} 不存在", event_id))?;
+    let event = if let Some(ref name) = event_name {
+        event_list.events.iter()
+            .find(|e| e.name == *name)
+            .cloned()
+    } else if let Some(ref id) = event_id {
+        event_list.events.iter()
+            .find(|e| e.id == *id)
+            .cloned()
+    } else {
+        return Err("必须提供 event_id 或 event_name".into());
+    }
+        .ok_or_else(|| format!("事件不存在 (id: {:?}, name: {:?})", event_id, event_name))?;
 
-    event_list.events.retain(|e| e.id != event_id);
+    let event_id_to_remove = &event.id;
+    event_list.events.retain(|e| e.id != *event_id_to_remove);
     save_events(&world_path, &timeline_id, &event_list)?;
 
     event_cascade::on_event_deleted(&world_path, &event)?;
@@ -458,13 +491,22 @@ pub fn list_events(
 pub fn move_event(
     world_path: String,
     timeline_id: String,
-    event_id: String,
+    event_id: Option<String>,
+    event_name: Option<String>,
     new_time_point: String,
 ) -> Result<Event, String> {
     let mut event_list = load_events(&world_path, &timeline_id)?;
-    let event = event_list.events.iter_mut()
-        .find(|e| e.id == event_id)
-        .ok_or_else(|| format!("事件 {} 不存在", event_id))?;
+    let event = if let Some(ref name) = event_name {
+        event_list.events.iter_mut()
+            .find(|e| e.name == *name)
+            .ok_or_else(|| format!("事件 {} 不存在", name))?
+    } else if let Some(ref id) = event_id {
+        event_list.events.iter_mut()
+            .find(|e| e.id == *id)
+            .ok_or_else(|| format!("事件 {} 不存在", id))?
+    } else {
+        return Err("必须提供 event_id 或 event_name".into());
+    };
 
     event.time_point = new_time_point;
     event.updated_at = Utc::now();

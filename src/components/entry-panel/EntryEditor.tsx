@@ -15,7 +15,7 @@ type Props = {
   onSave: (entry: Entry) => void;
   onDelete?: () => void;
   onNavigateEntry?: (entryId: string) => void;
-  onNavigateToTimeline?: (eventId: string) => void;
+  onNavigateToTimeline?: (eventId: string, timelineId: string) => void;
 };
 
 export function EntryEditor({ entry, editing, worldPath, onEdit, onCancel, onSave, onDelete, onNavigateEntry, onNavigateToTimeline }: Props) {
@@ -39,6 +39,7 @@ export function EntryEditor({ entry, editing, worldPath, onEdit, onCancel, onSav
       <div className="h-10 flex items-center justify-between px-3 flex-shrink-0">
         <div className="flex items-center gap-2 text-xs text-ink-muted">
           <span className="px-1.5 py-0.5 rounded bg-surface-800">{ENTRY_TYPE_LABELS[entry.type] || entry.type}</span>
+          <span className="px-1.5 py-0.5 rounded bg-surface-800/50 text-ink-muted/50 font-mono text-[10px] select-all">{entry.id}</span>
         </div>
         <div className="flex items-center gap-1">
           {editing ? (

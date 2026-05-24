@@ -3,25 +3,25 @@
 /// Performs lightweight keyword-based matching between a text passage
 /// and a set of constraints. This is NOT a semantic check — it flags
 /// passages that mention entities/terms constrained by rules, leaving
-/// semantic judgment to the LLM-based ConsistencyCheck tool (Task 4.4).
+/// semantic judgment to the LLM-based check_consistency_semantic command.
 ///
 /// The engine:
 ///   1. Extracts significant keywords from each constraint rule
 ///   (filters single-char tokens, English stop words)
 ///   2. Searches for those keywords in the passage
-///   3. Returns a `ConsistencyViolation` for each rule whose keywords
-///   appear in the passage, with excerpt context
+///   3. Returns a `ViolationCandidate` for each rule whose keywords
+///   appear in the passage
 
-use crate::models::constraint::{Constraint, ConstraintSeverity};
+use crate::models::constraint::Constraint;
 
 /// A potential consistency violation flagged by keyword matching.
-/// The LLM will make the final semantic judgment.
+/// The LLM makes the final semantic judgment.
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct ConsistencyViolation {
-    pub level: String,
+pub struct ViolationCandidate {
     pub rule: String,
-    pub passage: String,
-    pub suggestion: String,
+    pub severity: String,
+    pub passage_excerpt: String,
+    pub matched_keywords: Vec<String>,
 }
 
 pub struct ConstraintEngine;
@@ -29,11 +29,10 @@ pub struct ConstraintEngine;
 impl ConstraintEngine {
     /// Check `passage` against `constraints` using keyword matching.
     ///
-    /// Returns violations for any constraint whose keywords appear in
-    /// the passage. Empty result means no keywords matched — but the
-    /// caller (LLM) should still perform semantic review.
-    pub fn check(passage: &str, constraints: &[Constraint]) -> Vec<ConsistencyViolation> {
-        let mut violations = Vec::new();
+    /// Returns candidates for any constraint whose keywords appear in
+    /// the passage. Empty result means no keywords matched.
+    pub fn check(passage: &str, constraints: &[Constraint]) -> Vec<ViolationCandidate> {
+        let mut candidates = Vec::new();
         let lower_passage = passage.to_lowercase();
 
         for constraint in constraints {
@@ -42,45 +41,35 @@ impl ConstraintEngine {
                 continue;
             }
 
-            let matched: Vec<&str> = keywords
+            let matched: Vec<String> = keywords
                 .iter()
                 .filter(|kw| lower_passage.contains(&kw.to_lowercase()))
-                .map(|s| s.as_str())
+                .cloned()
                 .collect();
 
             if !matched.is_empty() {
                 let excerpt = extract_excerpt(passage, &matched, 120);
-                let level_str = match constraint.severity {
-                    ConstraintSeverity::Hard => "hard",
-                    ConstraintSeverity::Soft => "soft",
+                let severity_str = match constraint.severity {
+                    crate::models::constraint::ConstraintSeverity::Hard => "hard",
+                    crate::models::constraint::ConstraintSeverity::Soft => "soft",
                 };
 
-                violations.push(ConsistencyViolation {
-                    level: level_str.to_string(),
+                candidates.push(ViolationCandidate {
                     rule: constraint.rule.clone(),
-                    passage: excerpt,
-                    suggestion: format!(
-                        "约束「{}」涉及关键词「{}」，请确认内容是否一致",
-                        constraint.rule,
-                        matched.join("、")
-                    ),
+                    severity: severity_str.to_string(),
+                    passage_excerpt: excerpt,
+                    matched_keywords: matched,
                 });
             }
         }
 
-        violations
+        candidates
     }
 }
 
 // ── Helpers ──
 
 /// Extract significant keywords from a natural-language rule string.
-///
-/// Strategy:
-/// - Split on whitespace/punctuation
-/// - Discard single-char tokens (Chinese particles, English single letters)
-/// - Discard common English stop words
-/// - Keep the rest as keywords
 fn extract_keywords(rule: &str) -> Vec<String> {
     const STOP_WORDS: &[&str] = &[
         "the", "a", "an", "is", "are", "was", "were", "be", "been",
@@ -107,18 +96,17 @@ fn extract_keywords(rule: &str) -> Vec<String> {
     let tokens: Vec<String> = rule
         .split(|c: char| c.is_ascii_whitespace() || c.is_ascii_punctuation())
         .filter(|t| !t.is_empty())
-        .filter(|t| t.chars().count() > 1) // discard single-char tokens
+        .filter(|t| t.chars().count() > 1)
         .filter(|t| !STOP_WORDS.contains(&t.to_lowercase().as_str()))
         .map(|t| t.to_string())
         .collect();
 
-    // Deduplicate while preserving order
     let mut seen = std::collections::HashSet::new();
     tokens.into_iter().filter(|t| seen.insert(t.to_lowercase())).collect()
 }
 
 /// Extract a context window around the first matched keyword.
-fn extract_excerpt(passage: &str, keywords: &[&str], max_len: usize) -> String {
+fn extract_excerpt(passage: &str, keywords: &[String], max_len: usize) -> String {
     if let Some(first_kw) = keywords.first() {
         if let Some(pos) = passage.to_lowercase().find(&first_kw.to_lowercase()) {
             let start = pos.saturating_sub(max_len / 2);
@@ -130,7 +118,6 @@ fn extract_excerpt(passage: &str, keywords: &[&str], max_len: usize) -> String {
             return excerpt.to_string();
         }
     }
-    // Fallback: first N chars
     let end = max_len.min(passage.len());
     passage[..end].to_string()
 }

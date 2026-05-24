@@ -6,7 +6,6 @@
 import { invoke } from "./api";
 import { useStore } from "./store";
 import type { Entry } from "./types";
-import { BUILT_IN_SKILLS } from "./skills";
 
 // ── Types ──
 
@@ -55,23 +54,25 @@ const tools: ToolDef[] = [
   },
   {
     name: "EntrySearch",
-    description: "Search entries by name/type/tag. Returns {id, name, type, path, tags} — usually enough info. Only call EntryRead on results you need full body for.",
+    description: "Search entries by name/type/tag, or full-text search entry files. Pass 'pattern' for full-text grep within entry bodies; pass 'query' + optional 'entry_type' for name/type/tag lookup. Returns {id, name, type, path, tags} for name search, or {path, matches} for full-text.",
     input_schema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Search keyword. Leave empty to list all entries. Use entry name, type label (人物/地点/组织 etc), or tag." },
+        query: { type: "string", description: "Search keyword for name/type/tag lookup. Leave empty to list all entries." },
         entry_type: { type: "string", description: "Optional: filter by entry type slug (character/location/organization/system/artifact/era/concept)" },
+        pattern: { type: "string", description: "Full-text search keyword to grep within entry bodies. When set, returns {path, matches} instead of entry list." },
       },
       required: [],
     },
   },
   {
     name: "EntryWrite",
-    description: "Create or update a setting entry. Pass entry_id to update, omit to create. IMPORTANT: put all generated setting details into the 'body' parameter as markdown — chat text is NOT saved to the file.",
+    description: "Create, update, or delete a setting entry. Pass entry_id + delete:true to delete. Pass entry_id to update (creates if missing). Omit entry_id to create new. IMPORTANT: put all generated setting details into the 'body' parameter as markdown — chat text is NOT saved to the file.",
     input_schema: {
       type: "object",
       properties: {
-        entry_id: { type: "string", description: "Existing entry ID (omit to create new)" },
+        entry_id: { type: "string", description: "Existing entry ID. Omit to create new. Required when deleting." },
+        delete: { type: "boolean", description: "Set to true to DELETE this entry (requires entry_id). Irreversible." },
         name: { type: "string", description: "Entry display name" },
         entry_type: { type: "string", description: "Entry type. Required for new entries." },
         body: { type: "string", description: "Markdown body content" },
@@ -102,31 +103,7 @@ const tools: ToolDef[] = [
       required: ["url"],
     },
   },
-  {
-    name: "GrepEntries",
-    description: "Full-text search in entry files. Returns {path, matches: [\"line#: text\"]}. Line excerpts usually sufficient — only EntryRead results you need full body for.",
-    input_schema: {
-      type: "object",
-      properties: {
-        pattern: { type: "string", description: "Keyword or text to search for in entry files" },
-        max_results: { type: "integer", description: "Max results (default 20)" },
-      },
-      required: ["pattern"],
-    },
-  },
-  {
-    name: "EntryLink",
-    description: "Create a relationship between two entries. Adds bidirectional links to both entries' frontmatter.",
-    input_schema: {
-      type: "object",
-      properties: {
-        from_id: { type: "string", description: "Source entry ID" },
-        to_id: { type: "string", description: "Target entry ID" },
-        relation: { type: "string", description: "关系描述（如 '弟子'、'位于'、'持有'）" },
-      },
-      required: ["from_id", "to_id", "relation"],
-    },
-  },
+  // (EntryLink removed — use RelationAdd for all static relationships)
   {
     name: "SceneAnalyze",
     description: "Analyze a story scene for narrative structure, character motivation, pacing, and foreshadowing. Does not modify any files.",
@@ -151,23 +128,14 @@ const tools: ToolDef[] = [
     },
   },
   {
-    name: "ReadOutline",
-    description: "List all chapters in the story outline. Returns chapter order, title, status (outline/drafting/done), summary, and whether it has body text.",
-    input_schema: {
-      type: "object",
-      properties: {},
-      required: [],
-    },
-  },
-  {
-    name: "ReadChapter",
-    description: "Read the full content (including body text) of a specific chapter by its order number.",
+    name: "OutlineRead",
+    description: "Read the story outline. Pass chapter_order to read a specific chapter's full content; omit to list all chapters with title, status, summary, and word count.",
     input_schema: {
       type: "object",
       properties: {
-        chapter_order: { type: "number", description: "Chapter order number (1, 2, 3...)" },
+        chapter_order: { type: "number", description: "Optional: chapter order number to read full body. Omit to list all chapters." },
       },
-      required: ["chapter_order"],
+      required: [],
     },
   },
   {
@@ -183,6 +151,7 @@ const tools: ToolDef[] = [
         body: { type: "string", description: "The actual chapter text / draft content" },
         time_period: { type: "string", description: "World timeline period, e.g. '355,355' for a single year or '341,349' for a range" },
         involved_entries: { type: "string", description: "Comma-separated entry IDs that appear in this chapter, e.g. '艾琳-暗月,暗月要塞'" },
+        linked_events: { type: "string", description: "Comma-separated 'timeline_id:event_id' pairs for linking chapter to timeline events. Format: 'tl-id:evt-id,tl-id:evt-id2'" },
       },
       required: ["chapter_order", "title"],
     },
@@ -223,13 +192,16 @@ const tools: ToolDef[] = [
     },
   },
   {
-    name: "QueryRelations",
-    description: "Find all entities (entries, outline chapters, timeline events) related to a given entity. Pass entity_type as 'entry'/'outline'/'timeline'. Returns edges with from/to/description. Read-only, no permission needed.",
+    name: "ExploreGraph",
+    description: "Explore the unified relation graph. Pass mode='direct' to find all entities directly related to a given entity (returns edges with from/to/description). Pass mode='traverse' for BFS multi-hop traversal (returns reachable entities with distance and path info). entity_type: 'entry'/'outline'/'timeline'/'event'. Optionally filter by timeline_id to scope to a specific timeline's events. Read-only.",
     input_schema: {
       type: "object",
       properties: {
-        entity_type: { type: "string", description: "Entity type: 'entry' (词条), 'outline' (大纲章节), or 'timeline' (时间线事件)" },
+        entity_type: { type: "string", description: "Entity type: 'entry', 'outline', 'timeline', or 'event'" },
         entity_id: { type: "string", description: "Entity ID (e.g., '艾琳-暗月')" },
+        mode: { type: "string", description: "'direct' = one-hop neighbors; 'traverse' = BFS multi-hop. Default 'direct'." },
+        max_depth: { type: "number", description: "Max traversal depth for mode='traverse' (1 or 2 recommended). Default 2." },
+        timeline_id: { type: "string", description: "Restrict to this timeline's edges. When set, returns cross-timeline edges plus edges scoped to this timeline." },
       },
       required: ["entity_type", "entity_id"],
     },
@@ -265,19 +237,6 @@ const tools: ToolDef[] = [
     },
   },
   {
-    name: "TraverseGraph",
-    description: "BFS traversal from an entity across the unified relation graph. Returns all reachable entities up to max_depth hops away, with distance and relation info. Use this to discover indirect connections (e.g., 'who else is connected to this character through 2 hops').",
-    input_schema: {
-      type: "object",
-      properties: {
-        entity_type: { type: "string", description: "Starting entity type: 'entry', 'outline', 'timeline', 'event'" },
-        entity_id: { type: "string", description: "Starting entity ID" },
-        max_depth: { type: "number", description: "Max traversal depth in hops (1 or 2 recommended)", default: 2 },
-      },
-      required: ["entity_type", "entity_id", "max_depth"],
-    },
-  },
-  {
     name: "ConsistencyCheck",
     description: "Check a passage of text against constraints from relevant entries. Auto-loads constraints via graph traversal from a starting entity, then runs keyword matching. Returns violations with level (hard/soft), rule, passage excerpt, and suggestion. Use when writing/editing content to ensure world consistency.",
     input_schema: {
@@ -294,16 +253,6 @@ const tools: ToolDef[] = [
       ],
     },
   },
-  {
-    name: "UseSkill",
-    description: "Load a workflow guide (skill) for a specific worldbuilding task. Call this when the user asks for guidance on a task that has a matching skill. Returns the full skill prompt with step-by-step instructions. List available skills: call without 'name' argument.",
-    input_schema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Skill name to load (e.g., 'create-character', 'world-audit', 'chapter-outline', 'expand-entry', 'scene-check', 'export-ebook'). Omit to list available skills." },
-      },
-    },
-  },
   // ── Phase 5: Timeline & Event tools ──
   {
     name: "ListTimelines",
@@ -311,14 +260,17 @@ const tools: ToolDef[] = [
     input_schema: { type: "object", properties: {} },
   },
   {
-    name: "CreateTimeline",
-    description: "Create a new timeline (parallel world). The first timeline is auto-marked as default. You must specify the time format at creation time.",
+    name: "TimelineWrite",
+    description: "Create, update, or delete a timeline. Pass timeline_id + delete:true to delete (world must have ≥2 timelines). Pass timeline_id to update an existing timeline. Omit timeline_id to create new. The first timeline in a world is auto-marked as default.",
     input_schema: {
       type: "object",
       properties: {
-        name: { type: "string", description: "Timeline display name" },
+        timeline_id: { type: "string", description: "Existing timeline ID. Omit to create new. Required for update/delete." },
+        delete: { type: "boolean", description: "Set to true to DELETE this timeline and all its events (requires timeline_id). World must have ≥2 timelines." },
+        name: { type: "string", description: "Timeline display name. Required for new timelines." },
         description: { type: "string", description: "Optional description" },
-        time_format_json: { type: "string", description: "Optional JSON TimeFormat. If omitted, uses standard medieval fantasy format." },
+        time_format_json: { type: "string", description: "Optional JSON TimeFormat (only for new timelines). If omitted, uses standard medieval fantasy format." },
+        is_default: { type: "boolean", description: "Set as the default timeline (update only)" },
       },
       required: ["name"],
     },
@@ -338,50 +290,23 @@ const tools: ToolDef[] = [
     },
   },
   {
-    name: "CreateEvent",
-    description: "Create a new event on a timeline. Events bridge entries and outline chapters. After creation, linked entries' timeline_summary caches are automatically updated.",
+    name: "EventWrite",
+    description: "Create, update, or delete an event on a timeline. Pass event_name + delete:true to delete. Pass event_name to update (by readable slug within the timeline). Omit event_name to create new. Events bridge entries and outline chapters.",
     input_schema: {
       type: "object",
       properties: {
-        timeline_id: { type: "string", description: "Timeline ID" },
-        time_point: { type: "string", description: "8-segment time string, e.g. '000-3-000225-05-00-00-00-00' for era 3, year 225, month 5. Zero-padded." },
-        summary: { type: "string", description: "Required: event description" },
+        timeline_id: { type: "string", description: "Timeline ID (required)" },
+        event_name: { type: "string", description: "Readable event slug. Set this when creating. Use it to reference the event for update/delete. e.g. '着陆失败-黎明号'" },
+        delete: { type: "boolean", description: "Set to true to DELETE this event (requires event_name). Irreversible." },
+        time_point: { type: "string", description: "8-segment time string. Required for new events, optional for updates (to move the event). e.g. '000-3-000225-05-00-00-00-00'" },
+        summary: { type: "string", description: "Event description. Required for new events." },
+        name: { type: "string", description: "Set/change the readable event slug (optional). Only needed when creating or renaming." },
         precision: { type: "number", description: "Optional: precision index into time_format.units (0=era, 1=year, 2=month, 3=day, 4=hour, 5=minute, 6=second). Display truncates at this level." },
-        linked_entries: { type: "string", description: "Comma-separated list. Each item: '词条ID|该词条视角的简述'. Different entries separated by comma. Example: '黎明号|着陆失败暴露了暗物质侵蚀的后遗症,赵远航|下令返航,新地球|地表信号脉冲导致失败'" },
+        linked_entries: { type: "string", description: "Comma-separated list. Each item: '词条ID|该词条视角的简述'. Example: '黎明号|着陆失败暴露了暗物质侵蚀的后遗症,赵远航|下令返航'" },
         linked_chapters: { type: "string", description: "Comma-separated: 'story_id:order,story_id:order'" },
         relationship_changes: { type: "string", description: "Newline-separated: 'entry_a|entry_b|add|ally_of|description\\\\nentry_c|entry_d|delete|enemy_of'" },
       },
-      required: ["timeline_id", "time_point", "summary"],
-    },
-  },
-  {
-    name: "UpdateEvent",
-    description: "Update an existing event. All cascade effects (timeline_summary, relation graph, chapter sync) are triggered automatically.",
-    input_schema: {
-      type: "object",
-      properties: {
-        timeline_id: { type: "string", description: "Timeline ID" },
-        event_id: { type: "string", description: "Event ID" },
-        time_point: { type: "string", description: "Updated time_point (optional)" },
-        summary: { type: "string", description: "Updated summary (optional)" },
-        precision: { type: "number", description: "Updated precision index (optional)" },
-        linked_entries: { type: "string", description: "Updated linked_entries (optional)" },
-        linked_chapters: { type: "string", description: "Updated linked_chapters (optional)" },
-        relationship_changes: { type: "string", description: "Updated relationship_changes (optional)" },
-      },
-      required: ["timeline_id", "event_id"],
-    },
-  },
-  {
-    name: "DeleteEvent",
-    description: "Delete an event. All associated relations and caches are cleaned up.",
-    input_schema: {
-      type: "object",
-      properties: {
-        timeline_id: { type: "string", description: "Timeline ID" },
-        event_id: { type: "string", description: "Event ID to delete" },
-      },
-      required: ["timeline_id", "event_id"],
+      required: ["timeline_id"],
     },
   },
 ];
@@ -402,21 +327,52 @@ export function resetPermissions(convId?: string) {
 
 const WRITE_TOOLS = new Set([
   "EntryWrite", "WriteOutline", "MemoryWrite",
+  "EventWrite", "TimelineWrite",
+]);
+
+// Destructive — always require per-use confirmation, never approved for session
+const DANGEROUS_TOOLS = new Set([
   "RelationAdd", "RelationRemove",
-  "CreateEvent", "UpdateEvent", "DeleteEvent",
-  "CreateTimeline", "UpdateTimeline", "DeleteTimeline",
 ]);
 
 async function checkPermission(name: string, input: Record<string, unknown>): Promise<boolean> {
-  if (!WRITE_TOOLS.has(name)) return true;
+  const isWrite = WRITE_TOOLS.has(name) || DANGEROUS_TOOLS.has(name);
+  if (!isWrite) return true;
+
+  // Delete operations within Write tools escalate to dangerous (always confirm per use)
+  const isDelete = input.delete === true;
+  const isDangerous = DANGEROUS_TOOLS.has(name) || isDelete;
+  if (isDangerous) {
+    return new Promise((resolve) => {
+      const labelMap: Record<string, string> = {
+        RelationAdd: `关联: ${input.description || ""}`,
+        RelationRemove: `移除关联: ${input.description || ""}`,
+        EntryWrite: `⚠️ 删除词条: ${input.entry_id || ""}`,
+        EventWrite: `⚠️ 删除事件: ${input.event_name || ""}`,
+        TimelineWrite: `⚠️ 删除时间轴: ${input.timeline_id || ""}`,
+      };
+      const label = isDelete ? (labelMap[name] || `⚠️ 删除: ${input.event_name || input.entry_id || input.timeline_id || ""}`) : (input.description || "");
+      const evt = new CustomEvent("worldforge-permission", {
+        detail: {
+          toolName: name,
+          details: label,
+          isDangerous: true,
+          callback: (choice: "once" | "session" | "deny") => {
+            resolve(choice !== "deny");
+          },
+        },
+      });
+      window.dispatchEvent(evt);
+    });
+  }
+
+  // Normal write tools: session-level approval
   if (writeApproved) return true;
   return new Promise((resolve) => {
     const labelMap: Record<string, string> = {
       WriteOutline: `Ch${input.chapter_order} ${input.title || ""}`,
-      CreateEvent: `事件: ${input.summary || ""}`,
-      UpdateEvent: `更新事件: ${input.event_id || ""}`,
-      DeleteEvent: `删除事件: ${input.event_id || ""}`,
-      CreateTimeline: `时间轴: ${input.name || ""}`,
+      EventWrite: `事件: ${input.event_name || input.summary || ""}`,
+      TimelineWrite: `时间轴: ${input.timeline_id ? "更新 " + input.timeline_id : "创建 " + (input.name || "")}`,
     };
     const detail = labelMap[name] || `${input.name || input.entry_id || ""}`;
     const evt = new CustomEvent("worldforge-permission", {
@@ -434,6 +390,69 @@ async function checkPermission(name: string, input: Record<string, unknown>): Pr
 }
 
 // ── Tool executor ──
+
+// ── Consistency check helper ──
+// Runs two-stage semantic check before writes. Hard violations block the write.
+async function runConsistencyCheck(
+  worldPath: string,
+  passage: string,
+  entityType: string,
+  entityId: string | null,
+  timelineId?: string | null,
+): Promise<{ hard: string[]; soft: string[] } | null> {
+  if (!entityId) return null; // New entities — no graph context yet
+  if (!passage || passage.trim().length < 10) return null; // Too short to check
+
+  // Collect related entry IDs via graph traversal
+  let targetIds: string[];
+  try {
+    const related = await invoke<any[]>("traverse_graph", {
+      worldPath, entityType, entityId, maxDepth: 1,
+    });
+    const seen = new Set<string>([entityId]);
+    for (const r of related) {
+      if (r.entity.type === "entry") seen.add(r.entity.id);
+    }
+    targetIds = Array.from(seen);
+  } catch {
+    return null; // Graph traversal failed — skip check
+  }
+
+  // Load constraints
+  const constraints: { rule: string; severity: string; timeline_id?: string }[] = [];
+  for (const id of targetIds) {
+    try {
+      const entry = await invoke<Entry>("read_entry", { worldPath, entryId: id });
+      if (entry.constraints?.length > 0) constraints.push(...entry.constraints);
+    } catch { /* skip */ }
+  }
+  if (constraints.length === 0) return null;
+
+  // Run two-stage check
+  let violations: any[];
+  try {
+    violations = await invoke<any[]>("check_consistency_semantic", {
+      passage, constraints, timelineId: timelineId || null,
+    });
+  } catch {
+    return null;
+  }
+
+  const hard: string[] = [];
+  const soft: string[] = [];
+  for (const v of violations) {
+    const msg = `[${v.level === "hard" ? "硬约束" : "软约束"}] ${v.rule}\n    判定理由: ${v.reason}`;
+    if (v.level === "hard") hard.push(msg);
+    else soft.push(msg);
+  }
+
+  if (hard.length > 0 || soft.length > 0) {
+    window.dispatchEvent(new CustomEvent("worldforge-consistency", {
+      detail: { violations, passage },
+    }));
+  }
+  return { hard, soft };
+}
 
 async function executeTool(
   name: string,
@@ -454,11 +473,22 @@ async function executeTool(
       return JSON.stringify(entry, null, 2);
     }
     case "EntrySearch": {
+      const pattern = input.pattern as string | undefined;
+      // Full-text grep mode
+      if (pattern) {
+        const results = await invoke<{ path: string; matches: string[] }[]>("grep_entries", {
+          worldPath,
+          pattern,
+          maxResults: (input.max_results as number) || 20,
+        });
+        return JSON.stringify(results, null, 2);
+      }
+      // Name/type/tag search mode
       const entries = await invoke<Entry[]>("list_entries", { worldPath });
       const q = ((input.query as string) || "").toLowerCase().trim();
       const type = input.entry_type as string | undefined;
 
-      const MAX = 200; // PHASE6: 替换为四层压缩 Tier 0/1 轻量返回，消除此上限
+      const MAX = 200;
       if (!q) {
         if (entries.length > MAX) {
           return `共 ${entries.length} 条，超显示上限。前 ${MAX} 条:\n${JSON.stringify(entries.slice(0, MAX))}\n请用 query 或 entry_type 缩小范围。`;
@@ -483,14 +513,34 @@ async function executeTool(
       return JSON.stringify(filtered);
     }
     case "EntryWrite": {
+      const eBody = (input.body as string) || "";
+      const eId = input.entry_id as string | undefined;
+      // Delete path
+      if (input.delete === true) {
+        if (!eId) return "❌ 删除词条需要指定 entry_id。";
+        await invoke("delete_entry", { worldPath, entryId: eId });
+        return `词条 "${eId}" 已删除。`;
+      }
+      // Consistency check before write (only for updates — new entries have no graph context)
+      let ccResult: { hard: string[]; soft: string[] } | null = null;
+      if (eId) {
+        ccResult = await runConsistencyCheck(worldPath, eBody, "entry", eId);
+        if (ccResult && ccResult.hard.length > 0) {
+          return `❌ 硬约束违反，写入已被阻止:\n\n${ccResult.hard.join("\n\n")}\n\n请修改内容后重试。`;
+        }
+      }
       if (input.entry_id) {
         await invoke("update_entry", {
           worldPath,
           entryId: input.entry_id as string,
           name: input.name as string,
-          body: (input.body as string) || "",
+          body: eBody,
         });
-        return `词条 "${input.name}" 更新成功。`;
+        let msg = `词条 "${input.name}" 更新成功。`;
+        if (ccResult && ccResult.soft.length > 0) {
+          msg += `\n\n⚠️ 软约束提醒:\n${ccResult.soft.join("\n")}`;
+        }
+        return msg;
       } else {
         const entryType = (input.entry_type as string) || "concept";
         await invoke("create_entry", {
@@ -511,23 +561,12 @@ async function executeTool(
       );
       return results.map((r) => `- ${r.title}\n  ${r.snippet}\n  ${r.url}`).join("\n\n");
     }
-    case "GrepEntries": {
-      const results = await invoke<{ path: string; matches: string[] }[]>("grep_entries", {
-        worldPath,
-        pattern: input.pattern as string,
-        maxResults: (input.max_results as number) || 20,
-      });
-      return JSON.stringify(results, null, 2);
-    }
-    case "EntryLink": {
-      return await invoke<string>("link_entries", {
-        worldPath,
-        fromId: input.from_id as string,
-        toId: input.to_id as string,
-        relation: input.relation as string,
-      });
-    }
     case "SceneAnalyze": {
+      const params: Record<string, unknown> = {
+        worldPath,
+        sceneText: input.scene_text as string,
+      };
+      if (input.aspect) params.aspect = input.aspect;
       const analysis = await invoke<{
         word_count: number;
         paragraph_count: number;
@@ -535,10 +574,7 @@ async function executeTool(
         dialogue_ratio: number;
         referenced_entries: string[];
         structure_hints: string[];
-      }>("scene_analyze", {
-        worldPath,
-        sceneText: input.scene_text as string,
-      });
+      }>("scene_analyze", params);
       const lines = [
         `字数: ${analysis.word_count} | 段落: ${analysis.paragraph_count} | 预计阅读: ${analysis.estimated_reading_minutes} 分钟`,
         `对话比例: ${Math.round(analysis.dialogue_ratio * 100)}%`,
@@ -551,7 +587,13 @@ async function executeTool(
       }
       return lines.join("\n");
     }
-    case "ReadOutline": {
+    case "OutlineRead": {
+      const order = input.chapter_order as number | undefined;
+      // Read specific chapter
+      if (order != null) {
+        return await invoke<string>("read_chapter", { worldPath, storyId, chapterOrder: order });
+      }
+      // List all chapters
       const chapters = await invoke<Array<{
         order: number; title: string; status: string; summary: string; has_body: boolean; word_count: number;
       }>>("read_outline", { worldPath, storyId });
@@ -562,11 +604,16 @@ async function executeTool(
         return `${statusLabel} Ch${c.order} ${c.title} [${info}]${c.summary ? ` — ${c.summary}` : ""}`;
       }).join("\n");
     }
-    case "ReadChapter": {
-      const order = input.chapter_order as number;
-      return await invoke<string>("read_chapter", { worldPath, storyId, chapterOrder: order });
-    }
     case "WriteOutline": {
+      const chBody = (input.body as string) || "";
+      // Consistency check before write: traverse from story via outline entity type
+      let ccResult: { hard: string[]; soft: string[] } | null = null;
+      if (chBody.trim().length >= 10) {
+        ccResult = await runConsistencyCheck(worldPath, chBody, "outline", storyId);
+        if (ccResult && ccResult.hard.length > 0) {
+          return `❌ 硬约束违反，写入已被阻止:\n\n${ccResult.hard.join("\n\n")}\n\n请修改内容后重试。`;
+        }
+      }
       const params: Record<string, unknown> = {
         worldPath, storyId,
         chapterOrder: input.chapter_order as number,
@@ -579,7 +626,11 @@ async function executeTool(
       if (input.involved_entries !== undefined) params.involvedEntries = input.involved_entries as string;
       if (input.linked_events !== undefined) params.linkedEvents = input.linked_events as string;
       await invoke("write_outline", params);
-      return `Ch${input.chapter_order} 已更新。`;
+      let msg = `Ch${input.chapter_order} 已更新。`;
+      if (ccResult && ccResult.soft.length > 0) {
+        msg += `\n\n⚠️ 软约束提醒:\n${ccResult.soft.join("\n")}`;
+      }
+      return msg;
     }
     case "ListFiles": {
       const files = await invoke<string[]>("list_files", { worldPath, subdir: input.subdir as string || "" });
@@ -606,16 +657,35 @@ async function executeTool(
       });
       return "记忆已保存到 world/memory/ 目录。";
     }
-    case "QueryRelations": {
+    case "ExploreGraph": {
+      const mode = (input.mode as string) || "direct";
+      if (mode === "traverse") {
+        const results = await invoke<any[]>("traverse_graph", {
+          worldPath,
+          entityType: input.entity_type as string,
+          entityId: input.entity_id as string,
+          maxDepth: (input.max_depth as number) || 2,
+          timelineId: input.timeline_id,
+        });
+        if (results.length === 0) return "该实体没有可达节点。";
+        return results.map((r) => {
+          const en = r.entity.name || r.entity.id.slice(0, 8);
+          const vn = r.via_entity.name || r.via_entity.id.slice(0, 8);
+          return `[${r.entity.type}]${en} (距离: ${r.distance}, 经由: [${r.via_entity.type}]${vn} --${r.via_description}--)`;
+        }).join("\n");
+      }
       const edges = await invoke<any[]>("query_relations", {
         worldPath,
         entityType: input.entity_type as string,
         entityId: input.entity_id as string,
+        timelineId: input.timeline_id,
       });
       if (edges.length === 0) return "该实体没有关联。";
-      return edges.map((e) =>
-        `[${e.from.type}]${e.from.id} --[${e.description}]--> [${e.to.type}]${e.to.id}`
-      ).join("\n");
+      return edges.map((e) => {
+        const fn = e.from.name || e.from.id.slice(0, 8);
+        const tn = e.to.name || e.to.id.slice(0, 8);
+        return `[${e.from.type}]${fn} --[${e.description}]--> [${e.to.type}]${tn}`;
+      }).join("\n");
     }
     case "RelationAdd": {
       const graph = await invoke<any>("add_relation", {
@@ -639,20 +709,9 @@ async function executeTool(
       });
       return `关系已移除: [${input.from_type}]${input.from_id} --[${input.description}]--> [${input.to_type}]${input.to_id}`;
     }
-    case "TraverseGraph": {
-      const results = await invoke<any[]>("traverse_graph", {
-        worldPath,
-        entityType: input.entity_type as string,
-        entityId: input.entity_id as string,
-        maxDepth: input.max_depth as number,
-      });
-      if (results.length === 0) return "该实体没有关联节点。";
-      return results.map((r) =>
-        `[${r.entity.type}]${r.entity.id} (距离: ${r.distance}, 经由: [${r.via_entity.type}]${r.via_entity.id} --${r.via_description}--)`
-      ).join("\n");
-    }
     case "ConsistencyCheck": {
       const passage = input.passage as string;
+      const timelineId = input.timeline_id as string | undefined;
       // Collect constraint sources — either from graph traversal or direct IDs
       let targetIds: string[];
       if (input.entity_ids && Array.isArray(input.entity_ids)) {
@@ -672,7 +731,7 @@ async function executeTool(
         targetIds = Array.from(seen);
       }
       // Load constraints from each target entry
-      const allConstraints: { rule: string; severity: string }[] = [];
+      const allConstraints: { rule: string; severity: string; timeline_id?: string }[] = [];
       for (const id of targetIds) {
         try {
           const entry = await invoke<Entry>("read_entry", { worldPath, entryId: id });
@@ -686,10 +745,11 @@ async function executeTool(
       if (allConstraints.length === 0) {
         return "未找到任何约束。请先在词条中定义约束（constraints），或指定有约束的词条。";
       }
-      // Run consistency check
-      const violations = await invoke<any[]>("check_consistency", {
+      // Two-stage semantic consistency check (Rust coarse filter → independent LLM)
+      const violations = await invoke<any[]>("check_consistency_semantic", {
         passage,
         constraints: allConstraints,
+        timelineId: timelineId || null,
       });
       // Dispatch event for frontend UI
       if (violations.length > 0) {
@@ -698,34 +758,45 @@ async function executeTool(
         }));
       }
       if (violations.length === 0) {
-        return `已检查 ${allConstraints.length} 条约束，未发现潜在冲突。`;
+        return `已检查 ${allConstraints.length} 条约束，未发现违反。`;
       }
       const lines = violations.map((v, i) =>
-        `[${i + 1}] [${v.level === "hard" ? "硬约束" : "软约束"}] ${v.rule}\n    涉及段落: ${v.passage}\n    建议: ${v.suggestion}`
+        `[${i + 1}] [${v.level === "hard" ? "硬约束" : "软约束"}] ${v.rule}\n    判定理由: ${v.reason}`
       );
-      return `发现 ${violations.length} 处潜在冲突:\n\n${lines.join("\n\n")}`;
-    }
-    case "UseSkill": {
-      if (!input.name) {
-        return "可用技能:\n" + BUILT_IN_SKILLS.map((s) => `  /${s.name}: ${s.description}`).join("\n");
-      }
-      const skill = BUILT_IN_SKILLS.find((s) => s.name === input.name);
-      if (!skill) {
-        return `未找到技能 '${input.name}'。可用技能: ${BUILT_IN_SKILLS.map((s) => s.name).join(", ")}`;
-      }
-      return `## Skill: ${skill.name}\n\n${skill.description}\n\n${skill.prompt}`;
+      return `发现 ${violations.length} 处违反:\n\n${lines.join("\n\n")}`;
     }
     // ── Phase 5: Timeline & Event tools ──
     case "ListTimelines": {
       const timelines = await invoke<any[]>("list_timelines", { worldPath });
       return JSON.stringify(timelines, null, 2);
     }
-    case "CreateTimeline": {
-      const params: Record<string, unknown> = { worldPath, name: input.name as string };
-      if (input.description) params.description = input.description;
-      if (input.time_format_json) params.timeFormatJson = input.time_format_json;
-      const timeline = await invoke<any>("create_timeline", params);
-      return `时间轴已创建: ${JSON.stringify(timeline, null, 2)}`;
+    case "TimelineWrite": {
+      const tlId = input.timeline_id as string | undefined;
+      // Delete path
+      if (input.delete === true) {
+        if (!tlId) return "❌ 删除时间轴需要指定 timeline_id。";
+        await invoke("delete_timeline", { worldPath, timelineId: tlId });
+        return `时间轴 "${tlId}" 已删除。`;
+      }
+      if (tlId) {
+        // Update existing timeline
+        const params: Record<string, unknown> = {
+          worldPath,
+          timelineId: tlId,
+        };
+        if (input.name) params.name = input.name;
+        if (input.description) params.description = input.description;
+        if (input.is_default !== undefined) params.isDefault = input.is_default;
+        const timeline = await invoke<any>("update_timeline", params);
+        return `时间轴已更新: ${JSON.stringify(timeline, null, 2)}`;
+      } else {
+        // Create new timeline
+        const params: Record<string, unknown> = { worldPath, name: input.name as string };
+        if (input.description) params.description = input.description;
+        if (input.time_format_json) params.timeFormatJson = input.time_format_json;
+        const timeline = await invoke<any>("create_timeline", params);
+        return `时间轴已创建: ${JSON.stringify(timeline, null, 2)}`;
+      }
     }
     case "ListEvents": {
       const params: Record<string, unknown> = {
@@ -738,42 +809,71 @@ async function executeTool(
       const events = await invoke<any[]>("list_events", params);
       return JSON.stringify(events, null, 2);
     }
-    case "CreateEvent": {
-      const params: Record<string, unknown> = {
-        worldPath,
-        timelineId: input.timeline_id as string,
-        timePoint: input.time_point as string,
-        summary: input.summary as string,
-      };
-      if (input.precision != null) params.precision = input.precision as number;
-      if (input.linked_entries) params.linkedEntries = input.linked_entries;
-      if (input.linked_chapters) params.linkedChapters = input.linked_chapters;
-      if (input.relationship_changes) params.relationshipChanges = input.relationship_changes;
-      const event = await invoke<any>("create_event", params);
-      return `事件已创建: ${JSON.stringify(event, null, 2)}`;
-    }
-    case "UpdateEvent": {
-      const params: Record<string, unknown> = {
-        worldPath,
-        timelineId: input.timeline_id as string,
-        eventId: input.event_id as string,
-      };
-      if (input.time_point) params.timePoint = input.time_point;
-      if (input.summary) params.summary = input.summary;
-      if (input.precision != null) params.precision = input.precision as number;
-      if (input.linked_entries) params.linkedEntries = input.linked_entries;
-      if (input.linked_chapters) params.linkedChapters = input.linked_chapters;
-      if (input.relationship_changes) params.relationshipChanges = input.relationship_changes;
-      const event = await invoke<any>("update_event", params);
-      return `事件已更新: ${JSON.stringify(event, null, 2)}`;
-    }
-    case "DeleteEvent": {
-      await invoke("delete_event", {
-        worldPath,
-        timelineId: input.timeline_id as string,
-        eventId: input.event_id as string,
-      });
-      return "事件已删除。";
+    case "EventWrite": {
+      const evTlId = input.timeline_id as string;
+      const evName = input.event_name as string | undefined;
+      const evSummary = (input.summary as string) || "";
+      const hasName = !!evName;
+      // Delete path
+      if (input.delete === true) {
+        if (!evName) return "❌ 删除事件需要指定 event_name。";
+        await invoke("delete_event", {
+          worldPath,
+          timelineId: evTlId,
+          eventName: evName,
+        });
+        return `事件 "${evName}" 已删除。`;
+      }
+      // Consistency check
+      let ccResult: { hard: string[]; soft: string[] } | null = null;
+      if (evSummary.trim().length >= 10) {
+        const ccEntityType = hasName ? "event" : "timeline";
+        const ccEntityId = hasName ? evName : evTlId;
+        ccResult = await runConsistencyCheck(worldPath, evSummary, ccEntityType, ccEntityId, evTlId);
+        if (ccResult && ccResult.hard.length > 0) {
+          return `❌ 硬约束违反，写入已被阻止:\n\n${ccResult.hard.join("\n\n")}\n\n请修改内容后重试。`;
+        }
+      }
+      if (evName) {
+        // Update existing event
+        const params: Record<string, unknown> = {
+          worldPath,
+          timelineId: evTlId,
+          eventName: evName,
+        };
+        if (input.time_point) params.timePoint = input.time_point;
+        if (input.summary) params.summary = input.summary;
+        if (input.name) params.nameUpdate = input.name;
+        if (input.precision != null) params.precision = input.precision as number;
+        if (input.linked_entries) params.linkedEntries = input.linked_entries;
+        if (input.linked_chapters) params.linkedChapters = input.linked_chapters;
+        if (input.relationship_changes) params.relationshipChanges = input.relationship_changes;
+        const event = await invoke<any>("update_event", params);
+        let msg = `事件已更新: ${JSON.stringify(event, null, 2)}`;
+        if (ccResult && ccResult.soft.length > 0) {
+          msg += `\n\n⚠️ 软约束提醒:\n${ccResult.soft.join("\n")}`;
+        }
+        return msg;
+      } else {
+        // Create new event
+        const params: Record<string, unknown> = {
+          worldPath,
+          timelineId: evTlId,
+          timePoint: input.time_point as string,
+          summary: evSummary,
+        };
+        if (input.name) params.name = input.name;
+        if (input.precision != null) params.precision = input.precision as number;
+        if (input.linked_entries) params.linkedEntries = input.linked_entries;
+        if (input.linked_chapters) params.linkedChapters = input.linked_chapters;
+        if (input.relationship_changes) params.relationshipChanges = input.relationship_changes;
+        const event = await invoke<any>("create_event", params);
+        let msg = `事件已创建: ${JSON.stringify(event, null, 2)}`;
+        if (ccResult && ccResult.soft.length > 0) {
+          msg += `\n\n⚠️ 软约束提醒:\n${ccResult.soft.join("\n")}`;
+        }
+        return msg;
+      }
     }
     default:
       return `未知工具: ${name}`;
@@ -804,7 +904,7 @@ export async function runAgentLoop(
   const maxTokensByProvider: Record<string, number> = {
     anthropic: 64000,
     openai: 16384,
-    deepseek: 8192,
+    deepseek: 16384,
   };
   const maxTokens = maxTokensByProvider[provider] || 64000;
 
@@ -866,22 +966,24 @@ export async function runAgentLoop(
 
       // ── Step 2: Send API request (listener is guaranteed ready) ──
 
-      // Claude Code sends ALL tools on EVERY request — no keyword filtering.
-      // Tool behavior is constrained by the system prompt, not by hiding tools.
-      await invoke("stream_chat", {
-        messages,
-        systemPrompt: systemPrompt,
-        model,
-        tools,
-        provider,
-        maxTokens,
-      });
+      try {
+        // Claude Code sends ALL tools on EVERY request — no keyword filtering.
+        // Tool behavior is constrained by the system prompt, not by hiding tools.
+        await invoke("stream_chat", {
+          messages,
+          systemPrompt: systemPrompt,
+          model,
+          tools,
+          provider,
+          maxTokens,
+        });
 
-      // Wait for stream to complete
-      try { await streamPromise; } catch {}
-
-      // Clean up listener
-      unlisten();
+        // Wait for stream to complete
+        try { await streamPromise; } catch {}
+      } finally {
+        // Always clean up listener — prevents double-event bugs on interruption
+        unlisten();
+      }
 
       fullText += turnText;
 
@@ -951,14 +1053,18 @@ interface StreamEventPayload {
 async function setupStreamListener(
   handler: (event: StreamEventPayload) => void,
 ): Promise<() => void> {
+  // Auto-cleanup previous listener to prevent double-event bugs on re-entry
+  if (_activeUnlisten) { _activeUnlisten(); _activeUnlisten = null; }
   try {
     const { listen } = await import("@tauri-apps/api/event");
     const unlisten = await listen<any>("stream-event", (event) => {
       handler(event.payload);
     });
-    return () => unlisten();
+    _activeUnlisten = () => { unlisten(); _activeUnlisten = null; };
+    return _activeUnlisten;
   } catch (e) {
     handler({ type: "error", message: `事件系统不可用: ${e}` });
     return () => {};
   }
 }
+let _activeUnlisten: (() => void) | null = null;

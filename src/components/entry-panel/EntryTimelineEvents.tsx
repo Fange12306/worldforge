@@ -5,11 +5,12 @@
  */
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@/lib/api";
+import { ChevronDown, ChevronRight } from "lucide-react";
 
 const a = (x: any) => x || [];
 
-interface Props { worldPath: string; entryId: string; onNavigateToTimeline?: (eventId: string) => void; }
-interface SimpleEvent { id: string; time_point: string; precision?: number; summary: string;
+interface Props { worldPath: string; entryId: string; onNavigateToTimeline?: (eventId: string, timelineId: string) => void; initialActiveTlId?: string; }
+interface SimpleEvent { id: string; timeline_id: string; time_point: string; precision?: number; summary: string;
   linked_entries: { entry_id: string; perspective_summary?: string }[];
   relationship_changes: { entry_a: string; entry_b: string; change_type: string; relation: string }[];
 }
@@ -26,7 +27,16 @@ function leafLabel(tp: string, u: TU[], precision?: number | null): string {
   let r = "";
   if (mi >= 0 && mi <= maxIdx) { const v = s[mi + 1] || 0; r += `${v}${u[mi].name}`; }
   if (di >= 0 && di <= maxIdx) { const v = s[di + 1] || 0; r += `${v}${u[di].name}`; }
-  if (!r) return tp;
+  if (!r) {
+    const yi = u.findIndex(x => x.key === "year");
+    const startI = yi >= 0 ? yi + 1 : 0;
+    const p: string[] = [];
+    for (let i = startI; i < u.length && i <= maxIdx; i++) {
+      const v = s[i + 1] || 0;
+      if (v > 0) p.push(`${v}${u[i].name}`);
+    }
+    return p.length > 0 ? p.join("") : (yi >= 0 ? `${s[yi+1]||0}${u[yi].name}` : tp);
+  }
   const startIdx = Math.max(di, mi) + 1;
   const tparts: string[] = [];
   for (let i = startIdx; i < u.length && i <= maxIdx; i++) tparts.push(String(s[i + 1] || 0).padStart(u[i].digits, "0"));
@@ -67,35 +77,72 @@ function buildTree(events: SimpleEvent[], u: TU[]): { key: string; depth: number
 }
 
 // ── Component ──
-export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline }: Props) {
-  const [events, setEvents] = useState<SimpleEvent[] | null>(null);
+export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, initialActiveTlId }: Props) {
+  const [allTls, setAllTls] = useState<any[]>([]);
+  const [activeTlId, setActiveTlId] = useState("");
+  const [allEvents, setAllEvents] = useState<SimpleEvent[]>([]);
   const [units, setUnits] = useState<TU[]>([]);
   const [open, setOpen] = useState(true);
   const [err, setErr] = useState("");
   const [openEras, setOpenEras] = useState<Set<string>>(new Set());
   const [openYears, setOpenYears] = useState<Set<string>>(new Set());
+  const [entryNames, setEntryNames] = useState<Map<string, string>>(new Map());
+
+  // 加载词条名称映射
+  useEffect(() => {
+    if (!worldPath) return;
+    invoke<any[]>("list_entries", { worldPath })
+      .then((entries) => {
+        const map = new Map<string, string>();
+        if (Array.isArray(entries)) {
+          for (const e of entries) map.set(e.id, e.name);
+        }
+        setEntryNames(map);
+      })
+      .catch(() => {});
+  }, [worldPath]);
 
   useEffect(() => {
     let ok = true;
     (async () => {
       try {
         const tls: any[] = await invoke("list_timelines", { worldPath }) || [];
-        if (tls.length > 0) {
-          const fmt = tls[0].time_format || tls[tls.length - 1]?.time_format;
-          if (fmt) setUnits(fmt.units || []);
+        if (ok) {
+          setAllTls(tls);
+          const defaultTl = tls.find((t:any) => t.is_default) || tls[0];
+          if (defaultTl) {
+            const preferId = initialActiveTlId && tls.find((t: any) => t.id === initialActiveTlId) ? initialActiveTlId : defaultTl.id;
+            setActiveTlId(preferId);
+            const preferTl = tls.find((t: any) => t.id === preferId);
+            const fmt = preferTl?.time_format || defaultTl.time_format;
+            if (fmt) setUnits(fmt.units || []);
+          }
         }
         const all: SimpleEvent[] = [];
         for (const tl of tls) {
           try { const evts = await invoke("list_events", { worldPath, timelineId: tl.id, entryId }) || []; if (ok) all.push(...(evts as SimpleEvent[])); } catch (_) {}
         }
-        if (ok) { setEvents(all.sort((a, b) => (a.time_point || "").localeCompare(b.time_point || ""))); }
+        if (ok) { setAllEvents(all.sort((a, b) => (a.time_point || "").localeCompare(b.time_point || ""))); }
       } catch (e) { if (ok) setErr(String(e)); }
     })();
     return () => { ok = false; };
   }, [worldPath, entryId]);
 
+  // Switch time format when active timeline changes
+  useEffect(() => {
+    const tl = allTls.find((t: any) => t.id === activeTlId);
+    if (tl?.time_format) setUnits(tl.time_format.units || []);
+  }, [activeTlId, allTls]);
+
+  const events = useMemo(() =>
+    allEvents.filter(e => e.timeline_id === activeTlId),
+    [allEvents, activeTlId]
+  );
+
   const tree = useMemo(() => (units.length > 0 && events) ? buildTree(events, units) : [], [events, units]);
 
+  const [expandTick, setExpandTick] = useState(0);
+  useEffect(() => { setExpandTick(t => t + 1); }, [activeTlId]);
   useEffect(() => {
     if (tree.length > 0) {
       const eras = new Set<string>();
@@ -107,9 +154,10 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline }
       setOpenEras(eras);
       setOpenYears(years);
     }
-  }, [tree.length]);
+  }, [tree, expandTick]);
 
-  if (err || !events || events.length === 0) return null;
+  if (err) return null;
+  if (!events || allEvents.length === 0) return null;
 
   const toggleEra = (k: string) => setOpenEras(p => { const n = new Set(p); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   const toggleYear = (k: string) => setOpenYears(p => { const n = new Set(p); if (n.has(k)) n.delete(k); else n.add(k); return n; });
@@ -117,18 +165,28 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline }
   return (
     <div className="mt-3 pt-3 border-t border-surface-700/50">
       <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 px-1 py-1 w-full text-left">
-        <span className="text-[10px] text-ink-muted/50 w-3">{open ? "▾" : "▸"}</span>
+        {open ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
         <span className="text-[10px] text-ink-muted/50">🕐</span>
         <span className="text-[11px] text-ink-muted font-medium">时间线事件</span>
         <span className="text-[10px] text-ink-muted/50">{events.length} 个</span>
+        {allTls.length > 1 && (
+          <select className="text-[10px] bg-surface-800 border border-surface-700 rounded px-1.5 py-0.5 ml-auto"
+            value={activeTlId} onChange={e => setActiveTlId(e.target.value)}
+            onClick={e => e.stopPropagation()}>
+            {allTls.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        )}
       </button>
-      {open && (
+      {open && events.length === 0 && (
+        <div className="ml-1 pl-5 py-1 text-[10px] text-ink-muted/50 italic">该词条在此时间轴上没有事件</div>
+      )}
+      {open && events.length > 0 && (
         <div className="mt-1 ml-1">
           {tree.map(era => {
             const eraOpen = openEras.has(era.key);
             return (<div key={era.key}>
               <button onClick={() => toggleEra(era.key)} className="flex items-center gap-1.5 w-full text-left py-0.5 hover:bg-surface-800/20">
-                <span className="text-[10px] text-ink-muted/50 w-3">{eraOpen ? "▾" : "▸"}</span>
+                {eraOpen ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
                 <span className="text-[11px] font-medium text-ink-muted">{era.label}</span>
                 <span className="text-[10px] text-ink-muted/30">({era.children.reduce((s: number, y: any) => s + (y.children?.length || 0), 0)} 事件)</span>
               </button>
@@ -137,7 +195,7 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline }
                   const yOpen = openYears.has(year.key);
                   return (<div key={year.key}>
                     <button onClick={() => toggleYear(year.key)} className="flex items-center gap-1.5 w-full text-left py-0.5 hover:bg-surface-800/20">
-                      <span className="text-[10px] text-ink-muted/50 w-3">{yOpen ? "▾" : "▸"}</span>
+                      {yOpen ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
                       <span className="text-[11px] text-ink-muted/70">{year.label}</span>
                       <span className="text-[10px] text-ink-muted/30">({year.children?.length || 0}事件)</span>
                     </button>
@@ -153,7 +211,7 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline }
                               const le = a(ev.linked_entries).find((l: any) => l.entry_id === entryId);
                               return (
                                 <div key={ev.id} className="mt-1 ml-2 pl-2 border-l border-surface-700/30">
-                                  <button onClick={() => onNavigateToTimeline?.(ev.id)}
+                                  <button onClick={() => onNavigateToTimeline?.(ev.id, ev.timeline_id)}
                                     className="text-[11px] text-left text-amber-500 hover:text-amber-400 transition-colors cursor-pointer leading-snug">
                                     {le?.perspective_summary || ev.summary || ""}
                                   </button>
@@ -161,7 +219,7 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline }
                                     {rcs.map((r: any, j: number) => (
                                       <span key={j} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] rounded-full ${
                                         r.change_type === "add" ? "bg-emerald-500/10 text-emerald-500" : r.change_type === "delete" ? "bg-red-500/10 text-red-500 line-through" : "bg-amber-500/10 text-amber-500"}`}>
-                                        {r.change_type === "add" ? "+" : r.change_type === "delete" ? "−" : "~"} {r.entry_a === entryId ? r.entry_b : r.entry_a}: {r.relation}
+                                        {r.change_type === "add" ? "+" : r.change_type === "delete" ? "−" : "~"} {entryNames.get(r.entry_a === entryId ? r.entry_b : r.entry_a) || (r.entry_a === entryId ? r.entry_b : r.entry_a).slice(0, 8)}: {r.relation}
                                       </span>
                                     ))}</div>)}
                                 </div>

@@ -103,7 +103,7 @@ const tools: ToolDef[] = [
       required: ["url"],
     },
   },
-  // (EntryLink removed — use RelationAdd for all static relationships)
+  // (EntryLink removed — use Relation for all static relationships)
   {
     name: "SceneAnalyze",
     description: "Analyze a story scene for narrative structure, character motivation, pacing, and foreshadowing. Does not modify any files.",
@@ -114,17 +114,6 @@ const tools: ToolDef[] = [
         aspect: { type: "string", description: "What to analyze: 'structure', 'characters', 'pacing', 'foreshadowing', or 'all'" },
       },
       required: ["scene_text"],
-    },
-  },
-  {
-    name: "ListFiles",
-    description: "List files in the world directory (excludes entries/). Use BEFORE FileRead to see what files exist.",
-    input_schema: {
-      type: "object",
-      properties: {
-        subdir: { type: "string", description: "Optional subdirectory to list (e.g., 'drafts', 'outline')" },
-      },
-      required: [],
     },
   },
   {
@@ -158,37 +147,27 @@ const tools: ToolDef[] = [
   },
   {
     name: "FileRead",
-    description: "Read a file from the world directory.",
+    description: "List directory or read a file from the world directory. Omit 'path' to list root directory. Pass a directory path (ending with /) to list that subdirectory. Pass a file path to read its contents.",
     input_schema: {
       type: "object",
       properties: {
-        path: { type: "string", description: "File path relative to the world directory (e.g., 'outline.md', 'drafts/chapter1.md')" },
+        path: { type: "string", description: "File or directory path relative to world directory. Omit to list root. End with / for dir listing. Otherwise reads file content." },
       },
-      required: ["path"],
+      required: [],
     },
   },
   {
-    name: "MemoryRead",
-    description: "Read a world memory file. Memories store writing decisions, user feedback, and world-building notes that persist across sessions.",
+    name: "Memory",
+    description: "Read, write, or delete a world memory file. Omit 'content' to read; pass 'content' to create or update; pass delete:true to delete. Memories persist across sessions. REQUIRES PERMISSION for write/delete.",
     input_schema: {
       type: "object",
       properties: {
-        file_name: { type: "string", description: "Memory file name (e.g., '弃用设定.md', or from list_memories)" },
+        file_name: { type: "string", description: "Memory file name (kebab-case Chinese, e.g., '暗月教设定决策'). Include .md extension." },
+        content: { type: "string", description: "Full markdown content. Omit to read the file. Pass to create/update." },
+        description: { type: "string", description: "One-line summary for the MEMORY.md index. Only needed when writing new files." },
+        delete: { type: "boolean", description: "Set to true to DELETE this memory file. Irreversible. REQUIRES PERMISSION." },
       },
       required: ["file_name"],
-    },
-  },
-  {
-    name: "MemoryWrite",
-    description: "Write (create or update) a world memory file. Use when the user explicitly approves a setting change, gives feedback you should remember, or when you make a world-building decision that future sessions need to know. REQUIRES PERMISSION.",
-    input_schema: {
-      type: "object",
-      properties: {
-        file_name: { type: "string", description: "Memory file name (kebab-case Chinese, e.g., '暗月教设定决策', '精灵武器约束'). Include .md extension." },
-        content: { type: "string", description: "Full markdown content of the memory." },
-        description: { type: "string", description: "One-line summary for the MEMORY.md index." },
-      },
-      required: ["file_name", "content", "description"],
     },
   },
   {
@@ -207,8 +186,8 @@ const tools: ToolDef[] = [
     },
   },
   {
-    name: "RelationAdd",
-    description: "Create a relation between two entities. Both can be any type (entry/outline/timeline). REQUIRES PERMISSION. Prefer calling multiple times for 1:N relations rather than one-to-many.",
+    name: "Relation",
+    description: "Create or remove a relation between two entities. Pass delete:true to remove. Both entities can be any type (entry/outline/timeline). REQUIRES PERMISSION.",
     input_schema: {
       type: "object",
       properties: {
@@ -217,21 +196,7 @@ const tools: ToolDef[] = [
         to_type: { type: "string", description: "Target entity type" },
         to_id: { type: "string", description: "Target entity ID" },
         description: { type: "string", description: "关系描述（如 '弟子'、'持有'、'位于'、'盟友'）" },
-      },
-      required: ["from_type", "from_id", "to_type", "to_id", "description"],
-    },
-  },
-  {
-    name: "RelationRemove",
-    description: "Remove a relation between two entities. REQUIRES PERMISSION.",
-    input_schema: {
-      type: "object",
-      properties: {
-        from_type: { type: "string", description: "Source entity type" },
-        from_id: { type: "string", description: "Source entity ID" },
-        to_type: { type: "string", description: "Target entity type" },
-        to_id: { type: "string", description: "Target entity ID" },
-        description: { type: "string", description: "关系描述" },
+        delete: { type: "boolean", description: "Set to true to REMOVE this relation. REQUIRES PERMISSION." },
       },
       required: ["from_type", "from_id", "to_type", "to_id", "description"],
     },
@@ -326,13 +291,13 @@ export function resetPermissions(convId?: string) {
 }
 
 const WRITE_TOOLS = new Set([
-  "EntryWrite", "WriteOutline", "MemoryWrite",
+  "EntryWrite", "WriteOutline", "Memory",
   "EventWrite", "TimelineWrite",
 ]);
 
 // Destructive — always require per-use confirmation, never approved for session
 const DANGEROUS_TOOLS = new Set([
-  "RelationAdd", "RelationRemove",
+  "Relation",
 ]);
 
 async function checkPermission(name: string, input: Record<string, unknown>): Promise<boolean> {
@@ -345,8 +310,7 @@ async function checkPermission(name: string, input: Record<string, unknown>): Pr
   if (isDangerous) {
     return new Promise((resolve) => {
       const labelMap: Record<string, string> = {
-        RelationAdd: `关联: ${input.description || ""}`,
-        RelationRemove: `移除关联: ${input.description || ""}`,
+        Relation: `${input.delete ? "移除" : "建立"}关联: ${input.description || ""}`,
         EntryWrite: `⚠️ 删除词条: ${input.entry_id || ""}`,
         EventWrite: `⚠️ 删除事件: ${input.event_name || ""}`,
         TimelineWrite: `⚠️ 删除时间轴: ${input.timeline_id || ""}`,
@@ -632,26 +596,35 @@ async function executeTool(
       }
       return msg;
     }
-    case "ListFiles": {
-      const files = await invoke<string[]>("list_files", { worldPath, subdir: input.subdir as string || "" });
-      return files.length > 0 ? files.join("\n") : "(目录为空或不存在)";
-    }
     case "FileRead": {
+      const fp = input.path as string | undefined;
+      // No path or path ending with /: list directory
+      if (!fp || fp.endsWith("/")) {
+        const subdir = fp ? fp.replace(/\/$/, "") : "";
+        const files = await invoke<string[]>("list_files", { worldPath, subdir });
+        return files.length > 0 ? files.join("\n") : "(目录为空或不存在)";
+      }
+      // Read file
       return await invoke<string>("read_file", {
         worldPath,
-        filePath: input.path as string,
+        filePath: fp,
       });
     }
-    case "MemoryRead": {
-      return await invoke<string>("read_memory", {
-        worldPath,
-        fileName: input.file_name as string,
-      });
-    }
-    case "MemoryWrite": {
+    case "Memory": {
+      const memFile = input.file_name as string;
+      // Delete path
+      if (input.delete === true) {
+        await invoke("delete_memory", { worldPath, fileName: memFile });
+        return `记忆 "${memFile}" 已删除。`;
+      }
+      // Read path: no content provided
+      if (!input.content) {
+        return await invoke<string>("read_memory", { worldPath, fileName: memFile });
+      }
+      // Write path
       await invoke("write_memory", {
         worldPath,
-        fileName: input.file_name as string,
+        fileName: memFile,
         content: input.content as string,
         description: input.description as string,
       });
@@ -687,8 +660,21 @@ async function executeTool(
         return `[${e.from.type}]${fn} --[${e.description}]--> [${e.to.type}]${tn}`;
       }).join("\n");
     }
-    case "RelationAdd": {
-      const graph = await invoke<any>("add_relation", {
+    case "Relation": {
+      // Remove path
+      if (input.delete === true) {
+        await invoke("remove_relation", {
+          worldPath,
+          fromType: input.from_type as string,
+          fromId: input.from_id as string,
+          toType: input.to_type as string,
+          toId: input.to_id as string,
+          description: input.description as string,
+        });
+        return `关系已移除: [${input.from_type}]${input.from_id} --[${input.description}]--> [${input.to_type}]${input.to_id}`;
+      }
+      // Add path
+      await invoke("add_relation", {
         worldPath,
         fromType: input.from_type as string,
         fromId: input.from_id as string,
@@ -697,17 +683,6 @@ async function executeTool(
         description: input.description as string,
       });
       return `关系已建立: [${input.from_type}]${input.from_id} --[${input.description}]--> [${input.to_type}]${input.to_id}`;
-    }
-    case "RelationRemove": {
-      await invoke("remove_relation", {
-        worldPath,
-        fromType: input.from_type as string,
-        fromId: input.from_id as string,
-        toType: input.to_type as string,
-        toId: input.to_id as string,
-        description: input.description as string,
-      });
-      return `关系已移除: [${input.from_type}]${input.from_id} --[${input.description}]--> [${input.to_type}]${input.to_id}`;
     }
     case "ConsistencyCheck": {
       const passage = input.passage as string;

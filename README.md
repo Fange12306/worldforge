@@ -19,7 +19,227 @@
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license" />
 </p>
 
+<p align="center">
+  <a href="#english">English</a> | <a href="#chinese">中文</a>
+</p>
+
 ---
+
+<a name="english"></a>
+
+## 💡 Philosophy
+
+> **The setting is deterministic. Stories are subset projections.**
+>
+> Build the world first — its physics, history, characters — then tell stories within it.
+> Every creative act is a query against the "world database," and the AI Agent ensures projections never violate setting constraints.
+
+**What makes WorldForge different:**
+
+| Approach | Structured DB | Agent Read/Write | Timeline Engine | Offline |
+|----------|:-----------:|:------------:|:--------:|:------:|
+| ChatGPT / Claude chat | ❌ Plain text memory | ❌ Prompt-based guess | ❌ | ❌ |
+| World Anvil / Campfire | ✅ | ❌ No AI Agent | ❌ Manual | ✅ |
+| Sudowrite | ❌ No structured world | ✅ But hallucinates | ❌ | ❌ |
+| Obsidian + Claude | ✅ Manual upkeep | ❌ Two tools stitched | ❌ | ✅ |
+| **WorldForge** | ✅ **Files as DB** | ✅ **Closed-loop tools** | ✅ **Event bridging** | ✅ **Local Tauri** |
+
+---
+
+## 🎯 What It Does
+
+<p align="center">
+  <em>A complete world → the AI Agent understands it → write any story in your universe</em>
+</p>
+
+### Entry System — Your World Database
+
+7 types of structured entries (Character, Location, Organization, System, Artifact, Era, Concept), stored as Markdown files with YAML frontmatter. Entries can be linked with relations and constraint rules.
+
+```
+🔮 Zhao Yuanhang — Captain of Dawn, bionic prosthesis, PTSD from quantum jumps
+  ├── Related: Alyssa Chen (Chief Scientist), Dawn (commands), Dark Matter Anomaly (wary of)
+  └── Constraint: Any jump he oversees must complete a 72-hour charge cycle
+```
+
+### Timeline + Events — The Narrative Bridge
+
+Events on the timeline connect entries to outline chapters. An event sits at a time point, linked to multiple entries and chapters. Entry relation changes (add/remove/modify) are attached to events.
+
+```
+3rd Era
+  └─ Year 327
+       └─ March
+            └─ 15th  [Dawn Launches] —— 🏷 Zhao Yuanhang · Alyssa Chen · Dawn · Outpost 7
+            └─ 15th  [Captain's Oath] —— 🏷 Zhao Yuanhang · Dawn
+                                            + Zhao Yuanhang ↔ Hollow Survivor: survivor
+  └─ Year 328
+       └─ July ——— [Dark Matter Anomaly Encountered]
+       └─ Aug  ——— [Quantum Comm Lost]
+  └─ Year 330
+       └─ Feb  ——— [New Earth Discovered]
+       └─ June ——— [First Contact Signal]
+```
+
+### AI Agent — A Writer That Understands Your World
+
+The Agent has a full toolchain (read/write entries, create events, traverse relation graphs, check consistency). It auto-searches relevant settings before writing, and auto-checks constraint conflicts after editing.
+
+> "Write a chapter about Dawn's encounter with the dark matter zone" → Agent auto-queries entries → reads relations → traverses graph → checks constraints → writes → consistency check → output
+
+### Outline + Chat — Linear Creation
+
+Outline chapters link to timeline events, Agent assists creation. All conversations (Thinking + Tool Calls) persist as JSONL, surviving restarts.
+
+---
+
+## ⚡ Quick Start
+
+```bash
+git clone https://github.com/yourname/worldforge.git
+cd worldforge
+npm install
+npm run tauri dev
+```
+
+After launch, configure your LLM API key in Settings (supports Anthropic / OpenAI / DeepSeek), create a world, and start chatting.
+
+---
+
+## 🏗 Architecture
+
+```mermaid
+graph TB
+    subgraph Frontend["React Frontend"]
+        Chat[ChatLayout]
+        Entry[EntryPanel]
+        Timeline[TimelinePanel]
+        Outline[OutlineDetail]
+    end
+
+    subgraph Agent["Agent Loop"]
+        LLM[LLM API]
+        Tools[17 Unified Tools]
+        Perm[Permission Control]
+        Stream[Streaming Render]
+    end
+
+    subgraph Rust["Tauri / Rust Backend"]
+        CRUD[Unified Write CRUD]
+        Events[Events + Timeline]
+        Relations[Relation Graph BFS]
+        Cascade[Cascade Engine]
+        Constraint[Consistency Check]
+        Session[Session Persistence]
+    end
+
+    subgraph Storage["File System"]
+        Entries[entries/*.md]
+        TL[timelines/*.json]
+        OL[outline/id/*.md]
+        Rel[relations/index.json]
+        Sessions[sessions/*.jsonl]
+        Memory[memory/*.md]
+    end
+
+    Chat --> Agent
+    Agent --> LLM
+    Agent --> Tools
+    Tools --> Rust
+    Rust --> Storage
+    Agent --> Cascade
+    Cascade --> Entries
+    Cascade --> TL
+    Cascade --> Rel
+```
+
+---
+
+## 📁 Data Storage
+
+No database. All data lives as human-readable files on your machine, interoperable with Obsidian.
+
+```
+<world>/
+├── world.json                World metadata
+├── entries/                  Entries (.md + YAML frontmatter)
+│   ├── characters/           Characters
+│   ├── locations/            Locations
+│   ├── organizations/        Organizations
+│   ├── systems/              Systems
+│   ├── artifacts/            Artifacts
+│   ├── eras/                 Eras
+│   └── concepts/             Concepts
+├── timelines/                Timelines + Events
+│   ├── index.json            Timeline list
+│   └── <id>/events.json      Event data
+├── relations/index.json      Unified relation graph
+├── outline/<storyId>/        Outline chapters (.md)
+├── stories/<id>.json         Story metadata
+├── sessions/<id>.jsonl       Chat history
+├── memory/                   World memory (.md)
+└── uploads/<convId>/         Uploaded files
+```
+
+---
+
+## 🗺 Roadmap
+
+| Phase | Scope | Status |
+|-------|-------|:------:|
+| 0 | Skeleton — Tauri + React + Tailwind + Chat UI | ✅ |
+| 1 | Knowledge Core — Entry CRUD + Persistence + File Watch | ✅ |
+| 2 | Agent Breathing — LLM API + Agent Loop + Permissions | ✅ |
+| 3 | Creation UX — Outline + Command Palette + Search | ✅ |
+| 4 | Entity Relations — Unified Graph + BFS Traversal + Consistency Engine | ✅ |
+| 5 | Timeline — Event System + Cascade Engine + Timeline Panel | ✅ |
+| 6 | Polish & Ship — Context Compaction + Export + Packaging | ⬜ Future |
+
+---
+
+## 🧬 Design Decisions
+
+| Decision | Why |
+|----------|-----|
+| Tauri over Electron | 15MB vs 150MB; creative tools stay open all day |
+| Files over database | Human-readable, interoperable with Obsidian, Git-trackable |
+| Single Agent over multi-agent | Creation is a linear dependency chain, not parallelizable |
+| Events as sole entry↔outline bridge | Prevents "chapter links entry but event doesn't include it" contradictions |
+| World-scoped timelines, not story-scoped | Different stories share world history, filtered by event perspective |
+| Precision controls display granularity | Underlying 08:00:00 only shows when you specify "8 o'clock" |
+| 17 Unified tools (down from 27) | Merged Create+Update+Delete into Write tools per entity; Memory/Relation/FileRead also unified; delete via `delete: true` param |
+| Semantic consistency on all writes | Hard violations block, soft warnings pass through with notice |
+
+---
+
+## 🔧 Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Desktop Shell | Tauri v2 (Rust) |
+| Frontend | React 18 + TypeScript + Tailwind CSS |
+| Component Library | Radix UI + Lucide Icons |
+| State Management | Zustand |
+| Graph Algorithms | BFS adjacency list (Rust) |
+| LLM | Anthropic / OpenAI / DeepSeek |
+| Storage | File system (.md / .json / .jsonl) |
+
+---
+
+## 📖 Further Reading
+
+- [完整设计文档 / Full Design Doc](DESIGN.md) — Architecture decisions, phase planning, data persistence, Claude Code comparison
+- [时间线模块设计 / Timeline Design](TIMELINE_DESIGN.md) — Time format, event model, cascade engine, UI design
+
+---
+
+## 📄 License
+
+MIT © WorldForge
+
+---
+
+<a name="chinese"></a>
 
 ## 💡 核心哲学
 
@@ -98,8 +318,6 @@ npm run tauri dev
 
 启动后在设置面板填入 LLM API Key（支持 Anthropic/OpenAI/DeepSeek），创建一个世界，开始对话。
 
-或者直接导入测试世界：解压 `test-world-星际拓荒纪元.zip` 到 `~/Library/Application Support/com.worldforge.app/worlds/`，立即体验词条 → 时间线 → 大纲 → 对话的完整链路。
-
 ---
 
 ## 🏗 架构
@@ -113,26 +331,26 @@ graph TB
         Outline[OutlineDetail 大纲详情]
     end
 
-    subgraph Agent["Agent 循环 (agent-loop.ts)"]
+    subgraph Agent["Agent 循环"]
         LLM[LLM API]
-        Tools[工具注册表]
+        Tools[17 个统一工具]
         Perm[权限控制]
         Stream[流式渲染]
     end
 
     subgraph Rust["Tauri/Rust 后端"]
-        CRUD[词条 CRUD]
+        CRUD[统一 Write CRUD]
         Events[事件 + 时间线]
         Relations[关联图 BFS]
         Cascade[级联引擎]
-        Constraint[约束检查]
+        Constraint[一致性检查]
         Session[对话持久化]
     end
 
     subgraph Storage["文件系统"]
         Entries[entries/*.md]
         TL[timelines/*.json]
-        OL[outline/<id>/*.md]
+        OL[outline/id/*.md]
         Rel[relations/index.json]
         Sessions[sessions/*.jsonl]
         Memory[memory/*.md]
@@ -188,10 +406,8 @@ graph TB
 | 2 | Agent 呼吸 — LLM API + Agent Loop + 权限 | ✅ |
 | 3 | 创作体验 — 大纲 + 命令面板 + 搜索折叠 | ✅ |
 | 4 | 要素关联 — 统一关系图 + 图遍历 + 一致性引擎 | ✅ |
-| 5 | 时间线 — 事件系统 + 级联引擎 + 时间轴面板 | 🚧 90% |
+| 5 | 时间线 — 事件系统 + 级联引擎 + 时间轴面板 | ✅ |
 | 6 | 打磨发布 — 上下文压缩 + 导出 + 打包 | ⬜ 远期 |
-
-**Phase 5 剩余工作：** 前端 UI 精修、LLM 提示词调优、事件编辑 UI、旧 type:"event" 迁移
 
 ---
 
@@ -205,6 +421,8 @@ graph TB
 | 事件作为词条↔大纲的唯一桥梁 | 杜绝"章直接关联词条但事件里没有它"的矛盾 |
 | 时间线 world-scoped 而非 story-scoped | 不同故事共享世界历史，通过事件筛选视角 |
 | Precision 控制展示精度 | 底层的 08:00:00 只在你指定"8点"时才显示 |
+| 17 个统一工具（从 27 精简） | Memory/Relation/FileRead 也统一为读写合一模式，delete 通过 `delete: true` 参数 |
+| 所有写操作挂载语义一致性 | 硬违规阻断，软警告通过但提示 |
 
 ---
 

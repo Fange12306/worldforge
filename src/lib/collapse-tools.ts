@@ -5,7 +5,6 @@ const SEARCH_READ_TOOLS = new Set([
   "EntrySearch",
   "EntryRead",
   "OutlineRead",
-  "ListFiles",
   "FileRead",
   "ExploreGraph",      // Phase 4/5 — read-only graph exploration (direct + BFS)
   "TraverseGraph",     // Phase 4 — legacy, kept for collapsed display in old convos

@@ -6,6 +6,8 @@
 import { invoke } from "./api";
 import { useStore } from "./store";
 import type { Entry } from "./types";
+import { estimateTokens } from "./context-window";
+import type { ContextBreakdown } from "./context-window";
 
 // ── Types ──
 
@@ -47,7 +49,7 @@ const tools: ToolDef[] = [
     input_schema: {
       type: "object",
       properties: {
-        entry_id: { type: "string", description: "The entry ID (derived from name, e.g. '艾琳-暗月')" },
+        entry_id: { type: "string", description: "The entry ID from EntrySearch results. This is a UUID for entries created after v0.6.0, or a legacy name-based slug for older entries. Always use the exact 'id' value returned by EntrySearch — do not derive it from the name yourself." },
       },
       required: ["entry_id"],
     },
@@ -128,7 +130,7 @@ const tools: ToolDef[] = [
     },
   },
   {
-    name: "WriteOutline",
+    name: "OutlineWrite",
     description: "Create or update a chapter in the outline. IMPORTANT: put the actual chapter text into the 'body' parameter — chat text alone is NOT saved. Only pass the fields you want to change.",
     input_schema: {
       type: "object",
@@ -291,7 +293,7 @@ export function resetPermissions(convId?: string) {
 }
 
 const WRITE_TOOLS = new Set([
-  "EntryWrite", "WriteOutline", "Memory",
+  "EntryWrite", "OutlineWrite", "Memory",
   "EventWrite", "TimelineWrite",
 ]);
 
@@ -334,7 +336,7 @@ async function checkPermission(name: string, input: Record<string, unknown>): Pr
   if (writeApproved) return true;
   return new Promise((resolve) => {
     const labelMap: Record<string, string> = {
-      WriteOutline: `Ch${input.chapter_order} ${input.title || ""}`,
+      OutlineWrite: `Ch${input.chapter_order} ${input.title || ""}`,
       EventWrite: `事件: ${input.event_name || input.summary || ""}`,
       TimelineWrite: `时间轴: ${input.timeline_id ? "更新 " + input.timeline_id : "创建 " + (input.name || "")}`,
     };
@@ -559,16 +561,16 @@ async function executeTool(
       }
       // List all chapters
       const chapters = await invoke<Array<{
-        order: number; title: string; status: string; summary: string; has_body: boolean; word_count: number;
+        id: string; order: number; title: string; status: string; summary: string; has_body: boolean; word_count: number;
       }>>("read_outline", { worldPath, storyId });
       if (chapters.length === 0) return "暂无大纲章节。";
       return chapters.map((c) => {
         const statusLabel = c.status === "done" ? "✓" : c.status === "drafting" ? "✎" : "○";
         const info = c.has_body ? `${c.word_count}字` : "无正文";
-        return `${statusLabel} Ch${c.order} ${c.title} [${info}]${c.summary ? ` — ${c.summary}` : ""}`;
+        return `${statusLabel} Ch${c.order} ${c.title} [${info}] id=${c.id}${c.summary ? ` — ${c.summary}` : ""}`;
       }).join("\n");
     }
-    case "WriteOutline": {
+    case "OutlineWrite": {
       const chBody = (input.body as string) || "";
       // Consistency check before write: traverse from story via outline entity type
       let ccResult: { hard: string[]; soft: string[] } | null = null;
@@ -865,6 +867,7 @@ export async function runAgentLoop(
   provider = "anthropic",
   model = "claude-sonnet-4-20250514",
   storyId = "",
+  reasoningEffort?: string,
 ) {
   const MAX_RECOVERY = 3;
   let turns = 0;
@@ -925,6 +928,30 @@ export async function runAgentLoop(
             break;
           case "usage":
             useStore.getState().addTokens(event.input_tokens ?? 0, event.output_tokens ?? 0);
+            // Update context window breakdown
+            {
+              const inputTokens = event.input_tokens ?? 0;
+              if (inputTokens > 0) {
+                const skillsIdx = systemPrompt.lastIndexOf("# Skills");
+                const corePrompt = skillsIdx > 0 ? systemPrompt.slice(0, skillsIdx) : systemPrompt;
+                const skillsText = skillsIdx > 0 ? systemPrompt.slice(skillsIdx) : "";
+                const msgsText = messages.map((m) => `[${m.role}] ${m.content}`).join("\n");
+                const toolsText = JSON.stringify(tools);
+                const totalChars = msgsText.length + corePrompt.length + skillsText.length + toolsText.length;
+                const inputShare = (chars: number) => totalChars > 0
+                  ? Math.round(inputTokens * chars / totalChars)
+                  : 0;
+                const breakdown: ContextBreakdown = {
+                  messages: inputShare(msgsText.length),
+                  systemTools: inputShare(toolsText.length),
+                  mcpTools: 0,
+                  systemPrompt: inputShare(corePrompt.length),
+                  skills: inputShare(skillsText.length),
+                  total: inputTokens,
+                };
+                useStore.getState().updateContextUsage(inputTokens, breakdown);
+              }
+            }
             break;
           case "stream_end":
             streamDone = true;
@@ -951,6 +978,7 @@ export async function runAgentLoop(
           tools,
           provider,
           maxTokens,
+          reasoningEffort: reasoningEffort || null,
         });
 
         // Wait for stream to complete
@@ -994,6 +1022,10 @@ export async function runAgentLoop(
           content: `Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces. Do NOT re-read the same entries unless their content has changed this turn.`,
         });
         continue;
+      }
+      if (isTruncated) {
+        callbacks.onError(`输出被 max_tokens 截断，且 ${MAX_RECOVERY} 次自动续写恢复已用完。`);
+        return;
       }
 
       // If no tool calls and no recovery needed, we're done

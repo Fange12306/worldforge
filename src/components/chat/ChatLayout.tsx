@@ -12,7 +12,7 @@ export function ChatLayout() {
 
   const activeWorld = worlds.find((w) => w.id === activeWorldId);
 
-  // Load persisted token count when switching conversations
+  // Load persisted token count + context state when switching conversations
   useEffect(() => {
     if (!activeWorld || !activeConversationId) return;
     invoke<number>("load_session_tokens", { worldPath: activeWorld.path, sessionId: activeConversationId })
@@ -22,6 +22,23 @@ export function ChatLayout() {
             worlds: prev.worlds.map((w) => w.id === activeWorldId ? {
               ...w, stories: w.stories.map((s) => ({
                 ...s, conversations: s.conversations.map((c) => c.id === activeConversationId ? { ...c, totalTokens: tokens } : c),
+              })),
+            } : w),
+          }));
+        }
+      }).catch(() => {});
+    invoke<string>("load_session_state", { worldPath: activeWorld.path, sessionId: activeConversationId })
+      .then((json) => {
+        const data = JSON.parse(json);
+        if (data.contextUsed > 0) {
+          useStore.setState((prev) => ({
+            worlds: prev.worlds.map((w) => w.id === activeWorldId ? {
+              ...w, stories: w.stories.map((s) => ({
+                ...s, conversations: s.conversations.map((c) => c.id === activeConversationId ? {
+                  ...c,
+                  contextUsed: data.contextUsed ?? 0,
+                  contextBreakdown: data.contextBreakdown ?? null,
+                } : c),
               })),
             } : w),
           }));

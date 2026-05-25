@@ -43,13 +43,17 @@ pub async fn test_connection(
     provider: String,
     api_key: String,
     model: String,
+    base_url: Option<String>,
 ) -> Result<String, String> {
-    let api_url = match provider.as_str() {
+    let default_api_url = match provider.as_str() {
         "anthropic" => "https://api.anthropic.com/v1/messages",
         "openai" => "https://api.openai.com/v1/chat/completions",
         "deepseek" => "https://api.deepseek.com/v1/chat/completions",
         _ => return Err(format!("未知 Provider: {}", provider)),
     };
+    let api_url = base_url.as_deref()
+        .filter(|url| !url.trim().is_empty())
+        .unwrap_or(default_api_url);
 
     let client = reqwest::Client::new();
 
@@ -191,11 +195,12 @@ pub async fn stream_chat(
     tools: Vec<ToolDef>,
     provider: String,
     max_tokens: u32,
+    reasoning_effort: Option<String>,
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
     let mut last_error = String::new();
     for attempt in 0..MAX_RETRIES {
-        match stream_chat_inner(app.clone(), messages.clone(), system_prompt.clone(), model.clone(), tools.clone(), provider.clone(), max_tokens).await {
+        match stream_chat_inner(app.clone(), messages.clone(), system_prompt.clone(), model.clone(), tools.clone(), provider.clone(), max_tokens, reasoning_effort.clone()).await {
             Ok(()) => return Ok(()),
             Err(e) => {
                 last_error = e.clone();
@@ -219,22 +224,25 @@ async fn stream_chat_inner(
     tools: Vec<ToolDef>,
     provider: String,
     max_tokens: u32,
+    reasoning_effort: Option<String>,
 ) -> Result<(), String> {
     // Get API key (api_key.rs already prefixes with "api_key_")
     let api_key = crate::commands::api_key::get_api_key(provider.clone())
         .map_err(|e| format!("未配置 API Key: {}", e))?;
 
-    let api_url = match provider.as_str() {
+    let default_api_url = match provider.as_str() {
         "anthropic" => "https://api.anthropic.com/v1/messages",
         "openai" => "https://api.openai.com/v1/chat/completions",
         "deepseek" => "https://api.deepseek.com/v1/chat/completions",
         _ => return Err(format!("未知 Provider: {}", provider)),
     };
+    let configured_api_url = crate::commands::api_key::get_api_base_url(provider.clone());
+    let api_url = configured_api_url.as_deref().unwrap_or(default_api_url);
 
     if provider == "anthropic" {
-        stream_anthropic(app, messages, system_prompt, model, tools, api_key, api_url, max_tokens).await
+        stream_anthropic(app, messages, system_prompt, model, tools, api_key, api_url, max_tokens, reasoning_effort).await
     } else {
-        stream_openai_compatible(app, messages, system_prompt, model, tools, api_key, api_url, provider, max_tokens).await
+        stream_openai_compatible(app, messages, system_prompt, model, tools, api_key, api_url, provider, max_tokens, reasoning_effort).await
     }
 }
 
@@ -247,6 +255,7 @@ async fn stream_anthropic(
     api_key: String,
     api_url: &str,
     max_tokens: u32,
+    reasoning_effort: Option<String>,
 ) -> Result<(), String> {
     let client = reqwest::Client::new();
 
@@ -269,14 +278,20 @@ async fn stream_anthropic(
         }))
         .collect();
 
+    // Map reasoning_effort to Anthropic thinking config
+    let thinking_config = match reasoning_effort.as_deref() {
+        Some("low") => serde_json::json!({"type": "enabled", "budget_tokens": 1024}),
+        Some("medium") => serde_json::json!({"type": "enabled", "budget_tokens": 4096}),
+        Some("high") => serde_json::json!({"type": "enabled", "budget_tokens": 16384}),
+        _ => serde_json::json!({"type": "adaptive"}),
+    };
+
     let mut body = serde_json::json!({
         "model": model,
         "max_tokens": max_tokens,
         "messages": anthropic_msgs,
         "stream": true,
-        "thinking": {
-            "type": "adaptive"
-        },
+        "thinking": thinking_config,
     });
 
     if !system_prompt.is_empty() {
@@ -410,6 +425,7 @@ async fn stream_openai_compatible(
     api_url: &str,
     provider: String,
     _max_tokens: u32,  // OpenAI-compatible: max_tokens is optional, not sent to API
+    reasoning_effort: Option<String>,
 ) -> Result<(), String> {
     let client = reqwest::Client::new();
 
@@ -442,6 +458,11 @@ async fn stream_openai_compatible(
     });
     if !oai_tools.is_empty() {
         body["tools"] = serde_json::Value::Array(oai_tools);
+    }
+    if let Some(ref effort) = reasoning_effort {
+        if effort != "default" {
+            body["reasoning_effort"] = serde_json::json!(effort);
+        }
     }
 
     let response = client

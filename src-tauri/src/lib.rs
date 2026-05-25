@@ -61,6 +61,8 @@ pub fn run() {
             session::delete_session,
             session::save_session_tokens,
             session::load_session_tokens,
+            session::save_session_state,
+            session::load_session_state,
             // File watch
             file_watch::start_file_watch,
             // API key + config

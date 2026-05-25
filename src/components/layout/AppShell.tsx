@@ -1,5 +1,5 @@
 import { useEffect, useState, Component, ReactNode } from "react";
-import { useStore } from "@/lib/store";
+import { useStore, type ModelConfig } from "@/lib/store";
 import { applyTheme } from "@/lib/theme";
 import { initWorld, invoke } from "@/lib/api";
 import { Sidebar } from "./Sidebar";
@@ -62,7 +62,7 @@ export function AppShell() {
 
   useEffect(() => {
     (window as any).__worldforge = { openSettings: () => setSettingsOpen(true), openPalette: () => setPaletteOpen(true), openTimeline: () => setCenterView({ type: "timeline" }) };
-    invoke<{ provider: string; models: { name: string }[] }>("load_config").then((cfg) => {
+    invoke<{ provider: string; models: ModelConfig[] }>("load_config").then((cfg) => {
       if (cfg.provider) useStore.getState().setLlmProvider(cfg.provider);
       if (cfg.models?.length) { useStore.getState().setLlmModels(cfg.models); useStore.getState().setActiveModel(cfg.models[0].name); }
     }).catch(() => {});
@@ -82,16 +82,23 @@ export function AppShell() {
         const stories = await invoke<Array<{ id: string; title: string; status: string; conversations: Array<{ id: string; title: string }> }>>("load_stories", { worldPath });
         if (stories.length > 0) {
           const convId = s.hydrateStories(wid, stories);
-          // Load token counts
+          // Load token counts + context state
           for (const st of stories) {
             for (const c of (st.conversations || [])) {
               try {
                 const tokens = await invoke<number>("load_session_tokens", { worldPath, sessionId: c.id });
-                if (tokens > 0) {
+                const stateJson = await invoke<string>("load_session_state", { worldPath, sessionId: c.id });
+                const stateData = JSON.parse(stateJson);
+                if (tokens > 0 || stateData.contextUsed > 0) {
                   useStore.setState((prev) => ({
                     worlds: prev.worlds.map((ww) => ww.id === wid ? {
                       ...ww, stories: ww.stories.map((ss) => ss.id === st.id ? {
-                        ...ss, conversations: ss.conversations.map((cc) => cc.id === c.id ? { ...cc, totalTokens: tokens } : cc),
+                        ...ss, conversations: ss.conversations.map((cc) => cc.id === c.id ? {
+                          ...cc,
+                          ...(tokens > 0 ? { totalTokens: tokens } : {}),
+                          contextUsed: stateData.contextUsed ?? 0,
+                          contextBreakdown: stateData.contextBreakdown ?? null,
+                        } : cc),
                       } : ss),
                     } : ww),
                   }));

@@ -17,16 +17,7 @@ fn expand_path(path: &str) -> PathBuf {
 }
 
 fn type_dir(entries_root: &PathBuf, t: &EntryType) -> String {
-    let name = match t {
-        EntryType::Character => "characters",
-        EntryType::Location => "locations",
-        EntryType::Organization => "organizations",
-        EntryType::System => "systems",
-        EntryType::Artifact => "artifacts",
-        EntryType::Era => "eras",
-        EntryType::Concept => "concepts",
-    };
-    entries_root.join(name).to_string_lossy().to_string()
+    entries_root.join(entry_type_dir_name(t)).to_string_lossy().to_string()
 }
 
 fn entry_type_from_str(s: &str) -> EntryType {
@@ -39,6 +30,18 @@ fn entry_type_from_str(s: &str) -> EntryType {
         "artifact" => EntryType::Artifact,
         "era" => EntryType::Era,
         _ => EntryType::Concept,
+    }
+}
+
+fn entry_type_dir_name(t: &EntryType) -> &str {
+    match t {
+        EntryType::Character => "characters",
+        EntryType::Location => "locations",
+        EntryType::Organization => "organizations",
+        EntryType::System => "systems",
+        EntryType::Artifact => "artifacts",
+        EntryType::Era => "eras",
+        EntryType::Concept => "concepts",
     }
 }
 
@@ -335,7 +338,7 @@ pub fn list_entries(world_path: String) -> Result<Vec<IndexEntry>, String> {
                     id,
                     name,
                     entry_type: t.clone(),
-                    path: format!("./entries/{}/{}", entry_type_str(t), fname),
+                    path: format!("./entries/{}/{}", entry_type_dir_name(t), fname),
                     tags,
                 });
             }

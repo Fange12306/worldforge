@@ -5,6 +5,7 @@ import { runAgentLoop, resetPermissions, type AgentMessage } from "@/lib/agent-l
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import { ArrowUp, Square, X, Paperclip, Loader2 } from "lucide-react";
 import { InlinePermission } from "./PermissionDialog";
+import { ContextRing } from "./ContextRing";
 import type { PermissionChoice } from "@/lib/agent-loop";
 import type { Entry } from "@/lib/types";
 
@@ -266,6 +267,9 @@ export function ChatInput({ storyId }: { storyId: string }) {
     streamStateRef.current = { text: "", thinking: "", toolCalls: [] };
 
     try {
+      const currentModelConfig = llmModels.find((m) => m.name === activeModel);
+      const reasoningEffort = currentModelConfig?.reasoningEffort;
+
       await runAgentLoop(world.path, systemPrompt, history, {
         onTextDelta: (t) => { if (abortRef.current) return; appendStreamText(t); finalContent += t; streamStateRef.current.text = finalContent;
           setIsThinking(false); setIsToolRunning(false);
@@ -298,7 +302,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
           updateStreamToolResult(result.toolUseId, result.content);
           invoke("append_session_message", { worldPath: world.path, sessionId: activeConversationId, message: { type: "tool_result", tool: toolName || result.toolName || "", output: result.content, timestamp: new Date().toISOString() } }).catch(() => {});
           // Bump refreshKey when world data changes
-          if (toolName === "WriteOutline" || toolName === "EntryWrite" || toolName === "Relation") {
+          if (toolName === "OutlineWrite" || toolName === "EntryWrite" || toolName === "Relation") {
             window.dispatchEvent(new CustomEvent("worldforge-data-changed"));
           }
         },
@@ -322,10 +326,16 @@ export function ChatInput({ storyId }: { storyId: string }) {
             : error.includes("API Key") || error.includes("未配置")
               ? "API Key 未配置或无效，请在设置中检查。"
               : `Error: ${error}`;
-          addMessage(storyId, { role: "assistant", content: finalContent || msg });
+          const interruptedContent = finalContent
+            ? `${finalContent}\n\n[中断: ${msg}]`
+            : msg;
+          addMessage(storyId, { role: "assistant", content: interruptedContent });
+          if (world && activeConversationId) {
+            invoke("append_session_message", { worldPath: world.path, sessionId: activeConversationId, message: { type: "assistant", content: interruptedContent, thinking: thinkingContent || null, timestamp: new Date().toISOString() } }).catch(() => {});
+          }
           clearStreamText();
         },
-      }, llmProvider, activeModel, storyId);
+      }, llmProvider, activeModel, storyId, reasoningEffort);
     } catch (e: any) {
       setStreaming(false);
       if (!abortRef.current) addMessage(storyId, { role: "assistant", content: `Error: ${e}` });
@@ -434,11 +444,12 @@ export function ChatInput({ storyId }: { storyId: string }) {
               <Paperclip className="w-3.5 h-3.5" />
             </button>
             <div className="flex-1" />
+            <ContextRing />
             {llmModels.length > 1 && (
               <select value={activeModel} onChange={(e) => setActiveModel(e.target.value)}
                 className="text-[11px] bg-transparent text-ink-muted py-0 appearance-none outline-none cursor-pointer truncate max-w-[220px]"
               >
-                {llmModels.map((m) => <option key={m.name} value={m.name}>{m.name}</option>)}
+                {llmModels.map((m) => <option key={m.name} value={m.name}>{m.alias || m.name}</option>)}
               </select>
             )}
             {isStreaming ? (
@@ -471,4 +482,3 @@ export function ChatInput({ storyId }: { storyId: string }) {
     </div>
   );
 }
-

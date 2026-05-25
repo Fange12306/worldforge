@@ -413,6 +413,9 @@ async fn stream_anthropic(
                                 output_tokens,
                                 conversation_id: conversation_id.clone(),
                             });
+                            // Stream is complete — break immediately instead of waiting for TCP close.
+                            // On Windows, TCP connection teardown can add hundreds of milliseconds.
+                            break;
                         }
                         _ => {}
                     }
@@ -497,7 +500,7 @@ async fn stream_openai_compatible(
     let mut buffer = String::new();
     let mut tool_call_buffers: std::collections::HashMap<u64, (String, String, String)> = std::collections::HashMap::new();
 
-    while let Some(chunk) = stream.next().await {
+    'stream_loop: while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("流读取错误: {}", e))?;
         let text = String::from_utf8_lossy(&chunk);
         buffer.push_str(&text);
@@ -554,6 +557,8 @@ async fn stream_openai_compatible(
                                     }
                                 }
                                 let _ = app.emit("stream-event", StreamEvent::StreamEnd { stop_reason: finish.to_string(), conversation_id: conversation_id.clone() });
+                                // Stream is complete — break immediately
+                                break 'stream_loop;
                             }
                         }
                     }

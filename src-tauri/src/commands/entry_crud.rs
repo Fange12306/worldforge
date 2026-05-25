@@ -242,12 +242,17 @@ pub fn create_entry(world_path: String, name: String, entry_type: String) -> Res
 }
 
 #[tauri::command]
-pub fn update_entry(world_path: String, entry_id: String, name: String, body: String) -> Result<Entry, String> {
+pub fn update_entry(
+    world_path: String,
+    entry_id: String,
+    name: String,
+    body: String,
+    entry_type: Option<String>,
+) -> Result<Entry, String> {
     let entries_root = expand_path(&world_path).join("entries");
     // Find by UUID first, then fallback to filename
     let fp = find_entry_by_uuid(&entries_root, &entry_id)
         .or_else(|| {
-            // Legacy fallback: search by filename
             for t in &all_entry_types() {
                 let candidate = PathBuf::from(type_dir(&entries_root, t)).join(format!("{}.md", entry_id));
                 if candidate.exists() { return Some(candidate); }
@@ -259,18 +264,42 @@ pub fn update_entry(world_path: String, entry_id: String, name: String, body: St
     // Read existing entry to preserve UUID and metadata
     let existing = parse_entry_file(&fp)?;
 
+    // Determine new type: provided param wins, otherwise keep existing
+    let new_type = match entry_type {
+        Some(ref t) => entry_type_from_str(t),
+        None => existing.entry_type.clone(),
+    };
+    let type_changed = new_type != existing.entry_type;
+
+    // Build new frontmatter
     let fm = format!(
         "id: {}\nname: {}\ntype: {}\ncreated_at: {}\nupdated_at: {}\ntags: [{}]\n",
-        existing.id, name, entry_type_str(&existing.entry_type),
+        existing.id, name, entry_type_str(&new_type),
         existing.created_at.to_rfc3339(), Utc::now().to_rfc3339(),
         existing.tags.join(", ")
     );
     let body_content = if body.is_empty() { format!("# {}", name) } else { body };
-    let _ = fs::write(&fp, format!("---\n{}---\n\n{}", fm, body_content))
-        .map_err(|e| format!("写入失败: {}", e))?;
+    let new_content = format!("---\n{}---\n\n{}", fm, body_content);
+
+    if type_changed {
+        // Write to new type directory, then remove old file
+        let new_dir = type_dir(&entries_root, &new_type);
+        fs::create_dir_all(&new_dir).map_err(|e| format!("创建目录失败: {}", e))?;
+        let new_path = PathBuf::from(&new_dir).join(format!("{}.md", existing.id));
+        fs::write(&new_path, &new_content).map_err(|e| format!("写入失败: {}", e))?;
+        let _ = fs::remove_file(&fp);
+    } else {
+        fs::write(&fp, &new_content).map_err(|e| format!("写入失败: {}", e))?;
+    }
 
     update_index(&world_path)?;
-    parse_entry_file(&fp)
+    // Parse from new location if type changed
+    if type_changed {
+        let new_path = PathBuf::from(type_dir(&entries_root, &new_type)).join(format!("{}.md", existing.id));
+        parse_entry_file(&new_path)
+    } else {
+        parse_entry_file(&fp)
+    }
 }
 
 #[tauri::command]

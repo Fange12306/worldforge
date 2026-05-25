@@ -17,7 +17,7 @@ export function CollapsedGroupMessage({ group }: { group: CollapsedGroup }) {
     let hint = "";
     if (input) {
       if (tc.name === "EntrySearch" || tc.name === "GrepEntries") hint = (input.query as string) || "";
-      else if (tc.name === "EntryRead" || tc.name === "QueryRelations") hint = (input.id || input.entity_id || "") as string;
+      else if (tc.name === "EntryRead" || tc.name === "QueryRelations") hint = (input.entry_id || input.id || input.entity_id || "") as string;
       else if (tc.name === "TraverseGraph") hint = `${input.entity_id || ""} (${input.max_depth || 1}跳)`;
       else if (tc.name === "ConsistencyCheck") hint = `${(input.passage as string || "").slice(0, 30)}…`;
       else if (tc.name === "UseSkill") hint = (input.name as string) || "列出技能";

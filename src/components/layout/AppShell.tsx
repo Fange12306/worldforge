@@ -84,9 +84,13 @@ export function AppShell() {
 
     const loadWorld = async (worldPath: string) => {
       const s = useStore.getState();
-      const name = worldPath.split("/").pop() || t.layout.unnamedWorld;
+      // Cross-platform: use both / and \ as path separators (Windows uses \).
+      let name = worldPath.split(/[/\\]/).pop() || t.layout.unnamedWorld;
+      try {
+        const meta = await invoke<{ name: string }>("open_world", { path: worldPath });
+        if (meta.name) name = meta.name;
+      } catch {}
       const wid = s.openWorld(name, worldPath);
-      try { await invoke("open_world", { path: worldPath }); } catch {}
 
       try {
         const stories = await invoke<Array<{ id: string; title: string; status: string; conversations: Array<{ id: string; title: string }> }>>("load_stories", { worldPath });
@@ -123,15 +127,34 @@ export function AppShell() {
               type SM = { id: string; role: "user" | "assistant" | "system"; content: string; thinking?: string; toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }>; timestamp: number };
               const result: SM[] = [];
               let pending: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }> = [];
+              // Track the last assistant that consumed pending, so tool_results
+              // that arrive AFTER the assistant can still assign results.
+              let lastAssistantIdx: number | null = null;
               for (const m of msgs) {
-                if (m.type === "user") result.push({ id: `msg_${result.length}`, role: "user", content: m.content, timestamp: Date.now() });
-                else if (m.type === "assistant") { result.push({ id: `msg_${result.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: pending.length > 0 ? [...pending] : undefined, timestamp: Date.now() }); pending = []; }
+                if (m.type === "user") { result.push({ id: `msg_${result.length}`, role: "user", content: m.content, timestamp: Date.now() }); pending = []; lastAssistantIdx = null; }
+                else if (m.type === "assistant") {
+                  result.push({ id: `msg_${result.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: pending.length > 0 ? [...pending] : undefined, timestamp: Date.now() });
+                  lastAssistantIdx = result.length - 1;
+                  pending = [];
+                }
                 else if (m.type === "system") result.push({ id: `msg_${result.length}`, role: "system", content: m.content, timestamp: Date.now() });
                 else if (m.type === "tool_use") pending.push({ id: `tc_${pending.length}`, name: m.tool || "", input: (m.input as Record<string, unknown>) || {}, result: "" });
                 else if (m.type === "tool_result") {
-                  const last = pending[pending.length - 1];
                   const output = (m.output as string) || "";
-                  if (last) last.result = output;
+                  // Try to assign result to a pending tool call first
+                  const last = pending[pending.length - 1];
+                  if (last) {
+                    last.result = output;
+                  } else if (lastAssistantIdx !== null) {
+                    // Pending was already consumed — look back at the last
+                    // assistant and fill the first empty-result tool call.
+                    const lastMsg = result[lastAssistantIdx];
+                    if (lastMsg?.toolCalls) {
+                      for (const tc of lastMsg.toolCalls) {
+                        if (!tc.result) { tc.result = output; break; }
+                      }
+                    }
+                  }
                   result.push({ id: `msg_${result.length}`, role: "system", content: `[工具结果: ${m.tool || "tool"}]\n${output}`, timestamp: Date.now() });
                 }
               }

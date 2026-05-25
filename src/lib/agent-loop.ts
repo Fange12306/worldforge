@@ -92,7 +92,7 @@ function getTools(): ToolDef[] {
         entry_id: { type: "string", description: "Existing entry ID. Omit to create new. Required when deleting." },
         delete: { type: "boolean", description: "Set to true to DELETE this entry (requires entry_id). Irreversible." },
         name: { type: "string", description: "Entry display name" },
-        entry_type: { type: "string", description: "Entry type. Required for new entries." },
+        entry_type: { type: "string", description: "Entry type slug (character/location/organization/system/artifact/era/concept). Required for new entries; can also be used to change an existing entry's type." },
         body: { type: "string", description: "Markdown body content" },
       },
       required: ["name"],
@@ -519,12 +519,14 @@ async function executeTool(
         }
       }
       if (input.entry_id) {
-        await invoke("update_entry", {
+        const updateParams: Record<string, unknown> = {
           worldPath,
           entryId: input.entry_id as string,
           name: input.name as string,
           body: eBody,
-        });
+        };
+        if (input.entry_type) updateParams.entryType = input.entry_type;
+        await invoke("update_entry", updateParams);
         let msg = t().entryUpdated(input.name as string);
         if (ccResult && ccResult.soft.length > 0) {
           msg += `\n\n${t().softConstraintReminder(ccResult.soft.join("\n"))}`;
@@ -648,12 +650,13 @@ async function executeTool(
         return await invoke<string>("read_memory", { worldPath, fileName: memFile });
       }
       // Write path
-      await invoke("write_memory", {
+      const memParams: Record<string, unknown> = {
         worldPath,
         fileName: memFile,
         content: input.content as string,
-        description: input.description as string,
-      });
+      };
+      if (input.description) memParams.description = input.description;
+      await invoke("write_memory", memParams);
       return t().memorySaved;
     }
     case "ExploreGraph": {

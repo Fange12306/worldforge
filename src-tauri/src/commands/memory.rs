@@ -81,7 +81,7 @@ pub fn write_memory(
     world_path: String,
     file_name: String,
     content: String,
-    description: String,
+    description: Option<String>,
 ) -> Result<(), String> {
     let dir = memory_dir(&expand(&world_path));
     fs::create_dir_all(&dir).map_err(|e| format!("创建 memory/ 失败: {}", e))?;
@@ -97,11 +97,13 @@ pub fn write_memory(
         index = fs::read_to_string(&index_path).unwrap_or_default();
     }
 
+    let desc = description.as_deref().unwrap_or("");
+    let sep_desc = if desc.is_empty() { String::new() } else { format!(" — {}", desc) };
     let entry_line = format!(
-        "- [{}]({}) — {}",
+        "- [{}]({}){}",
         file_name.trim_end_matches(".md"),
         file_name,
-        description
+        sep_desc,
     );
 
     // Replace existing entry or append

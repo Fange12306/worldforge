@@ -136,7 +136,7 @@ function ToolCallsSummary({ calls, expanded, active, onToggle }: { calls: NonNul
         <div className="mt-1 space-y-0.5 pl-2 border-l border-surface-700/50">
           {calls.map((c, i) => {
             const input = c.input as Record<string, unknown> | undefined;
-            const hint = input?.query || input?.id || input?.chapter_order || input?.pattern || input?.path || "";
+            const hint = input?.query || input?.entry_id || input?.id || input?.chapter_order || input?.pattern || input?.path || input?.name || input?.url || input?.file_name || "";
             const resultPreview = c.result
               ? c.result.slice(0, 100).replace(/\n/g, " ").trim()
               : "";

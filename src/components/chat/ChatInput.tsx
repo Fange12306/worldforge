@@ -298,7 +298,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
           updateStreamToolResult(result.toolUseId, result.content);
           invoke("append_session_message", { worldPath: world.path, sessionId: activeConversationId, message: { type: "tool_result", tool: toolName || result.toolName || "", output: result.content, timestamp: new Date().toISOString() } }).catch(() => {});
           // Bump refreshKey when world data changes
-          if (toolName === "WriteOutline" || toolName === "EntryWrite" || toolName === "RelationAdd" || toolName === "RelationRemove") {
+          if (toolName === "WriteOutline" || toolName === "EntryWrite" || toolName === "Relation") {
             window.dispatchEvent(new CustomEvent("worldforge-data-changed"));
           }
         },

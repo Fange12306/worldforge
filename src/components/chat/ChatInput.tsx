@@ -1,16 +1,43 @@
 import { useState, useEffect, useRef, type KeyboardEvent } from "react";
-import { useStore, type ToolCall, type TimelineBlock } from "@/lib/store";
+import { useStore, type Message, type ToolCall, type TimelineBlock } from "@/lib/store";
 import { invoke } from "@/lib/api";
 import { runAgentLoop, resetPermissions, type AgentMessage } from "@/lib/agent-loop";
 import { buildSystemPrompt } from "@/lib/system-prompt";
+import { buildModelMessages } from "@/lib/model-context";
+import { appendSessionMessage, rewriteSessionMessages } from "@/lib/session-writer";
 import { ArrowUp, Square, X, Paperclip, Loader2 } from "lucide-react";
 import { InlinePermission } from "./PermissionDialog";
 import { ContextRing } from "./ContextRing";
 import type { PermissionChoice } from "@/lib/agent-loop";
 import type { Entry } from "@/lib/types";
 
+function toSessionMessages(messages: Message[]) {
+  return messages.map((message) => {
+    const timestamp = new Date(message.timestamp || Date.now()).toISOString();
+    if (message.role === "assistant") {
+      return {
+        type: "assistant",
+        content: message.content,
+        thinking: message.thinking || null,
+        timestamp,
+      };
+    }
+    if (message.role === "system") {
+      return {
+        type: "system",
+        content: message.content,
+        timestamp,
+      };
+    }
+    return {
+      type: "user",
+      content: message.content,
+      timestamp,
+    };
+  });
+}
+
 export function ChatInput({ storyId }: { storyId: string }) {
-  const [input, setInput] = useState("");
   const [files, setFiles] = useState<{ name: string; content: string }[]>([]);
   const [permission, setPermission] = useState<null | { toolName: string; details: string; callback: (c: PermissionChoice) => void }>(null);
   const [newEntryForm, setNewEntryForm] = useState(false);
@@ -19,6 +46,9 @@ export function ChatInput({ storyId }: { storyId: string }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef(false);
   const streamStateRef = useRef({ text: "", thinking: "", toolCalls: [] as ToolCall[] });
+  const turnTextRef = useRef("");
+  const turnThinkingRef = useRef("");
+  const turnToolCallsRef = useRef<ToolCall[]>([]);
 
   // Listen for permission requests
   useEffect(() => {
@@ -39,6 +69,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
   const setActiveModel = useStore((s) => s.setActiveModel);
   const addMessage = useStore((s) => s.addMessage);
   const isStreaming = useStore((s) => s.isStreaming);
+  const streamingConversationId = useStore((s) => s.streamingConversationId);
   const setStreaming = useStore((s) => s.setStreaming);
   const appendStreamText = useStore((s) => s.appendStreamText);
   const appendStreamThinking = useStore((s) => s.appendStreamThinking);
@@ -47,44 +78,67 @@ export function ChatInput({ storyId }: { storyId: string }) {
   const setIsToolRunning = useStore((s) => s.setIsToolRunning);
   const updateStreamToolResult = useStore((s) => s.updateStreamToolResult);
   const clearStreamText = useStore((s) => s.clearStreamText);
+  const conversationDrafts = useStore((s) => s.conversationDrafts);
+  const setConversationDraft = useStore((s) => s.setConversationDraft);
 
-  // Retry: remove last assistant message, then re-send user message
+  const input = conversationDrafts[activeConversationId || ""] || "";
+  const isStreamingHere = isStreaming && activeConversationId === streamingConversationId;
+  const isStreamingElsewhere = isStreaming && activeConversationId !== streamingConversationId;
+  const setInput = (value: string) => {
+    if (activeConversationId) setConversationDraft(activeConversationId, value);
+  };
+
+  // Retry: replace the whole last turn. Tool results are stored as hidden
+  // system messages, so removing only the assistant response leaves stale
+  // context in the next request.
   useEffect(() => {
-    const handler = (e: Event) => {
-      const content = (e as CustomEvent).detail.content as string;
-      if (!content || isStreaming) return;
-      // Remove the last assistant message so retry has clean history
+    const handler = async (e: Event) => {
+      const fallbackContent = (e as CustomEvent).detail.content as string;
+      if (isStreaming) return;
       const w = useStore.getState().worlds.find((x) => x.id === activeWorldId);
       const s = w?.stories.find((x) => x.id === storyId);
       const c = s?.conversations.find((x) => x.id === activeConversationId);
-      if (c) {
-        const msgs = [...c.messages];
-        // Remove last assistant message (the cancelled/failed one)
-        const lastIdx = msgs.map((m, i) => ({ m, i })).filter((x) => x.m.role === "assistant").pop()?.i;
-        if (lastIdx !== undefined) {
-          msgs.splice(lastIdx, 1);
-          // Update store directly
-          useStore.setState((prev) => ({
-            worlds: prev.worlds.map((ww) => ww.id === activeWorldId ? {
-              ...ww, stories: ww.stories.map((ss) => ss.id === storyId ? {
-                ...ss, conversations: ss.conversations.map((cc) => cc.id === activeConversationId ? {
-                  ...cc, messages: msgs,
-                } : cc),
-              } : ss),
-            } : ww),
-          }));
+      if (!w || !c) return;
+
+      const msgs = [...c.messages];
+      let lastUserIdx = -1;
+      for (let i = msgs.length - 1; i >= 0; i -= 1) {
+        if (msgs[i].role === "user") {
+          lastUserIdx = i;
+          break;
         }
       }
+      const retryContent = lastUserIdx >= 0 ? msgs[lastUserIdx].content : fallbackContent;
+      if (!retryContent) return;
+
+      const nextMessages = lastUserIdx >= 0 ? msgs.slice(0, lastUserIdx) : msgs;
+      useStore.setState((prev) => ({
+        worlds: prev.worlds.map((ww) => ww.id === activeWorldId ? {
+          ...ww,
+          stories: ww.stories.map((ss) => ss.id === storyId ? {
+            ...ss,
+            conversations: ss.conversations.map((cc) => cc.id === activeConversationId ? {
+              ...cc,
+              messages: nextMessages,
+            } : cc),
+          } : ss),
+        } : ww),
+      }));
+      try {
+        await rewriteSessionMessages(w.path, c.id, toSessionMessages(nextMessages));
+      } catch {}
+
+      clearStreamText();
       const el = textareaRef.current;
       if (!el) return;
       const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
-      nativeSetter?.call(el, content);
+      nativeSetter?.call(el, retryContent);
       el.dispatchEvent(new Event("input", { bubbles: true }));
       setTimeout(() => el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })), 50);
     };
     window.addEventListener("worldforge-retry", handler);
     return () => window.removeEventListener("worldforge-retry", handler);
-  }, [isStreaming, activeWorldId, storyId, activeConversationId]);
+  }, [isStreaming, activeWorldId, storyId, activeConversationId, clearStreamText]);
 
   // Listen for command palette selections
   useEffect(() => {
@@ -126,13 +180,14 @@ export function ChatInput({ storyId }: { storyId: string }) {
   const handleSend = async () => {
     const text = input.trim();
     if ((!text && files.length === 0) || isStreaming || !world || !story) return;
+    const convId = activeConversationId!; // Lock to this conversation for the entire send
 
     // ── Handle slash commands ──
     const persistCmd = (cmd: string, result: string) => {
-      addMessage(storyId, { role: "user", content: cmd });
-      addMessage(storyId, { role: "assistant", content: result });
-      invoke("append_session_message", { worldPath: world.path, sessionId: activeConversationId, message: { type: "user", content: cmd, timestamp: new Date().toISOString() } }).catch(() => {});
-      invoke("append_session_message", { worldPath: world.path, sessionId: activeConversationId, message: { type: "assistant", content: result, timestamp: new Date().toISOString() } }).catch(() => {});
+      addMessage(storyId, { role: "user", content: cmd }, convId);
+      addMessage(storyId, { role: "assistant", content: result }, convId);
+      appendSessionMessage(world.path, convId, { type: "user", content: cmd, timestamp: new Date().toISOString() }).catch(() => {});
+      appendSessionMessage(world.path, convId, { type: "assistant", content: result, timestamp: new Date().toISOString() }).catch(() => {});
     };
     if (text.startsWith("/stats")) {
       let stats = `词条统计:\n`;
@@ -204,7 +259,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
     }
 
     if (!llmProvider || !activeModel) {
-      addMessage(storyId, { role: "assistant", content: "请先在设置中配置 LLM。" });
+      addMessage(storyId, { role: "assistant", content: "请先在设置中配置 LLM。" }, convId);
       return;
     }
     setInput("");
@@ -219,13 +274,13 @@ export function ChatInput({ storyId }: { storyId: string }) {
       // Persist files to disk (per-conversation)
       for (const f of currentFiles) {
         try {
-          await invoke("write_file", { worldPath: world.path, fileName: f.name, content: f.content, conversationId: activeConversationId });
+          await invoke("write_file", { worldPath: world.path, fileName: f.name, content: f.content, conversationId: convId });
         } catch {}
       }
     }
-    addMessage(storyId, { role: "user", content: userContent });
+    addMessage(storyId, { role: "user", content: userContent }, convId);
     // Persist user message to session JSONL
-    invoke("append_session_message", { worldPath: world.path, sessionId: activeConversationId, message: { type: "user", content: userContent, timestamp: new Date().toISOString() } }).catch(() => {});
+    appendSessionMessage(world.path, convId, { type: "user", content: userContent, timestamp: new Date().toISOString() }).catch(() => {});
 
     let entries: Entry[] = [];
     try { entries = await invoke<Entry[]>("list_entries", { worldPath: world.path }); } catch {}
@@ -235,9 +290,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
       .find((w) => w.id === activeWorldId)
       ?.stories.find((s) => s.id === storyId)
       ?.conversations.find((c) => c.id === activeConversationId);
-    const history: AgentMessage[] = (latestConv?.messages ?? [])
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+    const history: AgentMessage[] = buildModelMessages(latestConv?.messages ?? []);
 
     // ── Step 2: Inject file content into LLM context only (UI stays clean) ──
     if (currentFiles.length > 0) {
@@ -255,28 +308,50 @@ export function ChatInput({ storyId }: { storyId: string }) {
       }
     }
 
-    setStreaming(true, activeConversationId || undefined);
+    setStreaming(true, convId);
     clearStreamText();
     abortRef.current = false;
-    resetPermissions(activeConversationId || undefined);
+    resetPermissions(convId);
     let finalContent = "";
     let thinkingContent = "";
+    turnTextRef.current = "";
+    turnThinkingRef.current = "";
+    turnToolCallsRef.current = [];
     const toolCalls: ToolCall[] = [];
     const timeline: TimelineBlock[] = [];
     let prevBlock: TimelineBlock | null = null;
     streamStateRef.current = { text: "", thinking: "", toolCalls: [] };
 
+    const flushTurnText = () => {
+      const text = turnTextRef.current;
+      const thinking = turnThinkingRef.current.trim() || undefined;
+      const tc = turnToolCallsRef.current;
+      if (text.trim() || thinking) {
+        addMessage(storyId, {
+          role: "assistant",
+          content: text,
+          thinking,
+          toolCalls: tc.length > 0 ? [...tc] : undefined,
+        }, convId);
+        appendSessionMessage(world.path, convId, { type: "assistant", content: text, thinking: thinking || null, timestamp: new Date().toISOString() }).catch(() => {});
+      }
+      turnTextRef.current = "";
+      turnThinkingRef.current = "";
+      turnToolCallsRef.current = [];
+    };
+
     try {
       const currentModelConfig = llmModels.find((m) => m.name === activeModel);
       const reasoningEffort = currentModelConfig?.reasoningEffort;
+      const maxTokens = currentModelConfig?.maxTokens;
 
       await runAgentLoop(world.path, systemPrompt, history, {
-        onTextDelta: (t) => { if (abortRef.current) return; appendStreamText(t); finalContent += t; streamStateRef.current.text = finalContent;
+        onTextDelta: (t) => { if (abortRef.current) return; appendStreamText(t); finalContent += t; turnTextRef.current += t; streamStateRef.current.text = finalContent;
           setIsThinking(false); setIsToolRunning(false);
           if (prevBlock?.type === "text") { prevBlock.text += t; }
           else { const b: TimelineBlock = { type: "text", text: t }; timeline.push(b); prevBlock = b; }
         },
-        onThinkingDelta: (t) => { if (abortRef.current) return; thinkingContent += t; appendStreamThinking(t); streamStateRef.current.thinking = thinkingContent;
+        onThinkingDelta: (t) => { if (abortRef.current) return; thinkingContent += t; turnThinkingRef.current += t; appendStreamThinking(t); streamStateRef.current.thinking = thinkingContent;
           setIsThinking(true); setIsToolRunning(false);
           if (prevBlock?.type === "thinking") { prevBlock.text += t; }
           else { const b: TimelineBlock = { type: "thinking", text: t }; timeline.push(b); prevBlock = b; }
@@ -286,9 +361,10 @@ export function ChatInput({ storyId }: { storyId: string }) {
           if (abortRef.current) return;
           const tc: ToolCall = { id, name, input: input || {}, result: "" };
           toolCalls.push(tc);
+          turnToolCallsRef.current = [...turnToolCallsRef.current, tc];
           streamStateRef.current.toolCalls = [...toolCalls];
           addStreamToolCall(tc);
-          invoke("append_session_message", { worldPath: world.path, sessionId: activeConversationId, message: { type: "tool_use", tool: name, input: input || {}, timestamp: new Date().toISOString() } }).catch(() => {});
+          appendSessionMessage(world.path, convId, { type: "tool_use", tool: name, input: input || {}, timestamp: new Date().toISOString() }).catch(() => {});
           setIsThinking(false); setIsToolRunning(true);
           const b: TimelineBlock = { type: "tool", call: tc }; timeline.push(b); prevBlock = b;
         },
@@ -299,8 +375,11 @@ export function ChatInput({ storyId }: { storyId: string }) {
             tc = matching[matching.length - 1];
           }
           if (tc) tc.result = result.content;
+          flushTurnText();
           updateStreamToolResult(result.toolUseId, result.content);
-          invoke("append_session_message", { worldPath: world.path, sessionId: activeConversationId, message: { type: "tool_result", tool: toolName || result.toolName || "", output: result.content, timestamp: new Date().toISOString() } }).catch(() => {});
+          appendSessionMessage(world.path, convId, { type: "tool_result", tool: toolName || result.toolName || "", output: result.content, timestamp: new Date().toISOString() }).catch(() => {});
+          // Persist tool result in conversation so next API call includes full history
+          addMessage(storyId, { role: "system", content: `[工具结果: ${toolName || result.toolName || "tool"}]\n${result.content}` }, convId);
           // Bump refreshKey when world data changes
           if (toolName === "OutlineWrite" || toolName === "EntryWrite" || toolName === "Relation") {
             window.dispatchEvent(new CustomEvent("worldforge-data-changed"));
@@ -308,37 +387,28 @@ export function ChatInput({ storyId }: { storyId: string }) {
         },
         onComplete: (text, thinking) => {
           if (abortRef.current) return; // Already saved by stop button
-          addMessage(storyId, {
-            role: "assistant", content: finalContent,
-            thinking: thinking || undefined,
-            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-            timeline: timeline.length > 0 ? timeline : undefined,
-          });
-          // Persist assistant message to session JSONL (with thinking)
-          invoke("append_session_message", { worldPath: world.path, sessionId: activeConversationId, message: { type: "assistant", content: finalContent, thinking: thinkingContent || null, timestamp: new Date().toISOString() } }).catch(() => {});
+          flushTurnText();
           setStreaming(false);
           clearStreamText();
         },
         onError: (error) => {
           setStreaming(false);
+          flushTurnText();
           const msg = error.includes("发送请求") || error.includes("error sending request") || error.includes("连接")
             ? "网络连接失败，请检查网络后重试。"
             : error.includes("API Key") || error.includes("未配置")
               ? "API Key 未配置或无效，请在设置中检查。"
               : `Error: ${error}`;
-          const interruptedContent = finalContent
-            ? `${finalContent}\n\n[中断: ${msg}]`
-            : msg;
-          addMessage(storyId, { role: "assistant", content: interruptedContent });
-          if (world && activeConversationId) {
-            invoke("append_session_message", { worldPath: world.path, sessionId: activeConversationId, message: { type: "assistant", content: interruptedContent, thinking: thinkingContent || null, timestamp: new Date().toISOString() } }).catch(() => {});
+          addMessage(storyId, { role: "assistant", content: msg }, convId);
+          if (world && convId) {
+            appendSessionMessage(world.path, convId, { type: "assistant", content: msg, thinking: null, timestamp: new Date().toISOString() }).catch(() => {});
           }
           clearStreamText();
         },
-      }, llmProvider, activeModel, storyId, reasoningEffort);
+      }, llmProvider, activeModel, storyId, reasoningEffort, convId, maxTokens);
     } catch (e: any) {
       setStreaming(false);
-      if (!abortRef.current) addMessage(storyId, { role: "assistant", content: `Error: ${e}` });
+      if (!abortRef.current) addMessage(storyId, { role: "assistant", content: `Error: ${e}` }, convId);
       clearStreamText();
     }
   };
@@ -393,10 +463,10 @@ export function ChatInput({ storyId }: { storyId: string }) {
                   const typeLabel = { character: "人物", location: "地点", organization: "组织", event: "事件", system: "体系", artifact: "物品", era: "纪元", concept: "概念" }[newEntryType] || newEntryType;
                   try {
                     const e = await invoke<Entry>("create_entry", { worldPath: world!.path, name: newEntryName.trim(), entryType: newEntryType });
-                    addMessage(storyId, { role: "user", content: `/new-entry ${newEntryName} (${typeLabel})` });
-                    addMessage(storyId, { role: "assistant", content: `词条已创建: **${e.name}** [${e.type}]` });
-                    invoke("append_session_message", { worldPath: world!.path, sessionId: activeConversationId, message: { type: "user", content: `/new-entry ${newEntryName}`, timestamp: new Date().toISOString() } }).catch(() => {});
-                    invoke("append_session_message", { worldPath: world!.path, sessionId: activeConversationId, message: { type: "assistant", content: `词条已创建: **${e.name}** [${e.type}]`, timestamp: new Date().toISOString() } }).catch(() => {});
+                    addMessage(storyId, { role: "user", content: `/new-entry ${newEntryName} (${typeLabel})` }, activeConversationId!);
+                    addMessage(storyId, { role: "assistant", content: `词条已创建: **${e.name}** [${e.type}]` }, activeConversationId!);
+                    appendSessionMessage(world!.path, activeConversationId!, { type: "user", content: `/new-entry ${newEntryName}`, timestamp: new Date().toISOString() }).catch(() => {});
+                    appendSessionMessage(world!.path, activeConversationId!, { type: "assistant", content: `词条已创建: **${e.name}** [${e.type}]`, timestamp: new Date().toISOString() }).catch(() => {});
                   } catch (err: any) {
                     addMessage(storyId, { role: "assistant", content: `创建失败: ${err}` });
                   }
@@ -452,18 +522,20 @@ export function ChatInput({ storyId }: { storyId: string }) {
                 {llmModels.map((m) => <option key={m.name} value={m.name}>{m.alias || m.name}</option>)}
               </select>
             )}
-            {isStreaming ? (
+            {isStreamingHere ? (
               <button onClick={() => {
                   abortRef.current = true;
-                  const state = streamStateRef.current;
-                  const msgContent = state.text + " [已取消]";
-                  addMessage(storyId, {
+                  const scid = useStore.getState().streamingConversationId;
+                  if (scid !== activeConversationId) return;
+                  const thinking = turnThinkingRef.current.trim() || undefined;
+                  const tc = turnToolCallsRef.current;
+                  if (scid) addMessage(storyId, {
                     role: "assistant",
-                    content: msgContent,
-                    thinking: state.thinking || undefined,
-                    toolCalls: state.toolCalls.length > 0 ? state.toolCalls : undefined,
-                  });
-                  if (world && activeConversationId) invoke("append_session_message", { worldPath: world.path, sessionId: activeConversationId, message: { type: "assistant", content: msgContent, thinking: state.thinking || null, timestamp: new Date().toISOString() } }).catch(() => {});
+                    content: turnTextRef.current + " [已取消]",
+                    thinking,
+                    toolCalls: tc.length > 0 ? [...tc] : undefined,
+                  }, scid);
+                  if (world && scid) appendSessionMessage(world.path, scid, { type: "assistant", content: turnTextRef.current + " [已取消]", thinking: thinking || null, timestamp: new Date().toISOString() }).catch(() => {});
                   setStreaming(false);
                   clearStreamText();
                 }}
@@ -472,8 +544,9 @@ export function ChatInput({ storyId }: { storyId: string }) {
               </button>
             ) : (
               <button onClick={handleSend} disabled={!canSend}
+                title={isStreamingElsewhere ? "另一个对话正在输出，请等待完成或切回该对话终止" : undefined}
                 className={`flex-shrink-0 h-7 w-7 flex items-center justify-center rounded-lg transition-colors ${canSend ? "text-ink-secondary hover:text-ink hover:bg-surface-700" : "text-ink-muted"}`}>
-                <ArrowUp className="w-3.5 h-3.5" />
+                {isStreamingElsewhere ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUp className="w-3.5 h-3.5" />}
               </button>
             )}
           </div>

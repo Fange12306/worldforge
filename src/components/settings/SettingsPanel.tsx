@@ -70,9 +70,10 @@ export function SettingsPanel({ onClose }: Props) {
   }, []);
 
   useEffect(() => {
-    invoke<{ baseUrl?: string }>("load_config")
+    invoke<{ baseUrl?: string; activeModel?: string }>("load_config")
       .then((cfg) => {
         if (cfg.baseUrl) setBaseUrl(cfg.baseUrl);
+        if (cfg.activeModel) setActiveModel(cfg.activeModel);
       })
       .catch(() => {});
   }, []);
@@ -91,7 +92,7 @@ export function SettingsPanel({ onClose }: Props) {
     const cleanedModels = normalizeModels(models);
     const cleanedActiveModel = sanitizeModelName(useStore.getState().activeModel);
     try {
-      await invoke("save_config", { provider, models: cleanedModels, key: apiKey, baseUrl });
+      await invoke("save_config", { provider, models: cleanedModels, key: apiKey, baseUrl, activeModel: useStore.getState().activeModel });
       setLlmProvider(provider);
       setModels(cleanedModels);
       setLlmModels(cleanedModels);
@@ -302,6 +303,17 @@ export function SettingsPanel({ onClose }: Props) {
                                   setModels(next);
                                 }}
                                 placeholder="128000"
+                                className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
+                              />
+                              <input
+                                value={m.maxTokens || ""}
+                                onChange={(e) => {
+                                  const next: ModelConfig[] = [...models];
+                                  const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
+                                  next[i] = { ...next[i], maxTokens: v && !isNaN(v) ? v : undefined };
+                                  setModels(next);
+                                }}
+                                placeholder="64000"
                                 className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
                               />
                               <button

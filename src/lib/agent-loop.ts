@@ -44,6 +44,15 @@ export type StreamCallbacks = {
 
 const tools: ToolDef[] = [
   {
+    name: "FinalAnswer",
+    description: "Mark the current user request complete after you have already written the full final answer as normal assistant text. This tool has no side effects and should carry no long content.",
+    input_schema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+  },
+  {
     name: "EntryRead",
     description: "Read a full setting entry by ID. Returns the complete frontmatter and body content.",
     input_schema: {
@@ -868,10 +877,15 @@ export async function runAgentLoop(
   model = "claude-sonnet-4-20250514",
   storyId = "",
   reasoningEffort?: string,
+  convId?: string,
+  maxTokensOverride?: number,
 ) {
   const MAX_RECOVERY = 3;
   let turns = 0;
   let recoveryCount = 0;
+  let totalToolUses = 0;
+  let finalAnswerNudgeCount = 0;
+  let awaitingFinalAnswer = false;
   let fullText = "";
   let thinkingText = "";
   const messages = [...conversation];
@@ -879,12 +893,13 @@ export async function runAgentLoop(
   // max_tokens per provider. Each model has a hard API limit on output tokens
   // — exceeding it causes stop_reason="max_tokens" and recovery kicks in.
   // Anthropic requires this param; OpenAI-compatible accepts it optionally.
+  // Model config override takes precedence.
   const maxTokensByProvider: Record<string, number> = {
     anthropic: 64000,
     openai: 16384,
     deepseek: 16384,
   };
-  const maxTokens = maxTokensByProvider[provider] || 64000;
+  const maxTokens = maxTokensOverride || maxTokensByProvider[provider] || 64000;
 
   // Claude Code 做法: 无限循环, 靠自然完成(end_turn)或用户中断退出, 不做硬轮次截断
   while (true) {
@@ -894,6 +909,7 @@ export async function runAgentLoop(
       // Build tool use tracking for this turn
       const pendingToolUses: { id: string; name: string; input: Record<string, unknown> }[] = [];
       let turnText = "";
+      const confirmationTurn = awaitingFinalAnswer;
 
       // ── Step 1: Set up event listener BEFORE sending API request ──
       // setupStreamListener does dynamic import + Tauri listen, both async.
@@ -904,16 +920,16 @@ export async function runAgentLoop(
       let streamResolve: () => void;
       const streamPromise = new Promise<void>((resolve) => { streamResolve = resolve; });
 
-      const unlisten = await setupStreamListener((event) => {
+      const unlisten = await setupStreamListener(convId || "", (event) => {
         if (streamDone) return;
         switch (event.type) {
           case "text_delta":
             turnText += event.text || "";
-            callbacks.onTextDelta(event.text || "");
+            if (!confirmationTurn) callbacks.onTextDelta(event.text || "");
             break;
           case "thinking_delta":
             thinkingText += event.text || "";
-            callbacks.onThinkingDelta(event.text || "");
+            if (!confirmationTurn) callbacks.onThinkingDelta(event.text || "");
             break;
           case "thinking_done":
             callbacks.onThinkingDone();
@@ -924,10 +940,12 @@ export async function runAgentLoop(
               name: event.name || "",
               input: (event.input || {}) as Record<string, unknown>,
             });
-            callbacks.onToolUse(event.id || "", event.name || "", (event.input || {}) as Record<string, unknown>);
+            if (event.name !== "FinalAnswer") {
+              callbacks.onToolUse(event.id || "", event.name || "", (event.input || {}) as Record<string, unknown>);
+            }
             break;
           case "usage":
-            useStore.getState().addTokens(event.input_tokens ?? 0, event.output_tokens ?? 0);
+            useStore.getState().addTokens(event.input_tokens ?? 0, event.output_tokens ?? 0, convId);
             // Update context window breakdown
             {
               const inputTokens = event.input_tokens ?? 0;
@@ -949,7 +967,7 @@ export async function runAgentLoop(
                   skills: inputShare(skillsText.length),
                   total: inputTokens,
                 };
-                useStore.getState().updateContextUsage(inputTokens, breakdown);
+                useStore.getState().updateContextUsage(inputTokens, breakdown, convId);
               }
             }
             break;
@@ -979,6 +997,7 @@ export async function runAgentLoop(
           provider,
           maxTokens,
           reasoningEffort: reasoningEffort || null,
+          conversationId: convId || null,
         });
 
         // Wait for stream to complete
@@ -988,14 +1007,32 @@ export async function runAgentLoop(
         unlisten();
       }
 
-      fullText += turnText;
+      if (!confirmationTurn) fullText += turnText;
+
+      const finalAnswerTool = pendingToolUses.find((tool) => tool.name === "FinalAnswer");
+      if (finalAnswerTool) {
+        if (!fullText.trim()) {
+          messages.push({
+            role: "user",
+            content: `FinalAnswer 只能作为完成标记使用。请先用普通 assistant 文本流式输出完整最终答复，然后再调用 FinalAnswer。`,
+          });
+          continue;
+        }
+        callbacks.onComplete(fullText, thinkingText);
+        return;
+      }
 
       // Add assistant message to history (may be partial if truncated)
-      messages.push({ role: "assistant", content: turnText });
+      if (!confirmationTurn) {
+        messages.push({ role: "assistant", content: turnText });
+      }
 
       // Execute all tool calls that arrived — no artificial per-turn cap
 
+      totalToolUses += pendingToolUses.length;
       for (const tool of pendingToolUses) {
+        if (tool.name === "FinalAnswer") continue;
+        awaitingFinalAnswer = false;
         try {
           const result = await executeTool(tool.name, tool.input, worldPath, storyId);
           callbacks.onToolResult({ toolUseId: tool.id, toolName: tool.name, content: result }, tool.name);
@@ -1030,6 +1067,19 @@ export async function runAgentLoop(
 
       // If no tool calls and no recovery needed, we're done
       if (pendingToolUses.length === 0) {
+        if (totalToolUses > 0 && finalAnswerNudgeCount < 2) {
+          finalAnswerNudgeCount++;
+          awaitingFinalAnswer = true;
+          messages.push({
+            role: "user",
+            content: `你刚才的普通 assistant 文本已作为候选最终答复展示给用户。现在进入内部确认步骤：如果这份答复已经完整，只调用空参数 FinalAnswer，且不要输出任何普通文本；如果还缺信息，请调用合适工具继续完成任务。`,
+          });
+          continue;
+        }
+        if (totalToolUses > 0) {
+          callbacks.onError("模型在使用工具后没有调用 FinalAnswer，任务完成状态不明确。");
+          return;
+        }
         callbacks.onComplete(fullText, thinkingText);
         return;
       }
@@ -1055,23 +1105,31 @@ interface StreamEventPayload {
   stop_reason?: string;
   input_tokens?: number;
   output_tokens?: number;
+  conversation_id?: string;
 }
 
+const _activeListeners = new Map<string, () => void>();
+
 async function setupStreamListener(
+  conversationId: string,
   handler: (event: StreamEventPayload) => void,
 ): Promise<() => void> {
-  // Auto-cleanup previous listener to prevent double-event bugs on re-entry
-  if (_activeUnlisten) { _activeUnlisten(); _activeUnlisten = null; }
+  // Clean up any previous listener for this same conversation
+  const prev = _activeListeners.get(conversationId);
+  if (prev) { prev(); _activeListeners.delete(conversationId); }
   try {
     const { listen } = await import("@tauri-apps/api/event");
     const unlisten = await listen<any>("stream-event", (event) => {
-      handler(event.payload);
+      const payload = event.payload as StreamEventPayload;
+      // Filter: only process events for this conversation
+      if (payload.conversation_id !== conversationId) return;
+      handler(payload);
     });
-    _activeUnlisten = () => { unlisten(); _activeUnlisten = null; };
-    return _activeUnlisten;
+    const cleanup = () => { unlisten(); _activeListeners.delete(conversationId); };
+    _activeListeners.set(conversationId, cleanup);
+    return cleanup;
   } catch (e) {
     handler({ type: "error", message: `事件系统不可用: ${e}` });
     return () => {};
   }
 }
-let _activeUnlisten: (() => void) | null = null;

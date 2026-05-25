@@ -56,6 +56,7 @@ pub fn run() {
             story::delete_story_meta,
             // Session persistence
             session::append_session_message,
+            session::rewrite_session_messages,
             session::load_session,
             session::list_sessions,
             session::delete_session,
@@ -73,6 +74,10 @@ pub fn run() {
             api_key::delete_api_key,
             api_key::save_last_session,
             api_key::load_last_session,
+            api_key::save_custom_prompt,
+            api_key::load_custom_prompt,
+            api_key::save_language,
+            api_key::load_language,
             // LLM API proxy
             api_proxy::stream_chat,
             api_proxy::test_connection,

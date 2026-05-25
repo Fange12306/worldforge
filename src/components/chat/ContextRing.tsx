@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useStore } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 import type { ContextBreakdown } from "@/lib/context-window";
 
 const RING_SIZE = 16;
@@ -32,6 +33,7 @@ function BreakdownRow({ label, tokens, pct, indent }: { label: string; tokens: n
 }
 
 export function ContextRing() {
+  const { t } = useT();
   const worlds = useStore((s) => s.worlds);
   const activeWorldId = useStore((s) => s.activeWorldId);
   const activeConversationId = useStore((s) => s.activeConversationId);
@@ -78,7 +80,7 @@ export function ContextRing() {
       <button
         onClick={() => setOpen(!open)}
         className="p-0.5 rounded hover:bg-surface-700 transition-colors"
-        title={`上下文: ${fmtTokens(contextUsed)} / ${fmtTokens(contextWindowSize)} (${pct.toFixed(0)}%)`}
+        title={t.chat.contextTooltip(fmtTokens(contextUsed), fmtTokens(contextWindowSize), pct.toFixed(0))}
       >
         <svg width={RING_SIZE} height={RING_SIZE} viewBox={`0 0 ${RING_SIZE} ${RING_SIZE}`} className="block">
           {/* Background ring */}
@@ -110,7 +112,7 @@ export function ContextRing() {
       {open && (
         <div className="absolute bottom-full right-0 mb-2 w-64 bg-surface-850 border border-edge rounded-xl shadow-xl z-50 p-3 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-ink">上下文窗口</span>
+            <span className="text-xs font-semibold text-ink">{t.model.contextWindow}</span>
             <span className="text-[11px] tabular-nums" style={{ color: ringColor(pct) }}>
               {fmtTokens(contextUsed)} / {fmtTokens(contextWindowSize)} ({pct.toFixed(0)}%)
             </span>
@@ -128,7 +130,7 @@ export function ContextRing() {
               <BreakdownRow label="Free space" tokens={freeSpace} pct={(freeSpace / contextWindowSize) * 100} />
             </>
           ) : (
-            <p className="text-[11px] text-ink-muted">发送第一条消息后显示详情</p>
+            <p className="text-[11px] text-ink-muted">{t.chat.contextEmpty}</p>
           )}
         </div>
       )}

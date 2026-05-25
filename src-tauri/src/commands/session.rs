@@ -3,6 +3,9 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Mutex;
+
+static SESSION_IO_LOCK: Mutex<()> = Mutex::new(());
 
 fn expand(path: &str) -> PathBuf {
     if path.starts_with("~/") {
@@ -21,6 +24,8 @@ pub enum SessionMessage {
     User { content: String, timestamp: String },
     #[serde(rename = "assistant")]
     Assistant { content: String, thinking: Option<String>, timestamp: String },
+    #[serde(rename = "system")]
+    System { content: String, timestamp: String },
     #[serde(rename = "tool_use")]
     ToolUse {
         tool: String,
@@ -52,6 +57,9 @@ pub fn append_session_message(
     session_id: String,
     message: SessionMessage,
 ) -> Result<(), String> {
+    let _guard = SESSION_IO_LOCK
+        .lock()
+        .map_err(|_| "session 写入锁已损坏".to_string())?;
     let sessions_dir = expand(&world_path).join("sessions");
     fs::create_dir_all(&sessions_dir)
         .map_err(|e| format!("创建 sessions/ 失败: {}", e))?;
@@ -67,6 +75,37 @@ pub fn append_session_message(
         .map_err(|e| format!("序列化失败: {}", e))?;
     writeln!(file, "{}", line)
         .map_err(|e| format!("写入失败: {}", e))?;
+
+    Ok(())
+}
+
+/// Rewrite a session JSONL file with the supplied messages.
+#[tauri::command]
+pub fn rewrite_session_messages(
+    world_path: String,
+    session_id: String,
+    messages: Vec<SessionMessage>,
+) -> Result<(), String> {
+    let _guard = SESSION_IO_LOCK
+        .lock()
+        .map_err(|_| "session 写入锁已损坏".to_string())?;
+    let sessions_dir = expand(&world_path).join("sessions");
+    fs::create_dir_all(&sessions_dir)
+        .map_err(|e| format!("创建 sessions/ 失败: {}", e))?;
+
+    let filepath = sessions_dir.join(format!("{}.jsonl", session_id));
+    let mut lines = Vec::with_capacity(messages.len());
+    for message in messages {
+        lines.push(serde_json::to_string(&message)
+            .map_err(|e| format!("序列化失败: {}", e))?);
+    }
+    let content = if lines.is_empty() {
+        String::new()
+    } else {
+        format!("{}\n", lines.join("\n"))
+    };
+    fs::write(&filepath, content)
+        .map_err(|e| format!("写入 session 失败: {}", e))?;
 
     Ok(())
 }
@@ -144,6 +183,9 @@ pub fn list_sessions(world_path: String) -> Result<Vec<SessionInfo>, String> {
 /// Delete a session file (also cleans up .tokens)
 #[tauri::command]
 pub fn delete_session(world_path: String, session_id: String) -> Result<(), String> {
+    let _guard = SESSION_IO_LOCK
+        .lock()
+        .map_err(|_| "session 写入锁已损坏".to_string())?;
     let dir = PathBuf::from(&world_path).join("sessions");
     for ext in &["jsonl", "tokens"] {
         let filepath = dir.join(format!("{}.{}", session_id, ext));

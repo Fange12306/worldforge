@@ -8,6 +8,11 @@ import { useStore } from "./store";
 import type { Entry } from "./types";
 import { estimateTokens } from "./context-window";
 import type { ContextBreakdown } from "./context-window";
+import { getT } from "./i18n";
+
+function t() {
+  return getT(useStore.getState().language).agent;
+}
 
 // ── Types ──
 
@@ -42,7 +47,9 @@ export type StreamCallbacks = {
 
 // ── Tool implementations ──
 
-const tools: ToolDef[] = [
+function getTools(): ToolDef[] {
+  const ta = t();
+  return [
   {
     name: "FinalAnswer",
     description: "Mark the current user request complete after you have already written the full final answer as normal assistant text. This tool has no side effects and should carry no long content.",
@@ -206,7 +213,7 @@ const tools: ToolDef[] = [
         from_id: { type: "string", description: "Source entity ID" },
         to_type: { type: "string", description: "Target entity type" },
         to_id: { type: "string", description: "Target entity ID" },
-        description: { type: "string", description: "关系描述（如 '弟子'、'持有'、'位于'、'盟友'）" },
+        description: { type: "string", description: ta.relationDesc },
         delete: { type: "boolean", description: "Set to true to REMOVE this relation. REQUIRES PERMISSION." },
       },
       required: ["from_type", "from_id", "to_type", "to_id", "description"],
@@ -278,14 +285,15 @@ const tools: ToolDef[] = [
         summary: { type: "string", description: "Event description. Required for new events." },
         name: { type: "string", description: "Set/change the readable event slug (optional). Only needed when creating or renaming." },
         precision: { type: "number", description: "Optional: precision index into time_format.units (0=era, 1=year, 2=month, 3=day, 4=hour, 5=minute, 6=second). Display truncates at this level." },
-        linked_entries: { type: "string", description: "Comma-separated list. Each item: '词条ID|该词条视角的简述'. Example: '黎明号|着陆失败暴露了暗物质侵蚀的后遗症,赵远航|下令返航'" },
+        linked_entries: { type: "string", description: ta.eventLinkedEntries },
         linked_chapters: { type: "string", description: "Comma-separated: 'story_id:order,story_id:order'" },
         relationship_changes: { type: "string", description: "Newline-separated: 'entry_a|entry_b|add|ally_of|description\\\\nentry_c|entry_d|delete|enemy_of'" },
       },
       required: ["timeline_id"],
     },
   },
-];
+  ];
+}
 
 // ── Permission state ──
 
@@ -321,12 +329,13 @@ async function checkPermission(name: string, input: Record<string, unknown>): Pr
   if (isDangerous) {
     return new Promise((resolve) => {
       const labelMap: Record<string, string> = {
-        Relation: `${input.delete ? "移除" : "建立"}关联: ${input.description || ""}`,
-        EntryWrite: `⚠️ 删除词条: ${input.entry_id || ""}`,
-        EventWrite: `⚠️ 删除事件: ${input.event_name || ""}`,
-        TimelineWrite: `⚠️ 删除时间轴: ${input.timeline_id || ""}`,
+        Relation: t().toolRelation(!!input.delete, (input.description as string) || ""),
+        EntryWrite: t().toolEntryWriteDelete((input.entry_id as string) || ""),
+        EventWrite: t().toolEventWriteDelete((input.event_name as string) || ""),
+        TimelineWrite: t().toolTimelineDelete((input.timeline_id as string) || ""),
       };
-      const label = isDelete ? (labelMap[name] || `⚠️ 删除: ${input.event_name || input.entry_id || input.timeline_id || ""}`) : (input.description || "");
+      const genericId = (input.event_name || input.entry_id || input.timeline_id || "") as string;
+      const label = isDelete ? (labelMap[name] || t().toolGenericDelete(genericId)) : (input.description || "");
       const evt = new CustomEvent("worldforge-permission", {
         detail: {
           toolName: name,
@@ -346,8 +355,8 @@ async function checkPermission(name: string, input: Record<string, unknown>): Pr
   return new Promise((resolve) => {
     const labelMap: Record<string, string> = {
       OutlineWrite: `Ch${input.chapter_order} ${input.title || ""}`,
-      EventWrite: `事件: ${input.event_name || input.summary || ""}`,
-      TimelineWrite: `时间轴: ${input.timeline_id ? "更新 " + input.timeline_id : "创建 " + (input.name || "")}`,
+      EventWrite: t().toolEventLabel((input.event_name as string) || "", (input.summary as string) || ""),
+      TimelineWrite: t().toolTimelineLabel((input.timeline_id as string) || "", (input.name as string) || ""),
     };
     const detail = labelMap[name] || `${input.name || input.entry_id || ""}`;
     const evt = new CustomEvent("worldforge-permission", {
@@ -416,7 +425,7 @@ async function runConsistencyCheck(
   const hard: string[] = [];
   const soft: string[] = [];
   for (const v of violations) {
-    const msg = `[${v.level === "hard" ? "硬约束" : "软约束"}] ${v.rule}\n    判定理由: ${v.reason}`;
+    const msg = `[${v.level === "hard" ? t().hardConstraint : t().softConstraint}] ${v.rule}\n    ${t().constraintReason}: ${v.reason}`;
     if (v.level === "hard") hard.push(msg);
     else soft.push(msg);
   }
@@ -437,7 +446,7 @@ async function executeTool(
 ): Promise<string> {
   // Check permission before write operations
   if (!await checkPermission(name, input)) {
-    return `用户拒绝了此操作。请不要重试 ${name}，直接告诉用户操作已被拒绝。`;
+    return t().permissionDenied(name);
   }
   switch (name) {
     case "EntryRead": {
@@ -466,7 +475,11 @@ async function executeTool(
       const MAX = 200;
       if (!q) {
         if (entries.length > MAX) {
-          return `共 ${entries.length} 条，超显示上限。前 ${MAX} 条:\n${JSON.stringify(entries.slice(0, MAX))}\n请用 query 或 entry_type 缩小范围。`;
+          const msg = t().searchTooMany(entries.length, MAX);
+          const nl = msg.indexOf("\n");
+          return nl >= 0
+            ? `${msg.slice(0, nl)}\n${JSON.stringify(entries.slice(0, MAX))}\n${msg.slice(nl + 1)}`
+            : `${msg}\n${JSON.stringify(entries.slice(0, MAX))}`;
         }
         return JSON.stringify(entries);
       }
@@ -475,15 +488,16 @@ async function executeTool(
         if (type && e.type !== type) return false;
         const matchName = e.name.toLowerCase().includes(q);
         const matchTag = e.tags?.some((t: string) => t.toLowerCase().includes(q));
-        const typeLabels: Record<string, string> = {
-          character: "人物", location: "地点", organization: "组织",
-          system: "体系", artifact: "物品", era: "纪元", concept: "概念",
-        };
+        const typeLabels = getT(useStore.getState().language).entryTypes;
         const matchType = (typeLabels[e.type] || e.type).includes(q);
         return matchName || matchTag || matchType;
       });
       if (filtered.length > MAX) {
-        return `找到 ${filtered.length} 条，超显示上限。前 ${MAX} 条:\n${JSON.stringify(filtered.slice(0, MAX))}\n请缩小搜索范围。`;
+        const msg = t().searchFilteredTooMany(filtered.length, MAX);
+        const nl = msg.indexOf("\n");
+        return nl >= 0
+          ? `${msg.slice(0, nl)}\n${JSON.stringify(filtered.slice(0, MAX))}\n${msg.slice(nl + 1)}`
+          : `${msg}\n${JSON.stringify(filtered.slice(0, MAX))}`;
       }
       return JSON.stringify(filtered);
     }
@@ -492,16 +506,16 @@ async function executeTool(
       const eId = input.entry_id as string | undefined;
       // Delete path
       if (input.delete === true) {
-        if (!eId) return "❌ 删除词条需要指定 entry_id。";
+        if (!eId) return t().deleteNeedsId;
         await invoke("delete_entry", { worldPath, entryId: eId });
-        return `词条 "${eId}" 已删除。`;
+        return t().entryDeleted(eId);
       }
       // Consistency check before write (only for updates — new entries have no graph context)
       let ccResult: { hard: string[]; soft: string[] } | null = null;
       if (eId) {
         ccResult = await runConsistencyCheck(worldPath, eBody, "entry", eId);
         if (ccResult && ccResult.hard.length > 0) {
-          return `❌ 硬约束违反，写入已被阻止:\n\n${ccResult.hard.join("\n\n")}\n\n请修改内容后重试。`;
+          return t().hardConstraintBlock(ccResult.hard.join("\n\n"));
         }
       }
       if (input.entry_id) {
@@ -511,9 +525,9 @@ async function executeTool(
           name: input.name as string,
           body: eBody,
         });
-        let msg = `词条 "${input.name}" 更新成功。`;
+        let msg = t().entryUpdated(input.name as string);
         if (ccResult && ccResult.soft.length > 0) {
-          msg += `\n\n⚠️ 软约束提醒:\n${ccResult.soft.join("\n")}`;
+          msg += `\n\n${t().softConstraintReminder(ccResult.soft.join("\n"))}`;
         }
         return msg;
       } else {
@@ -523,7 +537,7 @@ async function executeTool(
           name: input.name as string,
           entryType,
         });
-        return `词条 "${input.name}" [${entryType}] 创建成功。`;
+        return t().entryCreated(input.name as string, entryType);
       }
     }
     case "WebFetch": {
@@ -551,14 +565,14 @@ async function executeTool(
         structure_hints: string[];
       }>("scene_analyze", params);
       const lines = [
-        `字数: ${analysis.word_count} | 段落: ${analysis.paragraph_count} | 预计阅读: ${analysis.estimated_reading_minutes} 分钟`,
-        `对话比例: ${Math.round(analysis.dialogue_ratio * 100)}%`,
+        t().sceneStats(analysis.word_count, analysis.paragraph_count, analysis.estimated_reading_minutes),
+        t().sceneDialogueRatio(Math.round(analysis.dialogue_ratio * 100)),
       ];
       if (analysis.referenced_entries.length > 0) {
-        lines.push(`涉及词条: ${analysis.referenced_entries.join(", ")}`);
+        lines.push(`${t().sceneReferencedEntries}: ${analysis.referenced_entries.join(", ")}`);
       }
       if (analysis.structure_hints.length > 0) {
-        lines.push(`结构提示:\n${analysis.structure_hints.map((h) => `  - ${h}`).join("\n")}`);
+        lines.push(`${t().sceneStructureHints}:\n${analysis.structure_hints.map((h) => `  - ${h}`).join("\n")}`);
       }
       return lines.join("\n");
     }
@@ -572,10 +586,11 @@ async function executeTool(
       const chapters = await invoke<Array<{
         id: string; order: number; title: string; status: string; summary: string; has_body: boolean; word_count: number;
       }>>("read_outline", { worldPath, storyId });
-      if (chapters.length === 0) return "暂无大纲章节。";
+      if (chapters.length === 0) return t().outlineEmpty;
       return chapters.map((c) => {
         const statusLabel = c.status === "done" ? "✓" : c.status === "drafting" ? "✎" : "○";
-        const info = c.has_body ? `${c.word_count}字` : "无正文";
+        const wordsLabel = getT(useStore.getState().language).common.words;
+        const info = c.has_body ? `${c.word_count}${wordsLabel}` : t().outlineNoBody;
         return `${statusLabel} Ch${c.order} ${c.title} [${info}] id=${c.id}${c.summary ? ` — ${c.summary}` : ""}`;
       }).join("\n");
     }
@@ -586,7 +601,7 @@ async function executeTool(
       if (chBody.trim().length >= 10) {
         ccResult = await runConsistencyCheck(worldPath, chBody, "outline", storyId);
         if (ccResult && ccResult.hard.length > 0) {
-          return `❌ 硬约束违反，写入已被阻止:\n\n${ccResult.hard.join("\n\n")}\n\n请修改内容后重试。`;
+          return t().hardConstraintBlock(ccResult.hard.join("\n\n"));
         }
       }
       const params: Record<string, unknown> = {
@@ -601,9 +616,9 @@ async function executeTool(
       if (input.involved_entries !== undefined) params.involvedEntries = input.involved_entries as string;
       if (input.linked_events !== undefined) params.linkedEvents = input.linked_events as string;
       await invoke("write_outline", params);
-      let msg = `Ch${input.chapter_order} 已更新。`;
+      let msg = t().chapterUpdated(input.chapter_order as number);
       if (ccResult && ccResult.soft.length > 0) {
-        msg += `\n\n⚠️ 软约束提醒:\n${ccResult.soft.join("\n")}`;
+        msg += `\n\n${t().softConstraintReminder(ccResult.soft.join("\n"))}`;
       }
       return msg;
     }
@@ -613,7 +628,7 @@ async function executeTool(
       if (!fp || fp.endsWith("/")) {
         const subdir = fp ? fp.replace(/\/$/, "") : "";
         const files = await invoke<string[]>("list_files", { worldPath, subdir });
-        return files.length > 0 ? files.join("\n") : "(目录为空或不存在)";
+        return files.length > 0 ? files.join("\n") : t().dirEmpty;
       }
       // Read file
       return await invoke<string>("read_file", {
@@ -626,7 +641,7 @@ async function executeTool(
       // Delete path
       if (input.delete === true) {
         await invoke("delete_memory", { worldPath, fileName: memFile });
-        return `记忆 "${memFile}" 已删除。`;
+        return t().memoryDeleted(memFile);
       }
       // Read path: no content provided
       if (!input.content) {
@@ -639,7 +654,7 @@ async function executeTool(
         content: input.content as string,
         description: input.description as string,
       });
-      return "记忆已保存到 world/memory/ 目录。";
+      return t().memorySaved;
     }
     case "ExploreGraph": {
       const mode = (input.mode as string) || "direct";
@@ -651,11 +666,11 @@ async function executeTool(
           maxDepth: (input.max_depth as number) || 2,
           timelineId: input.timeline_id,
         });
-        if (results.length === 0) return "该实体没有可达节点。";
+        if (results.length === 0) return t().graphNoReachable;
         return results.map((r) => {
           const en = r.entity.name || r.entity.id.slice(0, 8);
           const vn = r.via_entity.name || r.via_entity.id.slice(0, 8);
-          return `[${r.entity.type}]${en} (距离: ${r.distance}, 经由: [${r.via_entity.type}]${vn} --${r.via_description}--)`;
+          return t().graphTraversalNode(r.entity.type, en, r.distance, r.via_entity.type, vn, r.via_description);
         }).join("\n");
       }
       const edges = await invoke<any[]>("query_relations", {
@@ -664,7 +679,7 @@ async function executeTool(
         entityId: input.entity_id as string,
         timelineId: input.timeline_id,
       });
-      if (edges.length === 0) return "该实体没有关联。";
+      if (edges.length === 0) return t().graphNoRelations;
       return edges.map((e) => {
         const fn = e.from.name || e.from.id.slice(0, 8);
         const tn = e.to.name || e.to.id.slice(0, 8);
@@ -682,7 +697,7 @@ async function executeTool(
           toId: input.to_id as string,
           description: input.description as string,
         });
-        return `关系已移除: [${input.from_type}]${input.from_id} --[${input.description}]--> [${input.to_type}]${input.to_id}`;
+        return t().relationRemoved(input.from_type as string, input.from_id as string, input.description as string, input.to_type as string, input.to_id as string);
       }
       // Add path
       await invoke("add_relation", {
@@ -693,7 +708,7 @@ async function executeTool(
         toId: input.to_id as string,
         description: input.description as string,
       });
-      return `关系已建立: [${input.from_type}]${input.from_id} --[${input.description}]--> [${input.to_type}]${input.to_id}`;
+      return t().relationCreated(input.from_type as string, input.from_id as string, input.description as string, input.to_type as string, input.to_id as string);
     }
     case "ConsistencyCheck": {
       const passage = input.passage as string;
@@ -729,7 +744,7 @@ async function executeTool(
         }
       }
       if (allConstraints.length === 0) {
-        return "未找到任何约束。请先在词条中定义约束（constraints），或指定有约束的词条。";
+        return t().noConstraintsFound;
       }
       // Two-stage semantic consistency check (Rust coarse filter → independent LLM)
       const violations = await invoke<any[]>("check_consistency_semantic", {
@@ -744,12 +759,12 @@ async function executeTool(
         }));
       }
       if (violations.length === 0) {
-        return `已检查 ${allConstraints.length} 条约束，未发现违反。`;
+        return t().constraintsChecked(allConstraints.length);
       }
       const lines = violations.map((v, i) =>
-        `[${i + 1}] [${v.level === "hard" ? "硬约束" : "软约束"}] ${v.rule}\n    判定理由: ${v.reason}`
+        t().violationItem(i + 1, v.level === "hard" ? t().hardConstraint : t().softConstraint, v.rule, v.reason)
       );
-      return `发现 ${violations.length} 处违反:\n\n${lines.join("\n\n")}`;
+      return `${t().violationsFound(violations.length)}\n\n${lines.join("\n\n")}`;
     }
     // ── Phase 5: Timeline & Event tools ──
     case "ListTimelines": {
@@ -760,9 +775,9 @@ async function executeTool(
       const tlId = input.timeline_id as string | undefined;
       // Delete path
       if (input.delete === true) {
-        if (!tlId) return "❌ 删除时间轴需要指定 timeline_id。";
+        if (!tlId) return t().timelineDeleteNeedsId;
         await invoke("delete_timeline", { worldPath, timelineId: tlId });
-        return `时间轴 "${tlId}" 已删除。`;
+        return t().timelineDeleted(tlId);
       }
       if (tlId) {
         // Update existing timeline
@@ -774,14 +789,14 @@ async function executeTool(
         if (input.description) params.description = input.description;
         if (input.is_default !== undefined) params.isDefault = input.is_default;
         const timeline = await invoke<any>("update_timeline", params);
-        return `时间轴已更新: ${JSON.stringify(timeline, null, 2)}`;
+        return t().timelineUpdatedResult(JSON.stringify(timeline, null, 2));
       } else {
         // Create new timeline
         const params: Record<string, unknown> = { worldPath, name: input.name as string };
         if (input.description) params.description = input.description;
         if (input.time_format_json) params.timeFormatJson = input.time_format_json;
         const timeline = await invoke<any>("create_timeline", params);
-        return `时间轴已创建: ${JSON.stringify(timeline, null, 2)}`;
+        return t().timelineCreatedResult(JSON.stringify(timeline, null, 2));
       }
     }
     case "ListEvents": {
@@ -802,13 +817,13 @@ async function executeTool(
       const hasName = !!evName;
       // Delete path
       if (input.delete === true) {
-        if (!evName) return "❌ 删除事件需要指定 event_name。";
+        if (!evName) return t().eventDeleteNeedsName;
         await invoke("delete_event", {
           worldPath,
           timelineId: evTlId,
           eventName: evName,
         });
-        return `事件 "${evName}" 已删除。`;
+        return t().eventDeleted(evName);
       }
       // Consistency check
       let ccResult: { hard: string[]; soft: string[] } | null = null;
@@ -817,7 +832,7 @@ async function executeTool(
         const ccEntityId = hasName ? evName : evTlId;
         ccResult = await runConsistencyCheck(worldPath, evSummary, ccEntityType, ccEntityId, evTlId);
         if (ccResult && ccResult.hard.length > 0) {
-          return `❌ 硬约束违反，写入已被阻止:\n\n${ccResult.hard.join("\n\n")}\n\n请修改内容后重试。`;
+          return t().hardConstraintBlock(ccResult.hard.join("\n\n"));
         }
       }
       if (evName) {
@@ -835,9 +850,9 @@ async function executeTool(
         if (input.linked_chapters) params.linkedChapters = input.linked_chapters;
         if (input.relationship_changes) params.relationshipChanges = input.relationship_changes;
         const event = await invoke<any>("update_event", params);
-        let msg = `事件已更新: ${JSON.stringify(event, null, 2)}`;
+        let msg = t().eventUpdatedResult(JSON.stringify(event, null, 2));
         if (ccResult && ccResult.soft.length > 0) {
-          msg += `\n\n⚠️ 软约束提醒:\n${ccResult.soft.join("\n")}`;
+          msg += `\n\n${t().softConstraintReminder(ccResult.soft.join("\n"))}`;
         }
         return msg;
       } else {
@@ -854,15 +869,15 @@ async function executeTool(
         if (input.linked_chapters) params.linkedChapters = input.linked_chapters;
         if (input.relationship_changes) params.relationshipChanges = input.relationship_changes;
         const event = await invoke<any>("create_event", params);
-        let msg = `事件已创建: ${JSON.stringify(event, null, 2)}`;
+        let msg = t().eventCreatedResult(JSON.stringify(event, null, 2));
         if (ccResult && ccResult.soft.length > 0) {
-          msg += `\n\n⚠️ 软约束提醒:\n${ccResult.soft.join("\n")}`;
+          msg += `\n\n${t().softConstraintReminder(ccResult.soft.join("\n"))}`;
         }
         return msg;
       }
     }
     default:
-      return `未知工具: ${name}`;
+      return t().unknownTool(name);
   }
 }
 
@@ -958,7 +973,7 @@ export async function runAgentLoop(
                 const corePrompt = skillsIdx > 0 ? systemPrompt.slice(0, skillsIdx) : systemPrompt;
                 const skillsText = skillsIdx > 0 ? systemPrompt.slice(skillsIdx) : "";
                 const msgsText = messages.map((m) => `[${m.role}] ${m.content}`).join("\n");
-                const toolsText = JSON.stringify(tools);
+                const toolsText = JSON.stringify(getTools());
                 const totalChars = msgsText.length + corePrompt.length + skillsText.length + toolsText.length;
                 const inputShare = (chars: number) => totalChars > 0
                   ? Math.round(inputTokens * chars / totalChars)
@@ -982,7 +997,7 @@ export async function runAgentLoop(
             break;
           case "error":
             streamDone = true;
-            callbacks.onError(event.message || "未知错误");
+            callbacks.onError(event.message || t().unknownError);
             streamResolve();
             break;
         }
@@ -997,7 +1012,7 @@ export async function runAgentLoop(
           messages,
           systemPrompt: systemPrompt,
           model,
-          tools,
+          tools: getTools(),
           provider,
           maxTokens,
           reasoningEffort: reasoningEffort || null,
@@ -1018,7 +1033,7 @@ export async function runAgentLoop(
         if (!fullText.trim()) {
           messages.push({
             role: "user",
-            content: `FinalAnswer 只能作为完成标记使用。请先用普通 assistant 文本流式输出完整最终答复，然后再调用 FinalAnswer。`,
+            content: t().finalAnswerEmpty,
           });
           continue;
         }
@@ -1040,7 +1055,7 @@ export async function runAgentLoop(
         const cacheKey = `${tool.name}::${JSON.stringify(tool.input)}`;
         const cached = toolCache.get(cacheKey);
         if (cached !== undefined) {
-          const result = `[缓存 — 与之前相同参数的结果一致，不要再重复调用]\n${cached}`;
+          const result = `${t().cacheHit}\n${cached}`;
           callbacks.onToolResult({ toolUseId: tool.id, toolName: tool.name, content: result }, tool.name);
           messages.push({ role: "user", content: `[工具结果: ${tool.name}]\n${result}` });
           continue;
@@ -1074,7 +1089,7 @@ export async function runAgentLoop(
         continue;
       }
       if (isTruncated) {
-        callbacks.onError(`输出被 max_tokens 截断，且 ${MAX_RECOVERY} 次自动续写恢复已用完。`);
+        callbacks.onError(t().maxTokensExhausted(MAX_RECOVERY));
         return;
       }
 
@@ -1085,12 +1100,12 @@ export async function runAgentLoop(
           awaitingFinalAnswer = true;
           messages.push({
             role: "user",
-            content: `你刚才的普通 assistant 文本已作为候选最终答复展示给用户。现在进入内部确认步骤：如果这份答复已经完整，只调用空参数 FinalAnswer，且不要输出任何普通文本；如果还缺信息，请调用合适工具继续完成任务。`,
+            content: t().finalAnswerNudge,
           });
           continue;
         }
         if (totalToolUses > 0) {
-          callbacks.onError("模型在使用工具后没有调用 FinalAnswer，任务完成状态不明确。");
+          callbacks.onError(t().finalAnswerMissing);
           return;
         }
         callbacks.onComplete(fullText, thinkingText);
@@ -1142,7 +1157,7 @@ async function setupStreamListener(
     _activeListeners.set(conversationId, cleanup);
     return cleanup;
   } catch (e) {
-    handler({ type: "error", message: `事件系统不可用: ${e}` });
+    handler({ type: "error", message: t().eventListenerUnavailable(e) });
     return () => {};
   }
 }

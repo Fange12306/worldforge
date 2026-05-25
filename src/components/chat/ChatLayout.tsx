@@ -1,11 +1,13 @@
 import { useEffect } from "react";
 import { useStore } from "@/lib/store";
 import { invoke } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { ChatWindow } from "./ChatWindow";
 import { ChatInput } from "./ChatInput";
 import { Sprout } from "lucide-react";
 
 export function ChatLayout() {
+  const { t } = useT();
   const worlds = useStore((s) => s.worlds);
   const activeWorldId = useStore((s) => s.activeWorldId);
   const activeConversationId = useStore((s) => s.activeConversationId);
@@ -56,7 +58,7 @@ export function ChatLayout() {
     invoke<Array<{ type: string; content: string; thinking?: string; tool?: string; input?: unknown; output?: string }>>("load_session", { worldPath: activeWorld.path, sessionId: activeConversationId })
       .then((msgs) => {
         // Reconstruct messages with thinking and tool calls
-        type StoreMessage = { id: string; role: "user" | "assistant"; content: string; thinking?: string; toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }>; timestamp: number };
+        type StoreMessage = { id: string; role: "user" | "assistant" | "system"; content: string; thinking?: string; toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }>; timestamp: number };
         const convMsgs: StoreMessage[] = [];
         let pendingToolCalls: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }> = [];
         for (const m of msgs) {
@@ -65,11 +67,17 @@ export function ChatLayout() {
           } else if (m.type === "assistant") {
             convMsgs.push({ id: `msg_${convMsgs.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: pendingToolCalls.length > 0 ? [...pendingToolCalls] : undefined, timestamp: Date.now() });
             pendingToolCalls = [];
+          } else if (m.type === "system") {
+            convMsgs.push({ id: `msg_${convMsgs.length}`, role: "system", content: m.content, timestamp: Date.now() });
           } else if (m.type === "tool_use") {
             pendingToolCalls.push({ id: `tc_${pendingToolCalls.length}`, name: m.tool || "", input: (m.input as Record<string, unknown>) || {}, result: "" });
           } else if (m.type === "tool_result") {
             const last = pendingToolCalls[pendingToolCalls.length - 1];
             if (last) last.result = (m.output as string) || "";
+            // Also persist as system message so context tracking includes it in next API call
+            const toolName = m.tool || "tool";
+            const output = (m.output as string) || "";
+            convMsgs.push({ id: `msg_${convMsgs.length}`, role: "system", content: `[工具结果: ${toolName}]\n${output}`, timestamp: Date.now() });
           }
         }
         if (convMsgs.length > 0) {
@@ -89,9 +97,9 @@ export function ChatLayout() {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-ink-muted gap-4">
         <Sprout className="w-12 h-12 opacity-30" />
-        <p className="text-sm">打开一个架空世界开始创作</p>
+        <p className="text-sm">{t.sidebar.openWorldPrompt}</p>
         <p className="text-xs opacity-50">
-          在左侧栏选择或创建一个世界
+          {t.sidebar.selectOrCreateWorld}
         </p>
       </div>
     );
@@ -109,9 +117,9 @@ export function ChatLayout() {
   if (!activeConv || !activeStory) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-ink-muted gap-3">
-        <p className="text-sm">选择一个故事下的对话</p>
+        <p className="text-sm">{t.sidebar.selectConversation}</p>
         <p className="text-xs opacity-50">
-          在左侧栏展开故事，点击 + 新建对话
+          {t.sidebar.expandStoryNewConv}
         </p>
       </div>
     );

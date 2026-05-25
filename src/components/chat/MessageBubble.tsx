@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import { useStore, type Message } from "@/lib/store";
+import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { BookOpen, User, FileText, Copy, Check, RefreshCw } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
@@ -16,6 +17,7 @@ type BubbleProps = {
 };
 
 export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
+  const { t } = useT();
   const { message, isStreaming, isLastUser, theme, streamThinking = "", isThinking = false, isToolRunning = false, globalStreaming = false } = props;
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -68,7 +70,7 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
             {isStreaming && !thinking && !message.content && !(message.toolCalls?.length) && (
               <span className="inline-flex items-center gap-1 text-xs text-ink-muted">
                 <span className="w-1.5 h-1.5 rounded-full bg-ink-muted animate-pulse" />
-                等待回复...
+                {t.chat.waitingReply}
               </span>
             )}
             {thinking && <ThinkingBlock text={thinking} expanded={thinkingExpanded} active={isStreaming && isThinking} onToggle={() => setThinkingExpanded(!thinkingExpanded)} />}

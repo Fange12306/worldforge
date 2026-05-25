@@ -3,6 +3,7 @@ import { useStore } from "@/lib/store";
 import { invoke } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Search, ArrowRight } from "lucide-react";
+import { useT } from "@/lib/i18n";
 
 type Command = { id: string; name: string; desc: string; action: () => void };
 
@@ -16,6 +17,8 @@ export function CommandPalette({ isOpen, onClose }: Props) {
   const activeWorldId = useStore((s) => s.activeWorldId);
   const activeConversationId = useStore((s) => s.activeConversationId);
 
+  const { t } = useT();
+
   const world = worlds.find((w) => w.id === activeWorldId);
 
   // Build commands
@@ -24,12 +27,12 @@ export function CommandPalette({ isOpen, onClose }: Props) {
     window.dispatchEvent(new CustomEvent("worldforge-command", { detail: { text } }));
   };
   const commands: Command[] = [
-    { id: "stats", name: "/stats", desc: "词条统计", action: () => fireCommand("/stats") },
-    { id: "desc", name: "/desc", desc: "快速查看词条摘要", action: () => fireCommand("/desc ") },
-    { id: "new-entry", name: "/new-entry", desc: "创建新词条（表单）", action: () => fireCommand("/new-entry") },
-    { id: "new-conv", name: "/new-conv", desc: "新建对话", action: () => fireCommand("/new-conv") },
-    { id: "outline", name: "/outline", desc: "查看大纲", action: () => fireCommand("/outline") },
-    { id: "settings", name: "/settings", desc: "打开设置", action: () => {
+    { id: "stats", name: "/stats", desc: t.commands.stats, action: () => fireCommand("/stats") },
+    { id: "desc", name: "/desc", desc: t.commands.desc, action: () => fireCommand("/desc ") },
+    { id: "new-entry", name: "/new-entry", desc: t.commands.newEntry, action: () => fireCommand("/new-entry") },
+    { id: "new-conv", name: "/new-conv", desc: t.commands.newConv, action: () => fireCommand("/new-conv") },
+    { id: "outline", name: "/outline", desc: t.commands.outline, action: () => fireCommand("/outline") },
+    { id: "settings", name: "/settings", desc: t.commands.settings, action: () => {
       onClose();
       (window as any).__worldforge?.openSettings?.();
     }},
@@ -73,7 +76,7 @@ export function CommandPalette({ isOpen, onClose }: Props) {
             ref={inputRef}
             value={query}
             onChange={(e) => { setQuery(e.target.value); setActiveIdx(0); }}
-            placeholder="搜索命令..."
+            placeholder={t.commands.title}
             className="flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-muted"
           />
         </div>

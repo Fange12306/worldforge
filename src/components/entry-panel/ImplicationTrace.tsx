@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { ChevronDown, ChevronRight, Share2, Clock } from "lucide-react";
 import type { TimelinePeriod } from "@/lib/types";
 
@@ -18,6 +19,7 @@ interface ImplicationProps {
  * 然后用 relations/index.json 的图遍历补充分支关联。
  */
 export function ImplicationTrace({ worldPath, entryId, entryName, timelineSummary, onNavigate }: ImplicationProps) {
+  const { t } = useT();
   const [graphRelatives, setGraphRelatives] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [timelineExpanded, setTimelineExpanded] = useState(true);
@@ -96,8 +98,8 @@ export function ImplicationTrace({ worldPath, entryId, entryName, timelineSummar
           >
             {timelineExpanded ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
             <Clock className="w-3 h-3 text-ink-muted" />
-            <span className="text-[11px] text-ink-muted font-medium">时间线关联</span>
-            <span className="text-[10px] text-ink-muted/50">{timelineSummary.length} 个时期</span>
+            <span className="text-[11px] text-ink-muted font-medium">{t.entry.timelineRelation}</span>
+            <span className="text-[10px] text-ink-muted/50">{t.entry.periodCount(timelineSummary.length)}</span>
           </button>
           {timelineExpanded && (
             <div className="mt-1 space-y-2">
@@ -114,7 +116,7 @@ export function ImplicationTrace({ worldPath, entryId, entryName, timelineSummar
                     {tp.state && <span className="text-[11px] text-ink-secondary font-medium">{tp.state}</span>}
                     {tp.location && <span className="text-[10px] text-ink-muted/50">@{tp.location}</span>}
                     {!initial && !hasChanges && (
-                      <span className="text-[9px] text-ink-muted/30 ml-1">— 无变化</span>
+                      <span className="text-[9px] text-ink-muted/30 ml-1">{t.entry.noChange}</span>
                     )}
                   </div>
                   {/* 阶段简述 */}
@@ -159,8 +161,8 @@ export function ImplicationTrace({ worldPath, entryId, entryName, timelineSummar
           >
             {graphExpanded ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
             <Share2 className="w-3 h-3 text-ink-muted" />
-            <span className="text-[11px] text-ink-muted font-medium">全量关联</span>
-            <span className="text-[10px] text-ink-muted/50">{graphEntries.length} 个关联词条</span>
+            <span className="text-[11px] text-ink-muted font-medium">{t.entry.relationGraph}</span>
+            <span className="text-[10px] text-ink-muted/50">{t.entry.relationGraphCount(graphEntries.length)}</span>
             {allTls.length > 1 && (
               <select className="text-[10px] bg-surface-800 border border-surface-700 rounded px-1.5 py-0.5 ml-auto"
                 value={activeGraphTlId}

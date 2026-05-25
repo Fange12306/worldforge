@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "../../lib/api";
+import { useT } from "../../lib/i18n";
 import type { WorldEvent, Timeline } from "../../lib/types";
 
 // ── Safe access ──
@@ -109,6 +110,7 @@ function Popover({ ev, tl, anchor, onClose, onNavE, onNavO, entryNames, chapterT
   chapterTitles: Map<string, string>;
   storyNames: Map<string, string>;
 }) {
+  const { t } = useT();
   const ref = useRef<HTMLDivElement>(null);
   const r = anchor.getBoundingClientRect();
   const availH = window.innerHeight - r.bottom - 56;
@@ -132,25 +134,25 @@ function Popover({ ev, tl, anchor, onClose, onNavE, onNavO, entryNames, chapterT
           <div className="text-[11px] text-ink-muted font-mono">{fmtTime(ev.time_point, tl, ev.precision)}</div>
           <span className="px-1.5 py-0.5 rounded bg-surface-800/50 text-ink-muted/50 font-mono text-[10px] select-all">{ev.id}</span>
         </div>
-        {les.length > 0 && (<div><p className="text-[10px] tracking-wider text-ink-muted/40 mb-1">词条 ({les.length})</p>
+        {les.length > 0 && (<div><p className="text-[10px] tracking-wider text-ink-muted/40 mb-1">{t.entry.linkedEntries(les.length)}</p>
           <div className="flex flex-col gap-0.5">{les.map((le: any) => (
             <button key={le.entry_id} onClick={() => { onClose(); onNavE?.(le.entry_id); }} className="text-[11px] text-left text-amber-500 hover:text-amber-400 py-0.5 break-all">{entryNames.get(le.entry_id) || le.entry_id.slice(0, 8)}{le.perspective_summary ? ` — ${le.perspective_summary}` : ""}</button>
           ))}</div></div>)}
-        {lcs.length > 0 && (<div><p className="text-[10px] tracking-wider text-ink-muted/40 mb-1">大纲 ({lcs.length})</p>
+        {lcs.length > 0 && (<div><p className="text-[10px] tracking-wider text-ink-muted/40 mb-1">{t.entry.linkedChapters(lcs.length)}</p>
           <div className="flex flex-col gap-0.5">{lcs.map((ch: any) => {
             const chTitle = chapterTitles.get(`${ch.story_id}:${ch.chapter_order}`);
             return (
             <button key={`${ch.story_id}-${ch.chapter_order}`} onClick={() => { onClose(); onNavO?.(ch.story_id, ch.chapter_order); }} className="text-[11px] text-left text-amber-500 hover:text-amber-400 py-0.5">
-              第{ch.chapter_order}章{chTitle ? ` ${chTitle}` : ""}
+              {t.entry.chapterLabel(ch.chapter_order, chTitle || "")}
             </button>
             );
           })}</div></div>)}
-        {rcs.length > 0 && (<div><p className="text-[10px] tracking-wider text-ink-muted/40 mb-1">关联变化</p>
+        {rcs.length > 0 && (<div><p className="text-[10px] tracking-wider text-ink-muted/40 mb-1">{t.entry.relationChanges}</p>
           <div className="flex flex-col gap-0.5">{rcs.map((rc: any, i: number) => (
             <span key={i} className={`text-[10px] ${rc.change_type === "add" ? "text-emerald-500" : rc.change_type === "delete" ? "text-red-500 line-through" : "text-amber-500"}`}>
               {rc.change_type === "add" ? "+" : rc.change_type === "delete" ? "−" : "~"} {entryNames.get(rc.entry_a) || rc.entry_a.slice(0, 8)}↔{entryNames.get(rc.entry_b) || rc.entry_b.slice(0, 8)}: {rc.relation}</span>
           ))}</div></div>)}
-        {bts.length > 0 && <p className="text-[10px] text-ink-muted/40">故事: {bts.map((sid: string) => storyNames.get(sid) || sid.slice(0, 8)).join(", ")}</p>}
+        {bts.length > 0 && <p className="text-[10px] text-ink-muted/40">{t.entry.storyLabel}: {bts.map((sid: string) => storyNames.get(sid) || sid.slice(0, 8)).join(", ")}</p>}
       </div>
     </div>, document.body);
 }
@@ -162,6 +164,7 @@ function TreeNodeRow({ node, tl, openNodes, toggleNode, openEventId, setOpenEven
   anchorRefs: React.MutableRefObject<Map<string, HTMLElement>>;
   onNavE?: (id: string) => void; onNavO?: (sid: string, o: number) => void;
 }) {
+  const { t } = useT();
   const hasCh = node.children.length > 0;
   const hasEv = node.events.length > 0;
   const open = openNodes.has(node.key);
@@ -176,7 +179,7 @@ function TreeNodeRow({ node, tl, openNodes, toggleNode, openEventId, setOpenEven
           className={`text-xs whitespace-nowrap ${hasCh ? "cursor-pointer hover:text-ink" : "cursor-default"} ${node.depth <= 1 ? "font-medium text-ink-muted" : "text-ink-muted/70"}`}>
           {hasCh && <span className="text-[10px] mr-1 text-ink-muted/40">{open ? "▾" : "▸"}</span>}
           {node.label}
-          {hasCh && <span className="text-[10px] text-ink-muted/30 ml-1">({countAll(node)} 事件)</span>}
+          {hasCh && <span className="text-[10px] text-ink-muted/30 ml-1">{t.entry.eventCount(countAll(node))}</span>}
         </button>
       </div>
       {hasEv && (
@@ -207,6 +210,7 @@ type Props = {
 };
 
 export function TimelinePanel({ worldPath, onClose, sidebarOpen, rightOpen, initialEventId, initialTimelineId, onNavigateEntry, onNavigateOutline }: Props) {
+  const { t } = useT();
   const [timelines, setTimelines] = useState<Timeline[]>([]);
   const [activeId, setActiveId] = useState("");
   const [events, setEvents] = useState<WorldEvent[]>([]);
@@ -312,34 +316,33 @@ export function TimelinePanel({ worldPath, onClose, sidebarOpen, rightOpen, init
 
   const pl = sidebarOpen ? 12 : 48; const pr = rightOpen ? 8 : 48;
 
-  if (loading) return <div className="flex-1 flex items-center justify-center text-sm text-ink-muted">加载中...</div>;
+  if (loading) return <div className="flex-1 flex items-center justify-center text-sm text-ink-muted">{t.entry.loading}</div>;
   if (err) return <div className="flex-1 flex items-center justify-center text-sm text-red-500">{err}</div>;
   if (timelines.length === 0) return (
     <div className="flex-1 flex flex-col items-center justify-center gap-4 text-sm text-ink-muted p-8">
-      <p className="text-base font-medium text-ink-secondary">⚙ 先设置时间体系</p>
+      <p className="text-base font-medium text-ink-secondary">{t.entry.timelineSetupTitle}</p>
       <p className="text-xs text-ink-muted/60 max-w-xs text-center leading-relaxed">
-        时间轴决定了这个世界的时间单位（纪元、年、月、日等）。
-        <br />在对话中告诉 Agent 你的世界怎么计时，比如"每年12个月，每月30天，目前是第三纪元"。
+        {t.entry.timelineSetupDesc}
       </p>
       <button className="px-4 py-2 bg-amber-600 text-white rounded-lg text-xs hover:bg-amber-700"
-        onClick={async () => { try { const t = await invoke<Timeline>("create_timeline", { worldPath, name: "主线" }); setTimelines([t]); setActiveId(t.id); } catch (e) { setErr(String(e)); } }}>先用默认格式（可后续在对话中修改）</button>
+        onClick={async () => { try { const tl = await invoke<Timeline>("create_timeline", { worldPath, name: t.entry.defaultTimelineName }); setTimelines([tl]); setActiveId(tl.id); } catch (e) { setErr(String(e)); } }}>{t.entry.timelineSetupDefault}</button>
     </div>
   );
 
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex items-center gap-3 px-3 border-b border-surface-700 flex-shrink-0" style={{ height: 40, paddingLeft: pl, paddingRight: pr }}>
-        <button onClick={onClose} className="text-[11px] text-ink-muted hover:text-ink flex-shrink-0">&larr; 对话</button>
-        <span className="text-[10px] text-ink-muted/50">时间线</span><span className="text-[11px] text-ink-secondary truncate">{tl?.name || ""}</span>
+        <button onClick={onClose} className="text-[11px] text-ink-muted hover:text-ink flex-shrink-0">{t.entry.backToChat}</button>
+        <span className="text-[10px] text-ink-muted/50">{t.sidebar.timeline}</span><span className="text-[11px] text-ink-secondary truncate">{tl?.name || ""}</span>
         {timelines.length > 1 && (<select className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5" value={activeId} onChange={e => setActiveId(e.target.value)}>{timelines.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>)}
         <div className="flex-1" />
-        <input className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-20 text-ink placeholder:text-ink-muted/30" placeholder="词条" value={fEntry} onChange={e => setFEntry(e.target.value)} />
-        <input className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-20 text-ink placeholder:text-ink-muted/30" placeholder="故事" value={fStory} onChange={e => setFStory(e.target.value)} />
-        <input className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-24 text-ink placeholder:text-ink-muted/30" placeholder="章(sid:1)" value={fChap} onChange={e => setFChap(e.target.value)} />
+        <input className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-20 text-ink placeholder:text-ink-muted/30" placeholder={t.labels.entry} value={fEntry} onChange={e => setFEntry(e.target.value)} />
+        <input className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-20 text-ink placeholder:text-ink-muted/30" placeholder={t.entry.storyLabel} value={fStory} onChange={e => setFStory(e.target.value)} />
+        <input className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-24 text-ink placeholder:text-ink-muted/30" placeholder={t.entry.chapterFilterPlaceholder} value={fChap} onChange={e => setFChap(e.target.value)} />
       </div>
       <div ref={scrollRef} className="flex-1 overflow-auto" style={{ paddingRight: pr }}>
         {tree.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-sm text-ink-muted">此时间轴上还没有事件</div>
+          <div className="flex items-center justify-center h-full text-sm text-ink-muted">{t.entry.timelineEmpty}</div>
         ) : (<div className="py-4">{tree.map(n => (
           <TreeNodeRow key={n.key} node={n} tl={tl} openNodes={openNodes} toggleNode={toggle}
             openEventId={openEventId} setOpenEventId={setOpenEventId} anchorRefs={anchorRefs}

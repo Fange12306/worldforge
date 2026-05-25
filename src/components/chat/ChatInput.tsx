@@ -10,6 +10,7 @@ import { InlinePermission } from "./PermissionDialog";
 import { ContextRing } from "./ContextRing";
 import type { PermissionChoice } from "@/lib/agent-loop";
 import type { Entry } from "@/lib/types";
+import { useT, getT } from "@/lib/i18n";
 
 function toSessionMessages(messages: Message[]) {
   return messages.map((message) => {
@@ -38,6 +39,7 @@ function toSessionMessages(messages: Message[]) {
 }
 
 export function ChatInput({ storyId }: { storyId: string }) {
+  const { t } = useT();
   const [files, setFiles] = useState<{ name: string; content: string }[]>([]);
   const [permission, setPermission] = useState<null | { toolName: string; details: string; callback: (c: PermissionChoice) => void }>(null);
   const [newEntryForm, setNewEntryForm] = useState(false);
@@ -190,14 +192,14 @@ export function ChatInput({ storyId }: { storyId: string }) {
       appendSessionMessage(world.path, convId, { type: "assistant", content: result, timestamp: new Date().toISOString() }).catch(() => {});
     };
     if (text.startsWith("/stats")) {
-      let stats = `词条统计:\n`;
+      let stats = `${t.chat.statsTitle}:\n`;
       try {
         const entries = await invoke<Entry[]>("list_entries", { worldPath: world.path });
         const types: Record<string, number> = {};
         for (const e of entries) types[e.type] = (types[e.type] || 0) + 1;
-        stats += `总计 ${entries.length} 条\n`;
-        stats += Object.entries(types).map(([t, c]) => `${t}: ${c}`).join("\n");
-      } catch { stats = "无法获取词条统计"; }
+        stats += `${t.chat.statsTotal(entries.length)}\n`;
+        stats += Object.entries(types).map(([type, c]) => `${type}: ${c}`).join("\n");
+      } catch { stats = t.chat.statsFailed; }
       persistCmd(text, stats);
       setInput(""); return;
     }
@@ -206,7 +208,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
       try {
         const entries = await invoke<Entry[]>("list_entries", { worldPath: world.path });
         const matched = entries.find((x) => x.name.includes(name) || x.id.includes(name));
-        if (!matched) { persistCmd(text, `未找到词条: ${name}`); setInput(""); return; }
+        if (!matched) { persistCmd(text, t.chat.entryNotFound(name)); setInput(""); return; }
         const e = await invoke<Entry>("read_entry", { worldPath: world.path, entryId: matched.id });
         const lines = [`**${e.name}** [${e.type}]`];
         if (e.properties && Object.keys(e.properties).length > 0) {
@@ -219,25 +221,25 @@ export function ChatInput({ storyId }: { storyId: string }) {
         }
         if (e.relationships?.length) {
           lines.push("");
-          lines.push("关联: " + e.relationships.map((r) => `${r.relation} → ${r.targetId}`).join(", "));
+          lines.push(t.chat.relations + ": " + e.relationships.map((r) => `${r.relation} → ${r.targetId}`).join(", "));
         }
         persistCmd(text, lines.join("\n"));
-      } catch { persistCmd(text, "查询失败"); }
+      } catch { persistCmd(text, t.chat.queryFailed); }
       setInput(""); return;
     }
     if (text.startsWith("/outline")) {
       try {
         const chapters = await invoke<Array<{ order: number; title: string; status: string; summary: string; has_body: boolean }>>("read_outline", { worldPath: world.path, storyId });
-        if (chapters.length === 0) { persistCmd(text, "暂无大纲。"); setInput(""); return; }
+        if (chapters.length === 0) { persistCmd(text, t.chat.outlineEmpty); setInput(""); return; }
         const done = chapters.filter((c) => c.status === "done" || c.has_body).length;
-        const lines = [`**大纲概览** — ${done}/${chapters.length} 章已完成`, ""];
+        const lines = [`**${t.chat.outlineOverview}** — ${t.chat.chaptersDone(done, chapters.length)}`, ""];
         for (const ch of chapters) {
           const icon = ch.status === "done" ? "✓" : ch.status === "drafting" ? "✎" : "○";
-          const info = ch.has_body ? `${ch.summary || "(无摘要)"}` : "(仅大纲)";
+          const info = ch.has_body ? `${ch.summary || t.chat.noSummary}` : t.chat.outlineOnly;
           lines.push(`${icon} Ch${ch.order} **${ch.title}** — ${info}`);
         }
         persistCmd(text, lines.join("\n"));
-      } catch { persistCmd(text, "读取大纲失败"); }
+      } catch { persistCmd(text, t.chat.outlineReadFailed); }
       setInput(""); return;
     }
     if (text.startsWith("/new-conv")) {
@@ -245,7 +247,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
       const convId = useStore.getState().createConversation(storyId);
       // Persist story meta with new conversation
       const convs = story.conversations.map((c: { id: string; title: string }) => ({ id: c.id, title: c.title, created_at: new Date().toISOString() }));
-      convs.push({ id: convId, title: `对话 ${convs.length + 1}`, created_at: new Date().toISOString() });
+      convs.push({ id: convId, title: t.sidebar.newConvTitle(convs.length + 1), created_at: new Date().toISOString() });
       invoke("save_story_meta", { worldPath: world.path, story: { id: story.id, title: story.title, status: story.status, conversations: convs, created_at: new Date().toISOString() } }).catch(() => {});
       useStore.getState().setActiveConversation(convId);
       setInput(""); return;
@@ -259,7 +261,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
     }
 
     if (!llmProvider || !activeModel) {
-      addMessage(storyId, { role: "assistant", content: "请先在设置中配置 LLM。" }, convId);
+      addMessage(storyId, { role: "assistant", content: t.chat.configureLlm }, convId);
       return;
     }
     setInput("");
@@ -285,7 +287,9 @@ export function ChatInput({ storyId }: { storyId: string }) {
     let entries: Entry[] = [];
     try { entries = await invoke<Entry[]>("list_entries", { worldPath: world.path }); } catch {}
 
-    const systemPrompt = buildSystemPrompt(world.name, story.title, entries);
+    const customPrompt = await invoke<string>("load_custom_prompt").catch(() => "");
+    const lang = useStore.getState().language;
+    const systemPrompt = buildSystemPrompt(world.name, story.title, entries, undefined, customPrompt, lang);
     const latestConv = useStore.getState().worlds
       .find((w) => w.id === activeWorldId)
       ?.stories.find((s) => s.id === storyId)
@@ -395,9 +399,9 @@ export function ChatInput({ storyId }: { storyId: string }) {
           setStreaming(false);
           flushTurnText();
           const msg = error.includes("发送请求") || error.includes("error sending request") || error.includes("连接")
-            ? "网络连接失败，请检查网络后重试。"
+            ? t.chat.networkError
             : error.includes("API Key") || error.includes("未配置")
-              ? "API Key 未配置或无效，请在设置中检查。"
+              ? t.chat.apiKeyError
               : `Error: ${error}`;
           addMessage(storyId, { role: "assistant", content: msg }, convId);
           if (world && convId) {
@@ -435,13 +439,13 @@ export function ChatInput({ storyId }: { storyId: string }) {
         {newEntryForm && (
           <div className="mb-2 bg-surface-800 rounded-2xl px-4 py-3 space-y-2 animate-fade-in">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-ink-muted">新建词条</span>
+              <span className="text-[11px] text-ink-muted">{t.chat.newEntry}</span>
               <button onClick={() => { setNewEntryForm(false); setNewEntryName(""); }} className="ml-auto p-0.5 rounded text-ink-muted hover:text-ink"><X className="w-3 h-3" /></button>
             </div>
             <input
               value={newEntryName}
               onChange={(e) => setNewEntryName(e.target.value)}
-              placeholder="名称"
+              placeholder={t.chat.newEntryName}
               autoFocus
               onKeyDown={(e) => { if (e.key === "Enter") document.getElementById("nf-type")?.focus(); }}
               className="w-full h-8 text-sm bg-surface-700 rounded-lg px-3 text-ink outline-none placeholder:text-ink-muted"
@@ -453,22 +457,22 @@ export function ChatInput({ storyId }: { storyId: string }) {
                 onChange={(e) => setNewEntryType(e.target.value)}
                 className="flex-1 h-8 text-[11px] bg-surface-700 rounded-lg px-3 text-ink outline-none"
               >
-                {Object.entries({ character: "人物", location: "地点", organization: "组织", event: "事件", system: "体系", artifact: "物品", era: "纪元", concept: "概念" }).map(([k, v]) => (
+                {Object.entries(t.entryTypes).map(([k, v]) => (
                   <option key={k} value={k}>{v}</option>
                 ))}
               </select>
               <button
                 onClick={async () => {
                   if (!newEntryName.trim()) return;
-                  const typeLabel = { character: "人物", location: "地点", organization: "组织", event: "事件", system: "体系", artifact: "物品", era: "纪元", concept: "概念" }[newEntryType] || newEntryType;
+                  const typeLabel = t.entryTypes[newEntryType as keyof typeof t.entryTypes] || newEntryType;
                   try {
                     const e = await invoke<Entry>("create_entry", { worldPath: world!.path, name: newEntryName.trim(), entryType: newEntryType });
                     addMessage(storyId, { role: "user", content: `/new-entry ${newEntryName} (${typeLabel})` }, activeConversationId!);
-                    addMessage(storyId, { role: "assistant", content: `词条已创建: **${e.name}** [${e.type}]` }, activeConversationId!);
+                    addMessage(storyId, { role: "assistant", content: `${t.chat.entryCreated(e.name)} [${e.type}]` }, activeConversationId!);
                     appendSessionMessage(world!.path, activeConversationId!, { type: "user", content: `/new-entry ${newEntryName}`, timestamp: new Date().toISOString() }).catch(() => {});
-                    appendSessionMessage(world!.path, activeConversationId!, { type: "assistant", content: `词条已创建: **${e.name}** [${e.type}]`, timestamp: new Date().toISOString() }).catch(() => {});
+                    appendSessionMessage(world!.path, activeConversationId!, { type: "assistant", content: `${t.chat.entryCreated(e.name)} [${e.type}]`, timestamp: new Date().toISOString() }).catch(() => {});
                   } catch (err: any) {
-                    addMessage(storyId, { role: "assistant", content: `创建失败: ${err}` });
+                    addMessage(storyId, { role: "assistant", content: t.chat.createFailed(err) });
                   }
                   setNewEntryForm(false);
                   setNewEntryName("");
@@ -476,7 +480,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
                 disabled={!newEntryName.trim()}
                 className="px-4 h-8 text-[11px] rounded-lg bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-40 transition-colors flex-shrink-0"
               >
-                创建
+                {t.chat.newEntryCreate}
               </button>
             </div>
           </div>
@@ -505,12 +509,12 @@ export function ChatInput({ storyId }: { storyId: string }) {
               if (el) { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight, 200) + "px"; }
             }}
             onKeyDown={handleKeyDown}
-            placeholder="输入创作想法或设定问题..."
+            placeholder={t.chat.placeholder}
             rows={1}
             className="w-full bg-transparent text-sm text-ink placeholder:text-ink-muted resize-none outline-none max-h-[200px] leading-6"
           />
           <div className="flex items-center gap-1 mt-0.5">
-            <button onClick={handleFilePick} className="p-1 rounded text-ink-muted hover:text-ink hover:bg-surface-700 transition-colors" title="上传文件">
+            <button onClick={handleFilePick} className="p-1 rounded text-ink-muted hover:text-ink hover:bg-surface-700 transition-colors" title={t.chat.uploadFile}>
               <Paperclip className="w-3.5 h-3.5" />
             </button>
             <div className="flex-1" />
@@ -531,11 +535,11 @@ export function ChatInput({ storyId }: { storyId: string }) {
                   const tc = turnToolCallsRef.current;
                   if (scid) addMessage(storyId, {
                     role: "assistant",
-                    content: turnTextRef.current + " [已取消]",
+                    content: turnTextRef.current + ` ${t.chat.stopped}`,
                     thinking,
                     toolCalls: tc.length > 0 ? [...tc] : undefined,
                   }, scid);
-                  if (world && scid) appendSessionMessage(world.path, scid, { type: "assistant", content: turnTextRef.current + " [已取消]", thinking: thinking || null, timestamp: new Date().toISOString() }).catch(() => {});
+                  if (world && scid) appendSessionMessage(world.path, scid, { type: "assistant", content: turnTextRef.current + ` ${t.chat.stopped}`, thinking: thinking || null, timestamp: new Date().toISOString() }).catch(() => {});
                   setStreaming(false);
                   clearStreamText();
                 }}
@@ -544,7 +548,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
               </button>
             ) : (
               <button onClick={handleSend} disabled={!canSend}
-                title={isStreamingElsewhere ? "另一个对话正在输出，请等待完成或切回该对话终止" : undefined}
+                title={isStreamingElsewhere ? t.chat.anotherStreaming : undefined}
                 className={`flex-shrink-0 h-7 w-7 flex items-center justify-center rounded-lg transition-colors ${canSend ? "text-ink-secondary hover:text-ink hover:bg-surface-700" : "text-ink-muted"}`}>
                 {isStreamingElsewhere ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowUp className="w-3.5 h-3.5" />}
               </button>

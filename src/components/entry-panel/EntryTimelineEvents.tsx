@@ -6,6 +6,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@/lib/api";
 import { ChevronDown, ChevronRight } from "lucide-react";
+import { useT } from "@/lib/i18n";
 
 const a = (x: any) => x || [];
 
@@ -78,6 +79,7 @@ function buildTree(events: SimpleEvent[], u: TU[]): { key: string; depth: number
 
 // ── Component ──
 export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, initialActiveTlId }: Props) {
+  const { t } = useT();
   const [allTls, setAllTls] = useState<any[]>([]);
   const [activeTlId, setActiveTlId] = useState("");
   const [allEvents, setAllEvents] = useState<SimpleEvent[]>([]);
@@ -167,8 +169,8 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, 
       <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 px-1 py-1 w-full text-left">
         {open ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
         <span className="text-[10px] text-ink-muted/50">🕐</span>
-        <span className="text-[11px] text-ink-muted font-medium">时间线事件</span>
-        <span className="text-[10px] text-ink-muted/50">{events.length} 个</span>
+        <span className="text-[11px] text-ink-muted font-medium">{t.entry.timelineEvents}</span>
+        <span className="text-[10px] text-ink-muted/50">{events.length}{t.entry.events}</span>
         {allTls.length > 1 && (
           <select className="text-[10px] bg-surface-800 border border-surface-700 rounded px-1.5 py-0.5 ml-auto"
             value={activeTlId} onChange={e => setActiveTlId(e.target.value)}
@@ -178,7 +180,7 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, 
         )}
       </button>
       {open && events.length === 0 && (
-        <div className="ml-1 pl-5 py-1 text-[10px] text-ink-muted/50 italic">该词条在此时间轴上没有事件</div>
+        <div className="ml-1 pl-5 py-1 text-[10px] text-ink-muted/50 italic">{t.entry.noTimelineEvents}</div>
       )}
       {open && events.length > 0 && (
         <div className="mt-1 ml-1">

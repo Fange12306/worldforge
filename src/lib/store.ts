@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "./api";
+import { getT } from "./i18n";
 import type { ContextBreakdown } from "./context-window";
 import { getContextWindowSize } from "./context-window";
 
@@ -105,6 +106,8 @@ type AppStore = {
   toggleSidebar: () => void;
   theme: "dark" | "light";
   toggleTheme: () => void;
+  language: "zh" | "en";
+  setLanguage: (lang: "zh" | "en") => void;
 
   // LLM settings
   llmProvider: string;
@@ -317,7 +320,7 @@ export const useStore = create<AppStore>((set, get) => ({
                   {
                     id,
                     storyId,
-                    title: `对话 ${st.conversations.length + 1}`,
+                    title: getT(get().language).sidebar.newConvTitle(st.conversations.length + 1),
                     messages: [],
                     totalTokens: 0,
                     contextUsed: 0,
@@ -414,6 +417,9 @@ export const useStore = create<AppStore>((set, get) => ({
       document.documentElement.classList.toggle("light", next === "light");
       return { theme: next };
     }),
+
+  language: "zh",
+  setLanguage: (lang) => set({ language: lang }),
 
   llmProvider: "",
   llmModels: [],

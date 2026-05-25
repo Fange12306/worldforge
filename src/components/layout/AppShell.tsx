@@ -3,18 +3,19 @@ import { useStore, type ModelConfig } from "@/lib/store";
 import { applyTheme } from "@/lib/theme";
 import { initWorld, invoke } from "@/lib/api";
 import { Sidebar } from "./Sidebar";
+import { useT } from "@/lib/i18n";
 
-class ErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
+class ErrorBoundary extends Component<{ children: ReactNode; renderError: string; retry: string }, { error: string | null }> {
   state = { error: null as string | null };
   static getDerivedStateFromError(e: Error) { return { error: e.message }; }
   render() {
     if (this.state.error) {
       return (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 p-8 text-sm">
-          <p className="text-red-500 font-medium">渲染错误</p>
+          <p className="text-red-500 font-medium">{this.props.renderError}</p>
           <p className="text-ink-muted text-xs max-w-md text-center">{this.state.error}</p>
           <button className="px-3 py-1 mt-2 bg-surface-800 rounded text-xs hover:bg-surface-700"
-            onClick={() => this.setState({ error: null })}>重试</button>
+            onClick={() => this.setState({ error: null })}>{this.props.retry}</button>
         </div>
       );
     }
@@ -38,6 +39,7 @@ import type { Entry } from "@/lib/types";
 type CenterView = null | { type: "entry"; entry: Entry; editing: boolean } | { type: "outline"; chapterOrder: number; chapterId?: string; title: string; content: string; editing: boolean } | { type: "file"; fileName: string; content: string } | { type: "memory"; fileName: string; content: string } | { type: "timeline"; initialEventId?: string; initialTimelineId?: string };
 
 export function AppShell() {
+  const { t } = useT();
   const worlds = useStore((s) => s.worlds);
   const activeWorldId = useStore((s) => s.activeWorldId);
   const activeConversationId = useStore((s) => s.activeConversationId);
@@ -62,9 +64,17 @@ export function AppShell() {
 
   useEffect(() => {
     (window as any).__worldforge = { openSettings: () => setSettingsOpen(true), openPalette: () => setPaletteOpen(true), openTimeline: () => setCenterView({ type: "timeline" }) };
-    invoke<{ provider: string; models: ModelConfig[] }>("load_config").then((cfg) => {
+    invoke<{ provider: string; models: ModelConfig[]; activeModel?: string }>("load_config").then((cfg) => {
       if (cfg.provider) useStore.getState().setLlmProvider(cfg.provider);
-      if (cfg.models?.length) { useStore.getState().setLlmModels(cfg.models); useStore.getState().setActiveModel(cfg.models[0].name); }
+      if (cfg.models?.length) {
+        useStore.getState().setLlmModels(cfg.models);
+        const saved = cfg.activeModel;
+        const valid = saved && cfg.models.some((m) => m.name === saved);
+        useStore.getState().setActiveModel(valid ? saved! : cfg.models[0].name);
+      }
+    }).catch(() => {});
+    invoke<string>("load_language").then((lang) => {
+      if (lang === "en" || lang === "zh") useStore.getState().setLanguage(lang);
     }).catch(() => {});
   }, []);
 
@@ -74,7 +84,7 @@ export function AppShell() {
 
     const loadWorld = async (worldPath: string) => {
       const s = useStore.getState();
-      const name = worldPath.split("/").pop() || "未命名世界";
+      const name = worldPath.split("/").pop() || t.layout.unnamedWorld;
       const wid = s.openWorld(name, worldPath);
       try { await invoke("open_world", { path: worldPath }); } catch {}
 
@@ -110,14 +120,20 @@ export function AppShell() {
           if (convId) {
             try {
               const msgs = await invoke<Array<{ type: string; content: string; thinking?: string; tool?: string; input?: unknown; output?: string }>>("load_session", { worldPath, sessionId: convId });
-              type SM = { id: string; role: "user" | "assistant"; content: string; thinking?: string; toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }>; timestamp: number };
+              type SM = { id: string; role: "user" | "assistant" | "system"; content: string; thinking?: string; toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }>; timestamp: number };
               const result: SM[] = [];
               let pending: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }> = [];
               for (const m of msgs) {
                 if (m.type === "user") result.push({ id: `msg_${result.length}`, role: "user", content: m.content, timestamp: Date.now() });
                 else if (m.type === "assistant") { result.push({ id: `msg_${result.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: pending.length > 0 ? [...pending] : undefined, timestamp: Date.now() }); pending = []; }
+                else if (m.type === "system") result.push({ id: `msg_${result.length}`, role: "system", content: m.content, timestamp: Date.now() });
                 else if (m.type === "tool_use") pending.push({ id: `tc_${pending.length}`, name: m.tool || "", input: (m.input as Record<string, unknown>) || {}, result: "" });
-                else if (m.type === "tool_result") { const last = pending[pending.length - 1]; if (last) last.result = (m.output as string) || ""; }
+                else if (m.type === "tool_result") {
+                  const last = pending[pending.length - 1];
+                  const output = (m.output as string) || "";
+                  if (last) last.result = output;
+                  result.push({ id: `msg_${result.length}`, role: "system", content: `[工具结果: ${m.tool || "tool"}]\n${output}`, timestamp: Date.now() });
+                }
               }
               if (result.length > 0) {
                 useStore.setState((prev) => ({
@@ -142,8 +158,8 @@ export function AppShell() {
         } else {
           // Fallback: demo world
           invoke<string>("get_worlds_dir").then(async (worldsDir) => {
-            const path = `${worldsDir}/演示世界`;
-            await initWorld(path, "演示世界").catch(() => {});
+            const path = `${worldsDir}/${t.layout.demoWorld}`;
+            await initWorld(path, t.layout.demoWorld).catch(() => {});
             loadWorld(path);
           }).catch(() => {});
         }
@@ -151,8 +167,8 @@ export function AppShell() {
       .catch(() => {
         // Fallback on error
         invoke<string>("get_worlds_dir").then(async (worldsDir) => {
-          const path = `${worldsDir}/演示世界`;
-          await initWorld(path, "演示世界").catch(() => {});
+          const path = `${worldsDir}/${t.layout.demoWorld}`;
+          await initWorld(path, t.layout.demoWorld).catch(() => {});
           loadWorld(path);
         }).catch(() => {});
       });
@@ -188,7 +204,7 @@ export function AppShell() {
       </div>
       <div className="flex flex-col flex-1 min-w-0 rounded-2xl bg-surface-900 overflow-hidden">
         <Header />
-        <ErrorBoundary>
+        <ErrorBoundary renderError={t.layout.renderError} retry={t.layout.retry}>
           {settingsOpen ? <SettingsPanel onClose={() => setSettingsOpen(false)} /> : centerView ? (
             <DetailView view={centerView} onBack={() => { setCenterView(null); setRefreshKey(k => k + 1); }} onUpdate={(v) => { setCenterView(v); setRefreshKey(k => k + 1); }} activeWorldId={activeWorldId} activeConversationId={activeConversationId} worlds={worlds} sidebarOpen={sidebarOpen} rightOpen={rightOpen} theme={theme} />
           ) : <ChatLayout />}
@@ -252,12 +268,13 @@ function DetailView({ view, onBack, onUpdate, activeWorldId, activeConversationI
     : view.type === "outline" ? view.title
     : view.type === "file" ? view.fileName
     : view.type === "memory" ? view.fileName : "";
-  const label = view.type === "entry" ? "词条" : view.type === "outline" ? "大纲" : view.type === "file" ? "文件" : "记忆";
+  const { t } = useT();
+  const label = view.type === "entry" ? t.labels.entry : view.type === "outline" ? t.labels.outline : view.type === "file" ? t.labels.file : t.labels.memory;
   const proseClass = `prose prose-sm max-w-none ${theme === "dark" ? "prose-invert" : ""}`;
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex items-center gap-2 px-3 border-b border-surface-700 flex-shrink-0" style={{ height: 40, paddingLeft: !sidebarOpen ? 48 : 12 }}>
-        <button onClick={onBack} className="text-[11px] text-ink-muted hover:text-ink h-full flex items-center flex-shrink-0">← 对话</button>
+        <button onClick={onBack} className="text-[11px] text-ink-muted hover:text-ink h-full flex items-center flex-shrink-0">{t.entry.backToChat}</button>
         <span className="text-[10px] text-ink-muted/50">{label}</span>
         <span className="text-[11px] text-ink-secondary truncate flex-1">{name}</span>
       </div>
@@ -271,7 +288,9 @@ function DetailView({ view, onBack, onUpdate, activeWorldId, activeConversationI
           <OutlineDetail chapterOrder={view.chapterOrder} chapterId={view.chapterId} title={view.title} content={view.content} editing={view.editing} theme={theme} worldPath={worlds.find((w) => w.id === activeWorldId)?.path} onEdit={() => onUpdate({ ...view, editing: true })} onCancel={() => onUpdate({ ...view, editing: false })} onSave={async (title: string, body: string) => { const w = worlds.find((x) => x.id === activeWorldId); const s = w?.stories.find((x) => x.conversations.some((y) => y.id === activeConversationId)); if (w && s) await invoke("write_outline", { worldPath: w.path, storyId: s.id, chapterOrder: view.chapterOrder, title, body }); onUpdate({ ...view, title, content: body, editing: false }); }} onDelete={async () => { const w = worlds.find((x) => x.id === activeWorldId); const s = w?.stories.find((x) => x.conversations.some((y) => y.id === activeConversationId)); if (w && s) await invoke("delete_chapter", { worldPath: w.path, storyId: s.id, chapterOrder: view.chapterOrder }); onBack(); }} onNavigateEntry={async (entryId) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (w) { const full = await invoke<Entry>("read_entry", { worldPath: w.path, entryId }); onUpdate({ type: "entry", entry: full, editing: false }); } } catch {} }} onNavigateToTimeline={(eventId, timelineId) => onUpdate({ type: "timeline", initialEventId: eventId, initialTimelineId: timelineId })} />
         ) : (
           <div className={`p-4 ${proseClass}`}>
-            <div className="text-xs text-ink-muted mb-3">{label}内容</div>
+            <div className="text-xs text-ink-muted mb-3">
+              {view.type === "file" ? t.entry.fileContent : t.entry.memoryContent}
+            </div>
             <MarkdownContent content={view.content} />
           </div>
         )}
@@ -286,6 +305,7 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
   onNavigateEntry?: (entryId: string) => void;
   onNavigateToTimeline?: (eventId: string, timelineId: string) => void;
 }) {
+  const { t } = useT();
   const [editTitle, setEditTitle] = useState(title);
   const [text, setText] = useState(content);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -370,7 +390,7 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
             <button onClick={onEdit} className="p-1 rounded text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"><Edit3 className="w-3.5 h-3.5" /></button>
           )}
           {onDelete && (confirmDelete ? (
-            <button data-confirm onClick={() => { onDelete(); setConfirmDelete(false); }} className="text-[10px] text-error hover:bg-surface-700 px-1.5 py-0.5 rounded ml-1 transition-colors">确认</button>
+            <button data-confirm onClick={() => { onDelete(); setConfirmDelete(false); }} className="text-[10px] text-error hover:bg-surface-700 px-1.5 py-0.5 rounded ml-1 transition-colors">{t.status.confirm}</button>
           ) : (
             <button onClick={() => setConfirmDelete(true)} className="p-1 rounded text-ink-muted hover:text-error hover:bg-surface-800 transition-colors ml-1"><Trash2 className="w-3.5 h-3.5" /></button>
           ))}
@@ -379,7 +399,7 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
       <div className="flex-1 overflow-auto">
         {editing ? (
           <div className="flex flex-col h-full">
-            <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="章节标题" className="w-full h-9 text-sm bg-surface-900 text-ink px-4 border-b border-surface-700 outline-none flex-shrink-0" />
+            <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder={t.entry.chapterTitle} className="w-full h-9 text-sm bg-surface-900 text-ink px-4 border-b border-surface-700 outline-none flex-shrink-0" />
             <textarea value={text} onChange={(e) => setText(e.target.value)} className="flex-1 w-full bg-surface-900 text-sm text-ink p-4 resize-none outline-none font-mono" />
           </div>
         ) : (
@@ -394,13 +414,13 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
                 >
                   {metaExpanded ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
                   <Clock className="w-3 h-3 text-ink-muted" />
-                  <span className="text-[11px] text-ink-muted font-medium">章节信息</span>
+                  <span className="text-[11px] text-ink-muted font-medium">{t.entry.chapterInfo}</span>
                 </button>
                 {metaExpanded && (
                   <div className="mt-2 pl-4 space-y-2">
                     {fmTimePeriod && (
                       <div>
-                        <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-1">时间点(段)</p>
+                        <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-1">{t.entry.timePoint}</p>
                         <span className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded bg-surface-800 text-ink-secondary">
                           {fmTimePeriod[0]} → {fmTimePeriod[1]}
                         </span>
@@ -408,7 +428,7 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
                     )}
                     {fmInvolved.length > 0 && (
                       <div>
-                        <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-1">涉及词条</p>
+                        <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-1">{t.entry.involvedEntries}</p>
                         <div className="flex flex-wrap gap-1">
                           {fmInvolved.map((e) => (
                             <button key={e} onClick={() => onNavigateEntry?.(e)} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-surface-800/50 text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors">
@@ -420,7 +440,7 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
                     )}
                     {fmLinkedEvents.length > 0 && (
                       <div>
-                        <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-1">关联事件</p>
+                        <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-1">{t.entry.linkedEvents}</p>
                         <div className="flex flex-col gap-1">
                           {fmLinkedEvents.map((le) => {
                             const parts = le.split(":");
@@ -439,8 +459,8 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
                     )}
                     {fmLinkedEvents.length === 0 && (
                       <div>
-                        <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-1">关联事件</p>
-                        <p className="text-[10px] text-amber-500/60 italic">本章尚未关联时间线事件</p>
+                        <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-1">{t.entry.linkedEvents}</p>
+                        <p className="text-[10px] text-amber-500/60 italic">{t.entry.noLinkedEvents}</p>
                       </div>
                     )}
                   </div>

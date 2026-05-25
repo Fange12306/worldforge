@@ -17,8 +17,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarToggle } from "./SidebarToggle";
 import { initWorld, invoke } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useT } from "@/lib/i18n";
 
 export function Sidebar() {
+  const { t } = useT();
   const {
     worlds,
     activeWorldId,
@@ -68,7 +70,7 @@ export function Sidebar() {
         <div className="flex-1 flex flex-col items-center justify-center gap-4 px-6 py-8">
           <Globe className="w-10 h-10 text-ink-muted opacity-40" />
           <p className="text-xs text-ink-muted text-center">
-            打开一个架空世界开始创作
+            {t.sidebar.openWorldPrompt}
           </p>
           <div className="w-full space-y-2">
             {creatingWorld ? (
@@ -83,8 +85,8 @@ export function Sidebar() {
                       const path = `${worldsDir}/${name}`;
                       const wid = openWorld(name, path);
                       initWorld(path, name).catch(() => {});
-                      const sid = useStore.getState().addStory(wid, "新故事");
-                      invoke("save_story_meta", { worldPath: path, story: { id: sid, title: "新故事", status: "drafting", conversations: [], created_at: new Date().toISOString() } }).catch(() => {});
+                      const sid = useStore.getState().addStory(wid, t.sidebar.newStoryDefault);
+                      invoke("save_story_meta", { worldPath: path, story: { id: sid, title: t.sidebar.newStoryDefault, status: "drafting", conversations: [], created_at: new Date().toISOString() } }).catch(() => {});
                       useStore.getState().createConversation(sid);
                     }).catch(() => {});
                     setNewWorldName("");
@@ -93,18 +95,18 @@ export function Sidebar() {
                   if (e.key === "Escape") { setCreatingWorld(false); setNewWorldName(""); }
                 }}
                 onBlur={() => { setCreatingWorld(false); setNewWorldName(""); }}
-                placeholder="世界名称（如 艾琳纪元）"
+                placeholder={t.sidebar.worldNamePlaceholder}
                 className="w-full h-9 rounded-lg bg-surface-800 border border-edge text-sm text-ink px-3 outline-none focus:border-brand-500/30"
               />
             ) : (
               <button onClick={() => setCreatingWorld(true)} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-ink bg-surface-800 border border-edge rounded-lg hover:bg-surface-700 transition-colors">
                 <Plus className="w-4 h-4 text-brand-500" />
-                创建新世界
+                {t.sidebar.createWorld}
               </button>
             )}
             {openingWorld ? (
               <div className="space-y-1">
-                {worldList.length === 0 && <p className="text-[11px] text-ink-muted text-center py-2">扫描中...</p>}
+                {worldList.length === 0 && <p className="text-[11px] text-ink-muted text-center py-2">{t.sidebar.scanning}</p>}
                 {worldList.map((w) => (
                   <button key={w.path} onClick={async () => {
                     const wid = openWorld(w.name, w.path);
@@ -135,7 +137,7 @@ export function Sidebar() {
                     <span>{w.name}</span>
                   </button>
                 ))}
-                <button onClick={() => setOpeningWorld(false)} className="w-full text-center text-[11px] text-ink-muted hover:text-ink py-1">取消</button>
+                <button onClick={() => setOpeningWorld(false)} className="w-full text-center text-[11px] text-ink-muted hover:text-ink py-1">{t.common.cancel}</button>
               </div>
             ) : (
               <button onClick={async () => {
@@ -148,7 +150,7 @@ export function Sidebar() {
                 } catch { setWorldList([]); }
               }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-ink-secondary border border-edge rounded-lg hover:bg-surface-800 transition-colors">
                 <FolderOpen className="w-4 h-4" />
-                打开已有世界
+                {t.sidebar.openWorld}
               </button>
             )}
           </div>
@@ -160,7 +162,7 @@ export function Sidebar() {
             className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-muted hover:text-ink hover:bg-surface-800 rounded-md transition-colors"
           >
             <Settings className="w-3.5 h-3.5" />
-            设置
+            {t.sidebar.settings}
           </button>
         </div>
       </div>
@@ -203,7 +205,7 @@ export function Sidebar() {
                 const convId = createConversation(story.id);
                 // Update story meta with new conversation
                 const convs = story.conversations.map((c: { id: string; title: string }) => ({ id: c.id, title: c.title, created_at: new Date().toISOString() }));
-                convs.push({ id: convId, title: `对话 ${convs.length + 1}`, created_at: new Date().toISOString() });
+                convs.push({ id: convId, title: t.sidebar.newConvTitle(convs.length + 1), created_at: new Date().toISOString() });
                 invoke("save_story_meta", { worldPath: activeWorld.path, story: { id: story.id, title: story.title, status: story.status, conversations: convs, created_at: new Date().toISOString() } }).catch(() => {});
               }}
               onDeleteConversation={(convId) => {
@@ -242,7 +244,7 @@ export function Sidebar() {
 
           {activeWorld.stories.length === 0 && (
             <p className="text-xs text-ink-muted text-center py-6 px-2">
-              还没有故事。创建一个故事来开始创作。
+              {t.sidebar.noStories}
             </p>
           )}
         </div>
@@ -254,7 +256,7 @@ export function Sidebar() {
         {creatingStory ? (
           <input
             autoFocus
-            placeholder="故事名..."
+            placeholder={t.sidebar.storyNamePlaceholder}
             onKeyDown={(e) => {
               if (e.key === "Enter" && e.currentTarget.value.trim()) {
                 const sid = addStory(activeWorld.id, e.currentTarget.value.trim());
@@ -272,7 +274,7 @@ export function Sidebar() {
             className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-muted hover:text-ink hover:bg-surface-800 rounded-md transition-colors"
           >
             <FilePlus className="w-3.5 h-3.5" />
-            新建故事
+            {t.sidebar.newStory}
           </button>
         )}
         <button
@@ -280,14 +282,14 @@ export function Sidebar() {
           className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-muted hover:text-ink hover:bg-surface-800 rounded-md transition-colors"
         >
           <Clock className="w-3.5 h-3.5" />
-          时间线
+          {t.sidebar.timeline}
         </button>
         <button
           onClick={() => (window as any).__worldforge?.openSettings()}
           className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-muted hover:text-ink hover:bg-surface-800 rounded-md transition-colors"
         >
           <Settings className="w-3.5 h-3.5" />
-          设置
+          {t.sidebar.settings}
         </button>
         <button
           data-confirm
@@ -310,13 +312,13 @@ export function Sidebar() {
           )}
         >
           <Trash2 className="w-3.5 h-3.5" />
-          {confirmDeleteWorld ? "确认删除？" : "删除世界"}
+          {confirmDeleteWorld ? t.sidebar.confirmDeleteWorld : t.sidebar.deleteWorld}
         </button>
         <button
           onClick={() => closeWorld(activeWorld.id)}
           className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-muted hover:text-error hover:bg-surface-800 rounded-md transition-colors"
         >
-          关闭世界
+          {t.sidebar.closeWorld}
         </button>
       </div>
     </div>
@@ -349,9 +351,12 @@ function StoryGroup({
   editing: { type: "world" | "story" | "conv"; id: string; value: string } | null;
   setEditing: React.Dispatch<React.SetStateAction<{ type: "world" | "story" | "conv"; id: string; value: string } | null>>;
 }) {
+  const { t } = useT();
   const [expanded, setExpanded] = useState(true);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmDeleteConv, setConfirmDeleteConv] = useState<string | null>(null);
+  const isStreaming = useStore((s) => s.isStreaming);
+  const streamingConversationId = useStore((s) => s.streamingConversationId);
 
   // Click-away resets confirm
   useEffect(() => {
@@ -400,14 +405,14 @@ function StoryGroup({
               onNewConversation();
             }}
             className="p-0.5 rounded hover:bg-surface-700 text-ink-muted hover:text-brand-400"
-            title="新建对话"
+            title={t.sidebar.newConvTooltip}
           >
             <Plus className="w-3 h-3" />
           </button>
           {confirmDelete ? (
-            <button data-confirm onClick={(e) => { e.stopPropagation(); onDeleteStory(); setConfirmDelete(false); }} className="text-[10px] text-error hover:bg-surface-700 px-1 py-0.5 rounded">确认</button>
+            <button data-confirm onClick={(e) => { e.stopPropagation(); onDeleteStory(); setConfirmDelete(false); }} className="text-[10px] text-error hover:bg-surface-700 px-1 py-0.5 rounded">{t.status.confirm}</button>
           ) : (
-            <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }} className="p-0.5 rounded hover:bg-surface-700 text-ink-muted hover:text-error" title="删除故事">
+            <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }} className="p-0.5 rounded hover:bg-surface-700 text-ink-muted hover:text-error" title={t.sidebar.deleteStory}>
               <Trash2 className="w-3 h-3" />
           </button>
           )}
@@ -428,7 +433,13 @@ function StoryGroup({
                   : "text-ink-secondary hover:text-ink hover:bg-surface-850",
               )}
             >
-              <MessageSquare className="w-3 h-3 text-ink-muted flex-shrink-0" />
+              {isStreaming && conv.id === streamingConversationId ? (
+                <span className="w-3 h-3 flex-shrink-0 flex items-center justify-center">
+                  <span className="w-2 h-2 rounded-full bg-brand-500 animate-pulse-soft" />
+                </span>
+              ) : (
+                <MessageSquare className="w-3 h-3 text-ink-muted flex-shrink-0" />
+              )}
               <span className="text-[11px] truncate flex-1"
                 onDoubleClick={(e) => { e.stopPropagation(); setEditing({ type: "conv", id: conv.id, value: conv.title }); }}
               >
@@ -442,7 +453,7 @@ function StoryGroup({
               </span>
               {confirmDeleteConv === conv.id ? (
                 <button data-confirm onClick={(e) => { e.stopPropagation(); onDeleteConversation(conv.id); setConfirmDeleteConv(null); }} className="text-[10px] text-error hover:bg-surface-700 px-1 py-0.5 rounded transition-all">
-                  确认
+                  {t.status.confirm}
                 </button>
               ) : (
                 <button
@@ -458,7 +469,7 @@ function StoryGroup({
             </div>
           ))}
           {story.conversations.length === 0 && (
-            <p className="text-[10px] text-ink-muted px-2 py-1">暂无对话</p>
+            <p className="text-[10px] text-ink-muted px-2 py-1">{t.sidebar.noConversations}</p>
           )}
         </div>
       )}

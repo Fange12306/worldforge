@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
 import { invoke } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { Sun, Moon, Command, BookOpen } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 
 export function Header() {
+  const { t } = useT();
   const worlds = useStore((s) => s.worlds);
   const activeWorldId = useStore((s) => s.activeWorldId);
   const activeConversationId = useStore((s) => s.activeConversationId);
@@ -84,7 +86,7 @@ export function Header() {
         {activeStory && outlineLoaded && (
           <span className="flex items-center gap-1 text-[10px] text-ink-muted bg-surface-900 border border-edge rounded-full px-2 py-0.5">
             <BookOpen className="w-3 h-3" />
-            {chapterCount > 0 ? `${chapterDone}/${chapterCount} 章` : "无大纲"}
+            {chapterCount > 0 ? t.entry.chapterCount(chapterDone, chapterCount) : t.entry.noOutline}
           </span>
         )}
       </div>
@@ -95,10 +97,10 @@ export function Header() {
           className="flex items-center gap-1.5 px-2 py-1 text-xs text-ink-muted bg-surface-900 border border-edge rounded-md hover:bg-surface-800 transition-colors"
         >
           <Command className="w-3 h-3" />
-          <span>命令面板</span>
+          <span>{t.commands.panel}</span>
         </button>
 
-        <Tooltip content={theme === "dark" ? "切换亮色" : "切换暗色"}>
+        <Tooltip content={theme === "dark" ? t.layout.switchLight : t.layout.switchDark}>
           <button
             onClick={toggleTheme}
             className="p-1.5 rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"

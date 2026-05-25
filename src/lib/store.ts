@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { invoke } from "./api";
+import { getT } from "./i18n";
 import type { ContextBreakdown } from "./context-window";
 import { getContextWindowSize } from "./context-window";
 
@@ -61,6 +62,7 @@ export type ModelConfig = {
   alias?: string;
   reasoningEffort?: "default" | "low" | "medium" | "high";
   contextWindow?: number;
+  maxTokens?: number;
 };
 
 // ── ID generators ──────────────────────────────────
@@ -91,8 +93,12 @@ type AppStore = {
   deleteConversation: (storyId: string, convId: string) => void;
   setActiveConversation: (id: string) => void;
 
+  // Drafts (unsent input, keyed by conversation ID — in-memory only)
+  conversationDrafts: Record<string, string>;
+  setConversationDraft: (convId: string, draft: string) => void;
+
   // Messages
-  addMessage: (storyId: string, msg: Omit<Message, "id" | "timestamp"> & { toolCalls?: ToolCall[] }) => void;
+  addMessage: (storyId: string, msg: Omit<Message, "id" | "timestamp"> & { toolCalls?: ToolCall[] }, convId?: string) => void;
   updateMessage: (storyId: string, msgId: string, content: string) => void;
 
   // UI
@@ -100,6 +106,8 @@ type AppStore = {
   toggleSidebar: () => void;
   theme: "dark" | "light";
   toggleTheme: () => void;
+  language: "zh" | "en";
+  setLanguage: (lang: "zh" | "en") => void;
 
   // LLM settings
   llmProvider: string;
@@ -110,12 +118,12 @@ type AppStore = {
   setActiveModel: (m: string) => void;
 
   // Token usage (per-conversation, from API usage fields)
-  addTokens: (input: number, output: number) => void;
+  addTokens: (input: number, output: number, convId?: string) => void;
 
   // Context window tracking
   contextWindowSize: number;
   setContextWindow: (provider: string, model: string, modelContextWindow?: number) => void;
-  updateContextUsage: (used: number, breakdown: ContextBreakdown) => void;
+  updateContextUsage: (used: number, breakdown: ContextBreakdown, convId?: string) => void;
 
   // Streaming (one at a time, tied to a specific conversation)
   isStreaming: boolean;
@@ -179,10 +187,22 @@ export const useStore = create<AppStore>((set, get) => ({
       worlds: s.worlds.map((w) => (w.id === id ? { ...w, name } : w)),
     })),
   closeWorld: (id) =>
-    set((s) => ({
-      worlds: s.worlds.filter((w) => w.id !== id),
-      activeWorldId: s.activeWorldId === id ? null : s.activeWorldId,
-    })),
+    set((s) => {
+      const world = s.worlds.find((w) => w.id === id);
+      const drafts = { ...s.conversationDrafts };
+      if (world) {
+        for (const story of world.stories) {
+          for (const conv of story.conversations) {
+            delete drafts[conv.id];
+          }
+        }
+      }
+      return {
+        worlds: s.worlds.filter((w) => w.id !== id),
+        activeWorldId: s.activeWorldId === id ? null : s.activeWorldId,
+        conversationDrafts: drafts,
+      };
+    }),
 
   setActiveWorld: (id) => set({ activeWorldId: id }),
 
@@ -300,7 +320,7 @@ export const useStore = create<AppStore>((set, get) => ({
                   {
                     id,
                     storyId,
-                    title: `对话 ${st.conversations.length + 1}`,
+                    title: getT(get().language).sidebar.newConvTitle(st.conversations.length + 1),
                     messages: [],
                     totalTokens: 0,
                     contextUsed: 0,
@@ -336,8 +356,10 @@ export const useStore = create<AppStore>((set, get) => ({
 
   setActiveConversation: (id) => set({ activeConversationId: id }),
 
-  addMessage: (storyId, msg) =>
-    set((s) => ({
+  addMessage: (storyId, msg, convId?) =>
+    set((s) => {
+      const cid = convId ?? s.activeConversationId;
+      return {
       worlds: s.worlds.map((w) => ({
         ...w,
         stories: w.stories.map((st) =>
@@ -345,7 +367,7 @@ export const useStore = create<AppStore>((set, get) => ({
             ? {
                 ...st,
                 conversations: st.conversations.map((c) =>
-                  c.id === s.activeConversationId
+                  c.id === cid
                     ? {
                         ...c,
                         messages: [
@@ -359,7 +381,7 @@ export const useStore = create<AppStore>((set, get) => ({
             : st,
         ),
       })),
-    })),
+    };}),
 
   updateMessage: (storyId, msgId, content) =>
     set((s) => ({
@@ -396,6 +418,9 @@ export const useStore = create<AppStore>((set, get) => ({
       return { theme: next };
     }),
 
+  language: "zh",
+  setLanguage: (lang) => set({ language: lang }),
+
   llmProvider: "",
   llmModels: [],
   activeModel: "",
@@ -403,14 +428,20 @@ export const useStore = create<AppStore>((set, get) => ({
   setLlmModels: (m) => set({ llmModels: m }),
   setActiveModel: (m) => set({ activeModel: m }),
 
+  conversationDrafts: {},
+  setConversationDraft: (convId, draft) =>
+    set((s) => ({
+      conversationDrafts: { ...s.conversationDrafts, [convId]: draft },
+    })),
+
   // Context window tracking
   contextWindowSize: 128_000,
   setContextWindow: (provider, model, modelContextWindow?) =>
     set({ contextWindowSize: modelContextWindow || getContextWindowSize(provider, model) }),
-  updateContextUsage: (used, breakdown) => {
+  updateContextUsage: (used, breakdown, convId?) => {
     const state = get();
+    const cid = convId ?? state.activeConversationId;
     const world = state.worlds.find((w) => w.id === state.activeWorldId);
-    const cid = state.activeConversationId;
     set((s) => ({
       worlds: s.worlds.map((w) => ({
         ...w,
@@ -432,10 +463,10 @@ export const useStore = create<AppStore>((set, get) => ({
     }
   },
 
-  addTokens: (input, output) => {
+  addTokens: (input, output, convId?) => {
     const state = get();
+    const cid = convId ?? state.activeConversationId;
     const world = state.worlds.find((w) => w.id === state.activeWorldId);
-    const cid = state.activeConversationId;
     const newTotal = (state.worlds
       .find((w) => w.id === state.activeWorldId)
       ?.stories.flatMap((s) => s.conversations)
@@ -450,7 +481,7 @@ export const useStore = create<AppStore>((set, get) => ({
         stories: w.stories.map((st) => ({
           ...st,
           conversations: st.conversations.map((c) =>
-            c.id === s.activeConversationId
+            c.id === cid
               ? { ...c, totalTokens: newTotal }
               : c,
           ),
@@ -487,5 +518,10 @@ export const useStore = create<AppStore>((set, get) => ({
   setIsThinking: (v) => set({ isThinking: v }),
   setIsToolRunning: (v) => set({ isToolRunning: v }),
   streamToolCalls: [],
-  clearStreamText: () => set({ streamText: "", streamThinking: "", streamToolCalls: [], isThinking: false, isToolRunning: false }),
+  clearStreamText: () => {
+    const b = (get() as any)._buf;
+    if (b.raf) { cancelAnimationFrame(b.raf); b.raf = 0; }
+    b.text = ""; b.thinking = "";
+    set({ streamText: "", streamThinking: "", streamToolCalls: [], isThinking: false, isToolRunning: false });
+  },
 }));

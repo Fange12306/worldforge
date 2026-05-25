@@ -5,6 +5,7 @@ import { Edit3, Save, X, Trash2 } from "lucide-react";
 import { MarkdownContent } from "@/components/chat/MarkdownContent";
 import { ImplicationTrace } from "./ImplicationTrace";
 import { EntryTimelineEvents } from "./EntryTimelineEvents";
+import { useT } from "@/lib/i18n";
 
 type Props = {
   entry: Entry;
@@ -19,6 +20,7 @@ type Props = {
 };
 
 export function EntryEditor({ entry, editing, worldPath, onEdit, onCancel, onSave, onDelete, onNavigateEntry, onNavigateToTimeline }: Props) {
+  const { t } = useT();
   const [name, setName] = useState(entry.name);
   const [body, setBody] = useState(entry.body || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -51,7 +53,7 @@ export function EntryEditor({ entry, editing, worldPath, onEdit, onCancel, onSav
             <button onClick={onEdit} className="p-1 rounded text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"><Edit3 className="w-3.5 h-3.5" /></button>
           )}
           {onDelete && (confirmDelete ? (
-            <button data-confirm onClick={() => { onDelete(); setConfirmDelete(false); }} className="text-[10px] text-error hover:bg-surface-700 px-1.5 py-0.5 rounded ml-1 transition-colors">确认</button>
+            <button data-confirm onClick={() => { onDelete(); setConfirmDelete(false); }} className="text-[10px] text-error hover:bg-surface-700 px-1.5 py-0.5 rounded ml-1 transition-colors">{t.entry.confirmDelete}</button>
           ) : (
             <button onClick={() => setConfirmDelete(true)} className="p-1 rounded text-ink-muted hover:text-error hover:bg-surface-800 transition-colors ml-1"><Trash2 className="w-3.5 h-3.5" /></button>
           ))}
@@ -61,8 +63,8 @@ export function EntryEditor({ entry, editing, worldPath, onEdit, onCancel, onSav
       <div className="flex-1 overflow-auto p-4">
         {editing ? (
           <div className="space-y-4">
-            <input value={name} onChange={(e) => setName(e.target.value)} className="w-full text-lg font-semibold bg-transparent text-ink border-b border-surface-700 pb-1 outline-none" placeholder="词条名称" />
-            <textarea value={body} onChange={(e) => setBody(e.target.value)} className="w-full h-64 bg-surface-900 text-sm text-ink rounded-lg p-3 border border-surface-700 resize-none outline-none font-mono" placeholder="词条正文 (Markdown)..." />
+            <input value={name} onChange={(e) => setName(e.target.value)} className="w-full text-lg font-semibold bg-transparent text-ink border-b border-surface-700 pb-1 outline-none" placeholder={t.entry.namePlaceholder} />
+            <textarea value={body} onChange={(e) => setBody(e.target.value)} className="w-full h-64 bg-surface-900 text-sm text-ink rounded-lg p-3 border border-surface-700 resize-none outline-none font-mono" placeholder={t.entry.bodyPlaceholder} />
           </div>
         ) : (
           <div>
@@ -73,7 +75,7 @@ export function EntryEditor({ entry, editing, worldPath, onEdit, onCancel, onSav
               </div>
             )}
             <div className="text-sm text-ink-secondary">
-              {entry.body ? <MarkdownContent content={entry.body} /> : <span className="text-ink-muted italic">(暂无正文)</span>}
+              {entry.body ? <MarkdownContent content={entry.body} /> : <span className="text-ink-muted italic">{t.entry.noBody}</span>}
             </div>
             {worldPath && !editing && (
               <EntryTimelineEvents worldPath={worldPath} entryId={entry.id} onNavigateToTimeline={onNavigateToTimeline} />

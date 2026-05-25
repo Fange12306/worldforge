@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useStore } from "@/lib/store";
 import { ENTRY_TYPES, ENTRY_TYPE_LABELS } from "@/lib/constants";
 import { invoke } from "@/lib/api";
+import { useT } from "@/lib/i18n";
 import { EntryList } from "./EntryList";
 import { EntryEditor } from "./EntryEditor";
 import { X, Plus } from "lucide-react";
@@ -11,6 +12,7 @@ import type { EntryType } from "@/lib/constants";
 type Props = { onClose: () => void };
 
 export function EntryPanel({ onClose }: Props) {
+  const { t } = useT();
   const activeWorldId = useStore((s) => s.activeWorldId);
   const worlds = useStore((s) => s.worlds);
   const world = worlds.find((w) => w.id === activeWorldId);
@@ -62,7 +64,7 @@ export function EntryPanel({ onClose }: Props) {
       setNewName("");
       setNewType("character");
     } catch (e) {
-      alert(`创建失败: ${e}`);
+      alert(`${t.entry.createFail}: ${e}`);
     }
   };
 
@@ -79,7 +81,7 @@ export function EntryPanel({ onClose }: Props) {
       // Refresh the full entry display
       if (selectedId) await selectEntry(selectedId);
     } catch (e) {
-      alert(`保存失败: ${e}`);
+      alert(`${t.entry.saveFail}: ${e}`);
     }
   };
 
@@ -90,7 +92,7 @@ export function EntryPanel({ onClose }: Props) {
       if (selectedId === id) setSelectedId(null);
       await loadEntries();
     } catch (e) {
-      alert(`删除失败: ${e}`);
+      alert(`${t.entry.deleteFail}: ${e}`);
     }
   };
 
@@ -100,9 +102,9 @@ export function EntryPanel({ onClose }: Props) {
     <div className="flex flex-col h-full bg-surface-900">
       {/* Header */}
       <div className="h-12 flex items-center justify-between px-3 flex-shrink-0">
-        <span className="text-sm font-semibold text-ink">词条面板</span>
+        <span className="text-sm font-semibold text-ink">{t.entry.panel}</span>
         <div className="flex items-center gap-1">
-          <button onClick={() => { setShowCreate(true); setSelectedId(null); }} className="p-1.5 rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors" title="新建词条"><Plus className="w-4 h-4" /></button>
+          <button onClick={() => { setShowCreate(true); setSelectedId(null); }} className="p-1.5 rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors" title={t.entry.newEntry}><Plus className="w-4 h-4" /></button>
           <button onClick={onClose} className="p-1.5 rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"><X className="w-4 h-4" /></button>
         </div>
       </div>
@@ -112,14 +114,14 @@ export function EntryPanel({ onClose }: Props) {
       <div className="flex-1 min-h-0 overflow-hidden">
         {selectedId || showCreate ? (
           <div className="flex flex-col h-full">
-            <button onClick={() => { setSelectedId(null); setShowCreate(false); setEditing(false); }} className="text-[10px] text-ink-muted hover:text-ink px-3 py-1.5 border-b border-surface-700">← 返回列表</button>
+            <button onClick={() => { setSelectedId(null); setShowCreate(false); setEditing(false); }} className="text-[10px] text-ink-muted hover:text-ink px-3 py-1.5 border-b border-surface-700">{t.entry.backToList}</button>
             <div className="flex-1 overflow-auto">
               {showCreate ? (
                 <CreateEntryForm name={newName} onNameChange={setNewName} type={newType} onTypeChange={setNewType} onCreate={handleCreate} onCancel={() => { setShowCreate(false); setNewName(""); }} />
               ) : fullEntry && !loadingId ? (
                 <EntryEditor entry={fullEntry} editing={editing} onEdit={() => setEditing(true)} onCancel={() => setEditing(false)} onSave={handleSave} />
               ) : (
-                <div className="h-full flex items-center justify-center text-ink-muted text-xs">加载中...</div>
+                <div className="h-full flex items-center justify-center text-ink-muted text-xs">{t.entry.loading}</div>
               )}
             </div>
           </div>
@@ -147,32 +149,33 @@ function CreateEntryForm({
   onCreate: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useT();
   return (
     <div className="h-full flex flex-col">
       <div className="h-10 flex items-center px-3 flex-shrink-0">
-        <span className="text-xs text-ink-secondary">新建词条</span>
+        <span className="text-xs text-ink-secondary">{t.entry.newEntry}</span>
       </div>
       <div className="flex-1 overflow-auto p-4 space-y-4">
         <div>
-          <label className="text-xs text-ink-secondary block mb-1">名称</label>
+          <label className="text-xs text-ink-secondary block mb-1">{t.entry.name}</label>
           <input
             value={name}
             onChange={(e) => onNameChange(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") onCreate(); }}
-            placeholder="词条名称"
+            placeholder={t.entry.namePlaceholder}
             autoFocus
             className="w-full h-9 rounded-lg bg-surface-900 border border-edge text-sm text-ink px-3 outline-none focus:border-brand-500/30 transition-colors"
           />
         </div>
         <div>
-          <label className="text-xs text-ink-secondary block mb-1">类型</label>
+          <label className="text-xs text-ink-secondary block mb-1">{t.entry.type}</label>
           <select
             value={type}
             onChange={(e) => onTypeChange(e.target.value as EntryType)}
             className="w-full h-9 rounded-lg bg-surface-900 border border-edge text-sm text-ink px-3 outline-none focus:border-brand-500/30 transition-colors"
           >
-            {ENTRY_TYPES.map((t) => (
-              <option key={t} value={t}>{ENTRY_TYPE_LABELS[t]}</option>
+            {ENTRY_TYPES.map((type) => (
+              <option key={type} value={type}>{ENTRY_TYPE_LABELS[type]}</option>
             ))}
           </select>
         </div>
@@ -183,14 +186,14 @@ function CreateEntryForm({
           onClick={onCancel}
           className="px-3 py-1.5 text-xs text-ink-muted hover:text-ink transition-colors"
         >
-          取消
+          {t.entry.cancel}
         </button>
         <button
           onClick={onCreate}
           disabled={!name.trim()}
           className="px-4 py-1.5 text-xs rounded-lg bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-40 transition-colors"
         >
-          创建
+          {t.entry.create}
         </button>
       </div>
     </div>

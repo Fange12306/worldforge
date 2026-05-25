@@ -22,19 +22,19 @@ pub struct ToolDef {
 #[serde(tag = "type")]
 pub enum StreamEvent {
     #[serde(rename = "text_delta")]
-    TextDelta { text: String },
+    TextDelta { text: String, conversation_id: Option<String> },
     #[serde(rename = "thinking_delta")]
-    ThinkingDelta { text: String },
+    ThinkingDelta { text: String, conversation_id: Option<String> },
     #[serde(rename = "thinking_done")]
-    ThinkingDone,
+    ThinkingDone { conversation_id: Option<String> },
     #[serde(rename = "tool_use")]
-    ToolUse { id: String, name: String, input: Value },
+    ToolUse { id: String, name: String, input: Value, conversation_id: Option<String> },
     #[serde(rename = "stream_end")]
-    StreamEnd { stop_reason: String },
+    StreamEnd { stop_reason: String, conversation_id: Option<String> },
     #[serde(rename = "usage")]
-    Usage { input_tokens: u64, output_tokens: u64 },
+    Usage { input_tokens: u64, output_tokens: u64, conversation_id: Option<String> },
     #[serde(rename = "error")]
-    Error { message: String },
+    Error { message: String, conversation_id: Option<String> },
 }
 
 /// Quick connectivity test — sends a single message, returns "ok" or error
@@ -196,11 +196,12 @@ pub async fn stream_chat(
     provider: String,
     max_tokens: u32,
     reasoning_effort: Option<String>,
+    conversation_id: Option<String>,
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
     let mut last_error = String::new();
     for attempt in 0..MAX_RETRIES {
-        match stream_chat_inner(app.clone(), messages.clone(), system_prompt.clone(), model.clone(), tools.clone(), provider.clone(), max_tokens, reasoning_effort.clone()).await {
+        match stream_chat_inner(app.clone(), messages.clone(), system_prompt.clone(), model.clone(), tools.clone(), provider.clone(), max_tokens, reasoning_effort.clone(), conversation_id.clone()).await {
             Ok(()) => return Ok(()),
             Err(e) => {
                 last_error = e.clone();
@@ -208,6 +209,7 @@ pub async fn stream_chat(
                     tokio::time::sleep(std::time::Duration::from_millis(2u64.pow(attempt) * 1000)).await;
                     let _ = app.emit("stream-event", StreamEvent::TextDelta {
                         text: format!("\n(重试 {}/{})...\n", attempt + 2, MAX_RETRIES),
+                        conversation_id: conversation_id.clone(),
                     });
                 } else { break; }
             }
@@ -225,6 +227,7 @@ async fn stream_chat_inner(
     provider: String,
     max_tokens: u32,
     reasoning_effort: Option<String>,
+    conversation_id: Option<String>,
 ) -> Result<(), String> {
     // Get API key (api_key.rs already prefixes with "api_key_")
     let api_key = crate::commands::api_key::get_api_key(provider.clone())
@@ -240,9 +243,9 @@ async fn stream_chat_inner(
     let api_url = configured_api_url.as_deref().unwrap_or(default_api_url);
 
     if provider == "anthropic" {
-        stream_anthropic(app, messages, system_prompt, model, tools, api_key, api_url, max_tokens, reasoning_effort).await
+        stream_anthropic(app, messages, system_prompt, model, tools, api_key, api_url, max_tokens, reasoning_effort, conversation_id).await
     } else {
-        stream_openai_compatible(app, messages, system_prompt, model, tools, api_key, api_url, provider, max_tokens, reasoning_effort).await
+        stream_openai_compatible(app, messages, system_prompt, model, tools, api_key, api_url, provider, max_tokens, reasoning_effort, conversation_id).await
     }
 }
 
@@ -256,6 +259,7 @@ async fn stream_anthropic(
     api_url: &str,
     max_tokens: u32,
     reasoning_effort: Option<String>,
+    conversation_id: Option<String>,
 ) -> Result<(), String> {
     let client = reqwest::Client::new();
 
@@ -356,12 +360,14 @@ async fn stream_anthropic(
                                 if let Some(thinking) = event["delta"]["thinking"].as_str() {
                                     let _ = app.emit("stream-event", StreamEvent::ThinkingDelta {
                                         text: thinking.to_string(),
+                                        conversation_id: conversation_id.clone(),
                                     });
                                 }
                             } else if delta_type == Some("text_delta") {
                                 if let Some(text) = event["delta"]["text"].as_str() {
                                     let _ = app.emit("stream-event", StreamEvent::TextDelta {
                                         text: text.to_string(),
+                                        conversation_id: conversation_id.clone(),
                                     });
                                 }
                             } else if delta_type == Some("input_json_delta") {
@@ -385,6 +391,7 @@ async fn stream_anthropic(
                                         id: id.clone(),
                                         name: current_tool_name.clone(),
                                         input,
+                                        conversation_id: conversation_id.clone(),
                                     });
                                 }
                                 current_tool_id = None;
@@ -399,10 +406,12 @@ async fn stream_anthropic(
                             let stop_reason = event["delta"]["stop_reason"].as_str().unwrap_or("end_turn");
                             let _ = app.emit("stream-event", StreamEvent::StreamEnd {
                                 stop_reason: stop_reason.to_string(),
+                                conversation_id: conversation_id.clone(),
                             });
                             let _ = app.emit("stream-event", StreamEvent::Usage {
                                 input_tokens,
                                 output_tokens,
+                                conversation_id: conversation_id.clone(),
                             });
                         }
                         _ => {}
@@ -424,8 +433,9 @@ async fn stream_openai_compatible(
     api_key: String,
     api_url: &str,
     provider: String,
-    _max_tokens: u32,  // OpenAI-compatible: max_tokens is optional, not sent to API
+    _max_tokens: u32,  // OpenAI-compatible: included in body when tool config doesn't provide it
     reasoning_effort: Option<String>,
+    conversation_id: Option<String>,
 ) -> Result<(), String> {
     let client = reqwest::Client::new();
 
@@ -459,6 +469,9 @@ async fn stream_openai_compatible(
     if !oai_tools.is_empty() {
         body["tools"] = serde_json::Value::Array(oai_tools);
     }
+    if _max_tokens > 0 {
+        body["max_tokens"] = serde_json::json!(_max_tokens);
+    }
     if let Some(ref effort) = reasoning_effort {
         if effort != "default" {
             body["reasoning_effort"] = serde_json::json!(effort);
@@ -482,7 +495,7 @@ async fn stream_openai_compatible(
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
-    let mut tool_call_buffer: Option<(String, String, String)> = None;
+    let mut tool_call_buffers: std::collections::HashMap<u64, (String, String, String)> = std::collections::HashMap::new();
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("流读取错误: {}", e))?;
@@ -501,42 +514,46 @@ async fn stream_openai_compatible(
                     if let Some(usage) = event["usage"].as_object() {
                         let input_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                         let output_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let _ = app.emit("stream-event", StreamEvent::Usage { input_tokens, output_tokens });
+                        let _ = app.emit("stream-event", StreamEvent::Usage { input_tokens, output_tokens, conversation_id: conversation_id.clone() });
                     }
                     if let Some(choices) = event["choices"].as_array() {
                         for choice in choices {
                             // Thinking (DeepSeek reasoner)
                             if let Some(reasoning) = choice["delta"].get("reasoning_content") {
                                 if let Some(text) = reasoning.as_str() {
-                                    let _ = app.emit("stream-event", StreamEvent::ThinkingDelta { text: text.to_string() });
+                                    let _ = app.emit("stream-event", StreamEvent::ThinkingDelta { text: text.to_string(), conversation_id: conversation_id.clone() });
                                 }
                             }
                             if let Some(delta) = choice["delta"].get("content") {
                                 if let Some(text) = delta.as_str() {
-                                    let _ = app.emit("stream-event", StreamEvent::TextDelta { text: text.to_string() });
+                                    let _ = app.emit("stream-event", StreamEvent::TextDelta { text: text.to_string(), conversation_id: conversation_id.clone() });
                                 }
                             }
-                            // Tool calls (OpenAI format)
+                            // Tool calls (OpenAI format) — use per-index buffers to support parallel calls
                             if let Some(tool_calls) = choice["delta"].get("tool_calls") {
                                 for tc in tool_calls.as_array().unwrap_or(&vec![]) {
                                     let idx = tc["index"].as_u64().unwrap_or(0);
                                     if let Some(id) = tc["id"].as_str() {
-                                        tool_call_buffer = Some((id.to_string(), String::new(), String::new()));
+                                        tool_call_buffers.insert(idx, (id.to_string(), String::new(), String::new()));
                                     }
-                                    if let Some(ref mut buf) = tool_call_buffer {
+                                    if let Some(buf) = tool_call_buffers.get_mut(&idx) {
                                         if let Some(name) = tc["function"]["name"].as_str() { buf.1 = name.to_string(); }
                                         if let Some(args) = tc["function"]["arguments"].as_str() { buf.2.push_str(args); }
                                     }
                                 }
                             }
                             if let Some(finish) = choice["finish_reason"].as_str() {
-                                // Flush tool call buffer
-                                if let Some((id, name, args)) = tool_call_buffer.take() {
-                                    if let Ok(input) = serde_json::from_str::<Value>(&args) {
-                                        let _ = app.emit("stream-event", StreamEvent::ToolUse { id, name, input });
+                                // Flush all tool call buffers (sorted by index for deterministic order)
+                                let mut indices: Vec<u64> = tool_call_buffers.keys().copied().collect();
+                                indices.sort();
+                                for idx in indices {
+                                    if let Some((id, name, args)) = tool_call_buffers.remove(&idx) {
+                                        if let Ok(input) = serde_json::from_str::<Value>(&args) {
+                                            let _ = app.emit("stream-event", StreamEvent::ToolUse { id, name, input, conversation_id: conversation_id.clone() });
+                                        }
                                     }
                                 }
-                                let _ = app.emit("stream-event", StreamEvent::StreamEnd { stop_reason: finish.to_string() });
+                                let _ = app.emit("stream-event", StreamEvent::StreamEnd { stop_reason: finish.to_string(), conversation_id: conversation_id.clone() });
                             }
                         }
                     }

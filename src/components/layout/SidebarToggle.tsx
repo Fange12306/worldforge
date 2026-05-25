@@ -1,14 +1,18 @@
 import { useStore } from "@/lib/store";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
+import { useT } from "@/lib/i18n";
 
 /** Sidebar collapse/expand control. */
 export function SidebarToggle() {
+  const { t } = useT();
   const sidebarOpen = useStore((s) => s.sidebarOpen);
   const toggleSidebar = useStore((s) => s.toggleSidebar);
 
+  const label = sidebarOpen ? t.layout.collapse : t.layout.expand;
+
   return (
-    <Tooltip content={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}>
+    <Tooltip content={label}>
       <button
         onClick={toggleSidebar}
         className="
@@ -18,7 +22,7 @@ export function SidebarToggle() {
           hover:bg-surface-800
           transition-colors
         "
-        aria-label={sidebarOpen ? "收起侧边栏" : "展开侧边栏"}
+        aria-label={label}
       >
         {sidebarOpen ? (
           <PanelLeftClose className="w-4 h-4" />

@@ -2,8 +2,25 @@ import { useStore } from "@/lib/store";
 import { APP_NAME, APP_VERSION } from "@/lib/constants";
 import { invoke } from "@/lib/api";
 import { FolderOpen } from "lucide-react";
+import { useT } from "@/lib/i18n";
+import type { Message } from "@/lib/store";
+
+function countVisibleMessages(messages: Message[]): number {
+  let count = 0;
+  let previousRole: "user" | "assistant" | null = null;
+  for (const message of messages) {
+    if (message.role === "system") continue;
+    if (message.role === "assistant" && previousRole === "assistant") {
+      continue;
+    }
+    count += 1;
+    previousRole = message.role;
+  }
+  return count;
+}
 
 export function StatusBar() {
+  const { t } = useT();
   const worlds = useStore((s) => s.worlds);
   const activeWorldId = useStore((s) => s.activeWorldId);
   const activeConversationId = useStore((s) => s.activeConversationId);
@@ -18,7 +35,7 @@ export function StatusBar() {
   const activeConv = activeStory?.conversations.find(
     (c) => c.id === activeConversationId,
   );
-  const msgCount = activeConv?.messages.length ?? 0;
+  const msgCount = activeConv ? countVisibleMessages(activeConv.messages) : 0;
   const totalTokens = activeConv?.totalTokens ?? 0;
 
   const fmtTokens = (n: number): string => {
@@ -39,13 +56,13 @@ export function StatusBar() {
   return (
     <footer className="h-7 flex items-center justify-between px-3 text-[11px] text-ink-muted flex-shrink-0 select-none">
       <div className="flex items-center gap-3">
-        <span>{streamingHere ? "生成中..." : "就绪"}</span>
-        {activeConv && <span>{msgCount} 条消息</span>}
+        <span>{streamingHere ? t.chat.streaming : t.chat.ready}</span>
+        {activeConv && <span>{msgCount} {t.chat.messages}</span>}
         {totalTokens > 0 && <span>{fmtTokens(totalTokens)} tokens</span>}
       </div>
       <div className="flex items-center gap-3">
         {activeWorld && (
-          <button onClick={handleReveal} className="flex items-center gap-1 hover:text-ink-secondary transition-colors" title="在 Finder 中打开世界文件夹">
+          <button onClick={handleReveal} className="flex items-center gap-1 hover:text-ink-secondary transition-colors" title={t.chat.revealWorld}>
             <FolderOpen className="w-3 h-3" />
             {activeWorld.name}
           </button>

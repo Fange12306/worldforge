@@ -42,7 +42,7 @@ fn save_store(map: &HashMap<String, String>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_config(provider: String, models: Vec<serde_json::Value>, key: String, base_url: Option<String>) -> Result<(), String> {
+pub fn save_config(provider: String, models: Vec<serde_json::Value>, key: String, base_url: Option<String>, active_model: Option<String>) -> Result<(), String> {
     let mut map = load_store();
     let prov = provider.clone();
     map.insert("provider".to_string(), provider);
@@ -50,6 +50,9 @@ pub fn save_config(provider: String, models: Vec<serde_json::Value>, key: String
     map.insert(prov.clone(), key);
     if let Some(url) = base_url {
         map.insert(format!("{}_base_url", prov), url);
+    }
+    if let Some(am) = active_model {
+        map.insert("active_model".to_string(), am);
     }
     save_store(&map)
 }
@@ -65,10 +68,12 @@ pub fn load_config() -> Result<serde_json::Value, String> {
     } else {
         map.get(&format!("{}_base_url", provider)).cloned().unwrap_or_default()
     };
+    let active_model = map.get("active_model").cloned().unwrap_or_default();
     Ok(serde_json::json!({
         "provider": provider,
         "models": models,
         "baseUrl": base_url,
+        "activeModel": active_model,
     }))
 }
 
@@ -125,4 +130,30 @@ pub fn load_last_session() -> Result<Option<LastSession>, String> {
     serde_json::from_str(&session_str)
         .map(Some)
         .map_err(|e| format!("解析失败: {}", e))
+}
+
+#[tauri::command]
+pub fn save_custom_prompt(custom_prompt: String) -> Result<(), String> {
+    let mut map = load_store();
+    map.insert("custom_prompt".to_string(), custom_prompt);
+    save_store(&map)
+}
+
+#[tauri::command]
+pub fn load_custom_prompt() -> Result<String, String> {
+    let map = load_store();
+    Ok(map.get("custom_prompt").cloned().unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn save_language(language: String) -> Result<(), String> {
+    let mut map = load_store();
+    map.insert("language".to_string(), language);
+    save_store(&map)
+}
+
+#[tauri::command]
+pub fn load_language() -> Result<String, String> {
+    let map = load_store();
+    Ok(map.get("language").cloned().unwrap_or_default())
 }

@@ -8,11 +8,11 @@
 <p align="center">
   <strong>AI Worldbuilding Workstation on Your Desktop</strong><br/>
   Manage fictional world entries · Write consistent stories · Visualize timelines<br/>
-  Files as your database, AI Agent as your co-writer
+  Real-time context tracking · Custom API endpoints · Files as your database
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.0-blue?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.7.0-blue?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/status-prototype-amber?style=flat-square" alt="status" />
   <img src="https://img.shields.io/badge/tauri-v2-blue?style=flat-square&logo=tauri" alt="tauri" />
   <img src="https://img.shields.io/badge/react-18-61DAFB?style=flat-square&logo=react" alt="react" />
@@ -85,7 +85,7 @@ Events on the timeline connect entries to outline chapters. An event sits at a t
 
 ### AI Agent — A Writer That Understands Your World
 
-The Agent has a full toolchain (read/write entries, create events, traverse relation graphs, check consistency). It auto-searches relevant settings before writing, and auto-checks constraint conflicts after editing.
+The Agent has a full toolchain (read/write entries, create events, traverse relation graphs, check consistency). It auto-searches relevant settings before writing, and auto-checks constraint conflicts after editing. Real-time context window tracking shows token usage breakdown (messages, tools, system prompt) via the ContextRing UI, helping you avoid hitting model limits.
 
 > "Write a chapter about Dawn's encounter with the dark matter zone" → Agent auto-queries entries → reads relations → traverses graph → checks constraints → writes → consistency check → output
 
@@ -104,7 +104,7 @@ npm install
 npm run tauri dev
 ```
 
-After launch, configure your LLM API key in Settings (supports Anthropic / OpenAI / DeepSeek), create a world, and start chatting.
+After launch, configure your LLM API key in Settings (supports Anthropic / OpenAI / DeepSeek, plus custom API base URLs for proxies or self-hosted models), create a world, and start chatting.
 
 ---
 
@@ -289,7 +289,7 @@ MIT © WorldForge
 
 ### AI Agent —— 理解你世界的作家
 
-Agent 拥有完整工具链（读/写词条、创建事件、遍历关联图、检查一致性），在创作前自动搜索相关设定，在修改后自动检查约束冲突。
+Agent 拥有完整工具链（读/写词条、创建事件、遍历关联图、检查一致性），在创作前自动搜索相关设定，在修改后自动检查约束冲突。实时上下文窗口追踪通过 ContextRing UI 展示 token 用量细分（消息、工具、系统提示），帮助你避免触及模型限制。
 
 > "写一章关于黎明号在暗物质区的经历" → Agent 自动查词条 → 读关联 → 遍历图 → 检查约束 → 创作 → 一致性检查 → 输出
 
@@ -308,7 +308,7 @@ npm install
 npm run tauri dev
 ```
 
-启动后在设置面板填入 LLM API Key（支持 Anthropic/OpenAI/DeepSeek），创建一个世界，开始对话。
+启动后在设置面板填入 LLM API Key（支持 Anthropic/OpenAI/DeepSeek，以及自定义 API 地址用于代理或自部署模型），创建一个世界，开始对话。
 
 ---
 

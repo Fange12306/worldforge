@@ -222,7 +222,7 @@ pub fn read_entry(world_path: String, entry_id: String) -> Result<Entry, String>
 }
 
 #[tauri::command]
-pub fn create_entry(world_path: String, name: String, entry_type: String) -> Result<Entry, String> {
+pub fn create_entry(world_path: String, name: String, entry_type: String, body: Option<String>) -> Result<Entry, String> {
     let id = Uuid::new_v4().to_string();
     let t = entry_type_from_str(&entry_type);
     let entries_root = expand_path(&world_path).join("entries");
@@ -232,9 +232,10 @@ pub fn create_entry(world_path: String, name: String, entry_type: String) -> Res
     let fp = PathBuf::from(&dir).join(format!("{}.md", id));
 
     let now = Utc::now().to_rfc3339();
+    let body_text = body.unwrap_or_else(|| format!("# {}", name));
     let content = format!(
-        "---\nid: {}\nname: {}\ntype: {}\ncreated_at: {}\nupdated_at: {}\ntags: []\n---\n\n# {}\n",
-        id, name, entry_type_str(&t), now, now, name
+        "---\nid: {}\nname: {}\ntype: {}\ncreated_at: {}\nupdated_at: {}\ntags: []\n---\n\n{}\n",
+        id, name, entry_type_str(&t), now, now, body_text
     );
     fs::write(&fp, &content).map_err(|e| format!("写入失败: {}", e))?;
     update_index(&world_path)?;

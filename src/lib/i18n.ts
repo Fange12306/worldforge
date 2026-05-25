@@ -363,11 +363,13 @@ const zh = {
     outlineEmpty: "暂无大纲章节。",
     outlineNoBody: "无正文",
     chapterUpdated: (order: number) => `Ch${order} 已更新。`,
+    chapterDeleted: (order: number) => `Ch${order} 已删除。`,
     // File/Dir
     dirEmpty: "(目录为空或不存在)",
     // Memory
     memoryDeleted: (name: string) => `记忆 "${name}" 已删除。`,
     memorySaved: "记忆已保存到 world/memory/ 目录。",
+    memoryEmpty: "暂无记忆文件。",
     // Graph
     graphNoReachable: "该实体没有可达节点。",
     graphNoRelations: "该实体没有关联。",
@@ -746,9 +748,11 @@ const en: typeof zh = {
     outlineEmpty: "No outline chapters yet.",
     outlineNoBody: "No body",
     chapterUpdated: (order: number) => `Ch${order} updated.`,
+    chapterDeleted: (order: number) => `Ch${order} deleted.`,
     dirEmpty: "(Directory is empty or does not exist)",
     memoryDeleted: (name: string) => `Memory "${name}" deleted.`,
     memorySaved: "Memory saved to world/memory/ directory.",
+    memoryEmpty: "No memory files found.",
     graphNoReachable: "No reachable nodes from this entity.",
     graphNoRelations: "No relations for this entity.",
     graphTraversalNode: (entityType: string, entityName: string, distance: number, viaType: string, viaName: string, viaDesc: string) =>

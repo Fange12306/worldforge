@@ -85,7 +85,7 @@ function getTools(): ToolDef[] {
   },
   {
     name: "EntryWrite",
-    description: "Create, update, or delete a setting entry. Pass entry_id + delete:true to delete. Pass entry_id to update (creates if missing). Omit entry_id to create new. IMPORTANT: put all generated setting details into the 'body' parameter as markdown — chat text is NOT saved to the file.",
+    description: "Create, update, or delete a setting entry. CRITICAL: when creating (no entry_id) or updating, you MUST put all generated content into the 'body' parameter as markdown — anything said in chat or thinking is NOT saved to the file.",
     input_schema: {
       type: "object",
       properties: {
@@ -93,7 +93,7 @@ function getTools(): ToolDef[] {
         delete: { type: "boolean", description: "Set to true to DELETE this entry (requires entry_id). Irreversible." },
         name: { type: "string", description: "Entry display name" },
         entry_type: { type: "string", description: "Entry type slug (character/location/organization/system/artifact/era/concept). Required for new entries; can also be used to change an existing entry's type." },
-        body: { type: "string", description: "Markdown body content" },
+        body: { type: "string", description: "MANDATORY: the entry's full markdown body content. If you don't pass this, the file will be empty. Anything you want to save must go here." },
       },
       required: ["name"],
     },
@@ -153,6 +153,7 @@ function getTools(): ToolDef[] {
       properties: {
         chapter_order: { type: "number", description: "Chapter order number (1, 2, 3...)" },
         title: { type: "string", description: "Chapter title" },
+        delete: { type: "boolean", description: "Set to true to DELETE this chapter. Irreversible." },
         status: { type: "string", description: "Chapter status: 'outline', 'drafting', or 'done'" },
         summary: { type: "string", description: "Brief summary of this chapter" },
         body: { type: "string", description: "The actual chapter text / draft content" },
@@ -176,16 +177,16 @@ function getTools(): ToolDef[] {
   },
   {
     name: "Memory",
-    description: "Read, write, or delete a world memory file. Omit 'content' to read; pass 'content' to create or update; pass delete:true to delete. Memories persist across sessions. REQUIRES PERMISSION for write/delete.",
+    description: "List, read, write, or delete a world memory file. Omit 'file_name' and 'content' to list all (returns name + description). Omit 'content' to read a specific file; pass 'content' to create or update; pass delete:true to delete. REQUIRES PERMISSION for write/delete.",
     input_schema: {
       type: "object",
       properties: {
-        file_name: { type: "string", description: "Memory file name (kebab-case Chinese, e.g., '暗月教设定决策'). Include .md extension." },
+        file_name: { type: "string", description: "Memory file name (kebab-case Chinese, e.g., '暗月教设定决策'). Include .md extension. Omit to list all memories." },
         content: { type: "string", description: "Full markdown content. Omit to read the file. Pass to create/update." },
         description: { type: "string", description: "One-line summary for the MEMORY.md index. Only needed when writing new files." },
         delete: { type: "boolean", description: "Set to true to DELETE this memory file. Irreversible. REQUIRES PERMISSION." },
       },
-      required: ["file_name"],
+      required: [],
     },
   },
   {
@@ -274,16 +275,15 @@ function getTools(): ToolDef[] {
   },
   {
     name: "EventWrite",
-    description: "Create, update, or delete an event on a timeline. Pass event_name + delete:true to delete. Pass event_name to update (by readable slug within the timeline). Omit event_name to create new. Events bridge entries and outline chapters.",
+    description: "Create, update, or delete an event on a timeline. Pass event_name + delete:true to delete. Pass event_name to update an existing event. Omit event_name to create new (slug auto-generated from summary). Events bridge entries and outline chapters.",
     input_schema: {
       type: "object",
       properties: {
         timeline_id: { type: "string", description: "Timeline ID (required)" },
-        event_name: { type: "string", description: "Readable event slug. Set this when creating. Use it to reference the event for update/delete. e.g. '着陆失败-黎明号'" },
+        event_name: { type: "string", description: "Event slug for update/delete reference. Omit when creating new — slug will be auto-generated from summary." },
         delete: { type: "boolean", description: "Set to true to DELETE this event (requires event_name). Irreversible." },
         time_point: { type: "string", description: "8-segment time string. Required for new events, optional for updates (to move the event). e.g. '000-3-000225-05-00-00-00-00'" },
         summary: { type: "string", description: "Event description. Required for new events." },
-        name: { type: "string", description: "Set/change the readable event slug (optional). Only needed when creating or renaming." },
         precision: { type: "number", description: "Optional: precision index into time_format.units (0=era, 1=year, 2=month, 3=day, 4=hour, 5=minute, 6=second). Display truncates at this level." },
         linked_entries: { type: "string", description: ta.eventLinkedEntries },
         linked_chapters: { type: "string", description: "Comma-separated: 'story_id:order,story_id:order'" },
@@ -534,11 +534,13 @@ async function executeTool(
         return msg;
       } else {
         const entryType = (input.entry_type as string) || "concept";
-        await invoke("create_entry", {
+        const createParams: Record<string, unknown> = {
           worldPath,
           name: input.name as string,
           entryType,
-        });
+        };
+        if (input.body) createParams.body = input.body;
+        await invoke("create_entry", createParams);
         return t().entryCreated(input.name as string, entryType);
       }
     }
@@ -598,6 +600,11 @@ async function executeTool(
     }
     case "OutlineWrite": {
       const chBody = (input.body as string) || "";
+      // Delete path
+      if (input.delete === true) {
+        await invoke("delete_chapter", { worldPath, storyId, chapterOrder: input.chapter_order as number });
+        return t().chapterDeleted(input.chapter_order as number);
+      }
       // Consistency check before write: traverse from story via outline entity type
       let ccResult: { hard: string[]; soft: string[] } | null = null;
       if (chBody.trim().length >= 10) {
@@ -639,17 +646,25 @@ async function executeTool(
       });
     }
     case "Memory": {
-      const memFile = input.file_name as string;
+      const memFile = input.file_name as string | undefined;
       // Delete path
       if (input.delete === true) {
+        if (!memFile) return t().deleteNeedsId;
         await invoke("delete_memory", { worldPath, fileName: memFile });
         return t().memoryDeleted(memFile);
       }
-      // Read path: no content provided
-      if (!input.content) {
+      // List path: no file_name + no content
+      if (!memFile && !input.content) {
+        const entries = await invoke<Array<{ name: string; description: string }>>("list_memories", { worldPath });
+        if (entries.length === 0) return t().memoryEmpty;
+        return entries.map((e) => `- ${e.name}${e.description ? ` — ${e.description}` : ""}`).join("\n");
+      }
+      // Read path: file_name provided, no content
+      if (memFile && !input.content) {
         return await invoke<string>("read_memory", { worldPath, fileName: memFile });
       }
       // Write path
+      if (!memFile) return t().deleteNeedsId;
       const memParams: Record<string, unknown> = {
         worldPath,
         fileName: memFile,
@@ -847,7 +862,6 @@ async function executeTool(
         };
         if (input.time_point) params.timePoint = input.time_point;
         if (input.summary) params.summary = input.summary;
-        if (input.name) params.nameUpdate = input.name;
         if (input.precision != null) params.precision = input.precision as number;
         if (input.linked_entries) params.linkedEntries = input.linked_entries;
         if (input.linked_chapters) params.linkedChapters = input.linked_chapters;
@@ -866,7 +880,6 @@ async function executeTool(
           timePoint: input.time_point as string,
           summary: evSummary,
         };
-        if (input.name) params.name = input.name;
         if (input.precision != null) params.precision = input.precision as number;
         if (input.linked_entries) params.linkedEntries = input.linked_entries;
         if (input.linked_chapters) params.linkedChapters = input.linked_chapters;
@@ -897,6 +910,7 @@ export async function runAgentLoop(
   reasoningEffort?: string,
   convId?: string,
   maxTokensOverride?: number,
+  abortRef?: { current: boolean },
 ) {
   const MAX_RECOVERY = 3;
   let turns = 0;
@@ -925,6 +939,8 @@ export async function runAgentLoop(
 
   // Claude Code 做法: 无限循环, 靠自然完成(end_turn)或用户中断退出, 不做硬轮次截断
   while (true) {
+    // User pressed stop — bail out immediately, don't start new API calls
+    if (abortRef?.current) return;
     turns++;
 
     try {
@@ -1009,9 +1025,13 @@ export async function runAgentLoop(
       // ── Step 2: Send API request (listener is guaranteed ready) ──
 
       try {
-        // Claude Code sends ALL tools on EVERY request — no keyword filtering.
-        // Tool behavior is constrained by the system prompt, not by hiding tools.
-        await invoke("stream_chat", {
+        // Start the stream request, then immediately wait for stream_end event.
+        // ⚠️ Order matters: we must await streamPromise BEFORE invokePromise.
+        // The Rust backend emits StreamEnd before returning, but Tauri's IPC
+        // may deliver the invoke response faster than the event. Sequential
+        // await (invoke → streamPromise) would deadlock if invoke resolved
+        // before stream_end arrived — streamPromise would never be checked.
+        const invokePromise = invoke("stream_chat", {
           messages,
           systemPrompt: systemPrompt,
           model,
@@ -1022,8 +1042,17 @@ export async function runAgentLoop(
           conversationId: convId || null,
         });
 
-        // Wait for stream to complete
-        try { await streamPromise; } catch {}
+        // Wait for stream to complete, with a safety timeout.
+        // If invoke fails (network error), invokePromise rejects below.
+        try {
+          await Promise.race([
+            streamPromise,
+            invokePromise.then(() => undefined),
+          ]);
+        } catch {}
+
+        // Now ensure both are settled
+        await invokePromise;
       } finally {
         // Always clean up listener — prevents double-event bugs on interruption
         unlisten();

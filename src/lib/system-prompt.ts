@@ -22,11 +22,14 @@ export function buildSystemPrompt(
       const order = u.map((x) => x.name).join(" | ");
       const buildExample = (label: string, labelEn: string, values: number[], prec: number) => {
         let segs = ["000"];
+        const labels = ["固定"];
         for (let i = 0; i < u.length; i++) {
           const v = values[i] ?? 0;
           segs.push(String(v).padStart(u[i].digits, "0"));
+          labels.push(u[i].name);
         }
-        return `${isEn ? labelEn : label} → time_point: "${segs.join("-")}", precision=${prec}`;
+        const annotated = segs.map((s, i) => `${s}(${labels[i]})`).join("-");
+        return `${isEn ? labelEn : label} → ${annotated}  (time_point: "${segs.join("-")}", precision=${prec})`;
       };
       const fullExampleValues: number[] = u.map((unit, i) => {
         if (unit.key === "era") return 3;
@@ -84,6 +87,8 @@ function buildZhPrompt(
 
     `# System`,
     `- 工具在用户确认后执行。如果用户拒绝了一个工具调用，不要用相同参数重试。`,
+    `- 增删改限制：用户没有明确要求修改时，不要主动调用 EntryWrite/EventWrite/OutlineWrite/Relation/Memory 等写入类工具。用户问"这个类型对不对"时先回答，等用户说改你再改。查询（EntrySearch/EntryRead/OutlineRead/ListTimelines/ListEvents/ExploreGraph）不受此限制。`,
+    `- 内容忠实现：写入或新建词条/事件/大纲时，只写入用户确认过或用户提供的信息。用户没提的细节不要自己编造补全，除非用户明确要求"拓展""丰富""完善"。`,
 
     timeFormatSection,
 
@@ -97,6 +102,7 @@ function buildZhPrompt(
     `# Using tools — 通用原则`,
     `- 独立操作必须并行：一次发起多个互不依赖的工具调用，大幅减少轮次。典型场景：读取多个词条（EntryRead）、同时搜索不同类型（EntrySearch + 查大纲）、检查一致性同时写入。不需要等前一个结果的操作就一起发。`,
     `- 工具是唯一持久化途径。聊天中说出的内容不会被自动保存——必须通过工具的 body 参数传入，否则文件为空。`,
+    `- ⚠️ 创建/更新词条（EntryWrite）时，你必须把正文内容填进 body 参数再调用。只传 name 不传 body 词条文件是空的——你说过的"已写入"不算数。`,
     `- 操作失败看错误信息，不原样重试。找不到词条时，基于已有信息继续执行用户的主任务，不要卡在搜索里。`,
     `- 一旦本轮使用过任何工具，最终答复必须先用普通 assistant 文本完整输出，然后调用空参数 FinalAnswer 标记完成。`,
     `- FinalAnswer 只是完成标记，不能携带长答案；不要把最终回答放进工具参数。工具链任务未完成时继续调用工具。`,
@@ -199,6 +205,8 @@ function buildEnPrompt(
 
     `# System`,
     `- Tools execute after user confirmation. If the user denies a tool call, do not retry with the same parameters.`,
+    `- Modification restriction: don't proactively call write tools (EntryWrite/EventWrite/OutlineWrite/Relation/Memory) unless the user explicitly asks for changes. If the user asks "is this type correct?", answer first — wait for them to say "change it" before actually modifying anything. Read-only tools (EntrySearch/EntryRead/OutlineRead/ListTimelines/ListEvents/ExploreGraph) are not restricted.`,
+    `- Content fidelity: when writing or creating entries/events/outline chapters, only write information the user has confirmed or provided. Don't fabricate details the user hasn't mentioned, unless the user explicitly asks you to "expand", "enrich", or "fill in".`,
 
     timeFormatSection,
 
@@ -212,6 +220,7 @@ function buildEnPrompt(
     `# Using tools — General principles`,
     `- Independent operations MUST be parallelized: issue multiple mutually independent tool calls at once to dramatically reduce rounds. Typical scenarios: reading multiple entries (EntryRead), simultaneous different-type searches (EntrySearch + outline check), consistency check while writing. Send operations that don't depend on previous results together.`,
     `- Tools are the only persistence path. Content spoken in chat is NOT automatically saved — it must be passed via tool body parameters, otherwise files will be empty.`,
+    `- ⚠️ When creating/updating entries via EntryWrite, you MUST pass the content in the 'body' parameter. Calling without body leaves the file empty — saying "content written" in chat doesn't count.`,
     `- On failure, read the error message; don't blindly retry. If an entry can't be found, continue the user's main task based on existing information — don't get stuck searching.`,
     `- Once any tool has been used in this turn, the final response MUST first output complete text as a normal assistant message, then call the empty-parameter FinalAnswer to mark completion.`,
     `- FinalAnswer is only a completion marker; don't put long answers in it. Continue calling tools if the tool chain is not yet complete.`,

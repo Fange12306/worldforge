@@ -409,7 +409,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
           }
           clearStreamText();
         },
-      }, llmProvider, activeModel, storyId, reasoningEffort, convId, maxTokens);
+      }, llmProvider, activeModel, storyId, reasoningEffort, convId, maxTokens, abortRef);
     } catch (e: any) {
       setStreaming(false);
       if (!abortRef.current) addMessage(storyId, { role: "assistant", content: `Error: ${e}` }, convId);

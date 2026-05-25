@@ -71,7 +71,7 @@ export const BUILT_IN_SKILLS: BundledSkill[] = [
       ``,
       `1. **查设定** — 用 EntrySearch + TraverseGraph 了解相关角色、地点、组织`,
       `2. **查已有大纲** — 用 OutlineRead 看已有哪些章节，避免重复和矛盾`,
-      `3. **构建章节** — 用 WriteOutline 创建章节，包含：`,
+      `3. **构建章节** — 用 OutlineWrite 创建章节，包含：`,
       `   - title: 章节标题`,
       `   - summary: 章节摘要（100-200字）`,
       `   - body: 详细大纲（包含场景列表、出场角色、关键事件）`,

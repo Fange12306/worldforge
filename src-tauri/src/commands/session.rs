@@ -178,3 +178,26 @@ pub fn load_session_tokens(world_path: String, session_id: String) -> Result<u64
         .map_err(|e| format!("读取 tokens 失败: {}", e))?;
     s.trim().parse().map_err(|e| format!("解析 tokens 失败: {}", e))
 }
+
+/// Persist context window state for a conversation (survives restarts)
+#[tauri::command]
+pub fn save_session_state(world_path: String, session_id: String, state_json: String) -> Result<(), String> {
+    let filepath = PathBuf::from(&world_path)
+        .join("sessions")
+        .join(format!("{}.state.json", session_id));
+    fs::write(&filepath, &state_json)
+        .map_err(|e| format!("写入状态失败: {}", e))
+}
+
+/// Load persisted context window state for a conversation
+#[tauri::command]
+pub fn load_session_state(world_path: String, session_id: String) -> Result<String, String> {
+    let filepath = PathBuf::from(&world_path)
+        .join("sessions")
+        .join(format!("{}.state.json", session_id));
+    if !filepath.exists() {
+        return Ok("{}".to_string());
+    }
+    fs::read_to_string(&filepath)
+        .map_err(|e| format!("读取状态失败: {}", e))
+}

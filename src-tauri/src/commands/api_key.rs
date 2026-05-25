@@ -42,12 +42,15 @@ fn save_store(map: &HashMap<String, String>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_config(provider: String, models: Vec<serde_json::Value>, key: String) -> Result<(), String> {
+pub fn save_config(provider: String, models: Vec<serde_json::Value>, key: String, base_url: Option<String>) -> Result<(), String> {
     let mut map = load_store();
     let prov = provider.clone();
     map.insert("provider".to_string(), provider);
     map.insert("models".to_string(), serde_json::to_string(&models).unwrap_or_default());
-    map.insert(prov, key);
+    map.insert(prov.clone(), key);
+    if let Some(url) = base_url {
+        map.insert(format!("{}_base_url", prov), url);
+    }
     save_store(&map)
 }
 
@@ -56,9 +59,16 @@ pub fn load_config() -> Result<serde_json::Value, String> {
     let map = load_store();
     let models_str = map.get("models").cloned().unwrap_or_default();
     let models: Vec<serde_json::Value> = serde_json::from_str(&models_str).unwrap_or_default();
+    let provider = map.get("provider").cloned().unwrap_or_default();
+    let base_url = if provider.is_empty() {
+        String::new()
+    } else {
+        map.get(&format!("{}_base_url", provider)).cloned().unwrap_or_default()
+    };
     Ok(serde_json::json!({
-        "provider": map.get("provider").cloned().unwrap_or_default(),
+        "provider": provider,
         "models": models,
+        "baseUrl": base_url,
     }))
 }
 
@@ -75,6 +85,11 @@ pub fn get_api_key(provider: String) -> Result<String, String> {
     map.get(&provider)
         .cloned()
         .ok_or_else(|| format!("未找到 {} 的 API Key", provider))
+}
+
+pub fn get_api_base_url(provider: String) -> Option<String> {
+    let map = load_store();
+    map.get(&format!("{}_base_url", provider)).cloned().filter(|s| !s.trim().is_empty())
 }
 
 #[tauri::command]

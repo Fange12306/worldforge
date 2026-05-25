@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "./api";
+import type { ContextBreakdown } from "./context-window";
+import { getContextWindowSize } from "./context-window";
 
 // ── Types ──────────────────────────────────────────
 
@@ -27,6 +29,8 @@ export type Conversation = {
   title: string;
   messages: Message[];
   totalTokens: number;
+  contextUsed: number;
+  contextBreakdown: ContextBreakdown | null;
   createdAt: number;
 };
 
@@ -50,6 +54,13 @@ export type Message = {
   toolCalls?: ToolCall[];
   timeline?: TimelineBlock[];
   timestamp: number;
+};
+
+export type ModelConfig = {
+  name: string;
+  alias?: string;
+  reasoningEffort?: "default" | "low" | "medium" | "high";
+  contextWindow?: number;
 };
 
 // ── ID generators ──────────────────────────────────
@@ -92,14 +103,19 @@ type AppStore = {
 
   // LLM settings
   llmProvider: string;
-  llmModels: { name: string }[];
+  llmModels: ModelConfig[];
   activeModel: string;
   setLlmProvider: (p: string) => void;
-  setLlmModels: (m: { name: string }[]) => void;
+  setLlmModels: (m: ModelConfig[]) => void;
   setActiveModel: (m: string) => void;
 
   // Token usage (per-conversation, from API usage fields)
   addTokens: (input: number, output: number) => void;
+
+  // Context window tracking
+  contextWindowSize: number;
+  setContextWindow: (provider: string, model: string, modelContextWindow?: number) => void;
+  updateContextUsage: (used: number, breakdown: ContextBreakdown) => void;
 
   // Streaming (one at a time, tied to a specific conversation)
   isStreaming: boolean;
@@ -184,6 +200,8 @@ export const useStore = create<AppStore>((set, get) => ({
                   title: c.title,
                   messages: [],
                   totalTokens: 0,
+                  contextUsed: 0,
+                  contextBreakdown: null,
                   createdAt: Date.now(),
                 }));
                 if (!firstConvId && convs.length > 0) firstConvId = convs[0].id;
@@ -285,6 +303,8 @@ export const useStore = create<AppStore>((set, get) => ({
                     title: `对话 ${st.conversations.length + 1}`,
                     messages: [],
                     totalTokens: 0,
+                    contextUsed: 0,
+                    contextBreakdown: null,
                     createdAt: Date.now(),
                   },
                 ],
@@ -382,6 +402,35 @@ export const useStore = create<AppStore>((set, get) => ({
   setLlmProvider: (p) => set({ llmProvider: p }),
   setLlmModels: (m) => set({ llmModels: m }),
   setActiveModel: (m) => set({ activeModel: m }),
+
+  // Context window tracking
+  contextWindowSize: 128_000,
+  setContextWindow: (provider, model, modelContextWindow?) =>
+    set({ contextWindowSize: modelContextWindow || getContextWindowSize(provider, model) }),
+  updateContextUsage: (used, breakdown) => {
+    const state = get();
+    const world = state.worlds.find((w) => w.id === state.activeWorldId);
+    const cid = state.activeConversationId;
+    set((s) => ({
+      worlds: s.worlds.map((w) => ({
+        ...w,
+        stories: w.stories.map((st) => ({
+          ...st,
+          conversations: st.conversations.map((c) =>
+            c.id === cid ? { ...c, contextUsed: used, contextBreakdown: breakdown } : c
+          ),
+        })),
+      })),
+    }));
+    // Persist to disk
+    if (world && cid) {
+      invoke("save_session_state", {
+        worldPath: world.path,
+        sessionId: cid,
+        stateJson: JSON.stringify({ contextUsed: used, contextBreakdown: breakdown }),
+      }).catch(() => {});
+    }
+  },
 
   addTokens: (input, output) => {
     const state = get();

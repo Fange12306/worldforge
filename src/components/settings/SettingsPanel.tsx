@@ -251,15 +251,16 @@ export function SettingsPanel({ onClose }: Props) {
                       <div className="flex items-start gap-6">
                         <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">可用模型</label>
                         <div className="w-[680px] space-y-1.5">
-                          <div className="grid grid-cols-[minmax(0,1fr)_120px_104px_100px_32px] gap-2 px-0.5 text-[10px] text-ink-muted">
+                          <div className="grid grid-cols-[minmax(0,1fr)_120px_104px_100px_68px_32px] gap-2 px-0.5 text-[10px] text-ink-muted">
                             <span>模型 ID</span>
                             <span>展示名</span>
                             <span>推理强度</span>
                             <span>上下文窗口</span>
+                            <span>最大输出</span>
                             <span />
                           </div>
                           {models.map((m, i) => (
-                            <div key={`${m.name}-${i}`} className="grid grid-cols-[minmax(0,1fr)_120px_104px_100px_32px] gap-2">
+                            <div key={`${m.name}-${i}`} className="grid grid-cols-[minmax(0,1fr)_120px_104px_100px_68px_32px] gap-2">
                               <input
                                 value={m.name}
                                 onChange={(e) => {

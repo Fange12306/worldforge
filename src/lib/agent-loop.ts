@@ -890,6 +890,10 @@ export async function runAgentLoop(
   let thinkingText = "";
   const messages = [...conversation];
 
+  // Tool call cache — deduplicate identical (name, input) pairs within one agent run.
+  // Prevents re-executing the same search/read and signals repetition back to the model.
+  const toolCache = new Map<string, string>();
+
   // max_tokens per provider. Each model has a hard API limit on output tokens
   // — exceeding it causes stop_reason="max_tokens" and recovery kicks in.
   // Anthropic requires this param; OpenAI-compatible accepts it optionally.
@@ -1033,8 +1037,17 @@ export async function runAgentLoop(
       for (const tool of pendingToolUses) {
         if (tool.name === "FinalAnswer") continue;
         awaitingFinalAnswer = false;
+        const cacheKey = `${tool.name}::${JSON.stringify(tool.input)}`;
+        const cached = toolCache.get(cacheKey);
+        if (cached !== undefined) {
+          const result = `[缓存 — 与之前相同参数的结果一致，不要再重复调用]\n${cached}`;
+          callbacks.onToolResult({ toolUseId: tool.id, toolName: tool.name, content: result }, tool.name);
+          messages.push({ role: "user", content: `[工具结果: ${tool.name}]\n${result}` });
+          continue;
+        }
         try {
           const result = await executeTool(tool.name, tool.input, worldPath, storyId);
+          toolCache.set(cacheKey, result);
           callbacks.onToolResult({ toolUseId: tool.id, toolName: tool.name, content: result }, tool.name);
           messages.push({
             role: "user",

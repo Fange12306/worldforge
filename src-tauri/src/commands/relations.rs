@@ -3,7 +3,7 @@
 /// These commands read/write the relations/index.json file via GraphStorage.
 /// The frontend or Agent invokes them to manage cross-entity relations.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 
@@ -208,23 +208,58 @@ pub fn add_relation(
 #[tauri::command]
 pub fn remove_relation(
     world_path: String,
-    from_type: String,
-    from_id: String,
-    to_type: String,
-    to_id: String,
-    description: String,
+    relation_id: String,
+) -> Result<RelationGraph, String> {
+    graph_storage::with_graph(&world_path, |g| {
+        let before = g.edges.len();
+        g.edges.retain(|e| e.id != relation_id);
+        if g.edges.len() == before {
+            return Err(format!("关系 {} 不存在", relation_id));
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn update_relation(
+    world_path: String,
+    relation_id: String,
+    from_type: Option<String>,
+    from_id: Option<String>,
+    to_type: Option<String>,
+    to_id: Option<String>,
+    description: Option<String>,
     timeline_id: Option<String>,
 ) -> Result<RelationGraph, String> {
-    let from = EntityRef { name: None, 
-        entity_type: parse_entity_type(&from_type)?,
-        id: from_id,
-    };
-    let to = EntityRef { name: None, 
-        entity_type: parse_entity_type(&to_type)?,
-        id: to_id,
-    };
     graph_storage::with_graph(&world_path, |g| {
-        g.remove_edge_scoped(&from, &to, &description, timeline_id.as_deref());
+        let edge = g.edges.iter_mut()
+            .find(|e| e.id == relation_id)
+            .ok_or_else(|| format!("关系 {} 不存在", relation_id))?;
+
+        if from_type.is_some() || from_id.is_some() {
+            let entity_type = match from_type {
+                Some(ref t) => parse_entity_type(t)?,
+                None => edge.from.entity_type.clone(),
+            };
+            let id = from_id.unwrap_or_else(|| edge.from.id.clone());
+            edge.from = EntityRef { name: None, entity_type, id };
+        }
+
+        if to_type.is_some() || to_id.is_some() {
+            let entity_type = match to_type {
+                Some(ref t) => parse_entity_type(t)?,
+                None => edge.to.entity_type.clone(),
+            };
+            let id = to_id.unwrap_or_else(|| edge.to.id.clone());
+            edge.to = EntityRef { name: None, entity_type, id };
+        }
+
+        if let Some(desc) = description {
+            edge.description = desc;
+        }
+        if timeline_id.is_some() {
+            edge.timeline_id = timeline_id;
+        }
         Ok(())
     })
 }

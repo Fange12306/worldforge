@@ -33,6 +33,8 @@ pub fn run() {
             world_init::reveal_world_folder,
             world_init::delete_world,
             world_init::list_worlds,
+            world_init::save_world_prompt,
+            world_init::load_world_prompt,
             // Entry CRUD
             entry_crud::read_entry,
             entry_crud::create_entry,
@@ -94,6 +96,7 @@ pub fn run() {
             // Relation graph (Phase 4)
             relations::add_relation,
             relations::remove_relation,
+            relations::update_relation,
             relations::query_relations,
             relations::get_all_relations,
             relations::traverse_graph,

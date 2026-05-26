@@ -57,20 +57,30 @@ fn entry_type_str(t: &EntryType) -> &str {
     }
 }
 
-/// Generate a stable filesystem-safe slug from a display name (for the filename only).
-/// Internal ID is always a UUID — the slug is purely for human-readable file browsing.
-fn name_to_slug(name: &str) -> String {
-    name.chars()
-        .map(|c| if c.is_whitespace() { '-' } else { c })
-        .collect::<String>()
-}
-
 fn all_entry_types() -> Vec<EntryType> {
     vec![
         EntryType::Character, EntryType::Location, EntryType::Organization,
         EntryType::System, EntryType::Artifact,
         EntryType::Era, EntryType::Concept,
     ]
+}
+
+fn format_constraints(constraints: &[Constraint]) -> String {
+    if constraints.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("constraints:\n");
+    for c in constraints {
+        let severity = match c.severity {
+            crate::models::constraint::ConstraintSeverity::Hard => "hard",
+            crate::models::constraint::ConstraintSeverity::Soft => "soft",
+        };
+        out.push_str(&format!("  - rule: \"{}\"\n    severity: {}\n", c.rule, severity));
+        if let Some(ref tl) = c.timeline_id {
+            out.push_str(&format!("    timeline_id: \"{}\"\n", tl));
+        }
+    }
+    out
 }
 
 // ── Parse a .md file ──
@@ -222,7 +232,7 @@ pub fn read_entry(world_path: String, entry_id: String) -> Result<Entry, String>
 }
 
 #[tauri::command]
-pub fn create_entry(world_path: String, name: String, entry_type: String, body: Option<String>) -> Result<Entry, String> {
+pub fn create_entry(world_path: String, name: String, entry_type: String, body: Option<String>, constraints: Option<Vec<Constraint>>) -> Result<Entry, String> {
     let id = Uuid::new_v4().to_string();
     let t = entry_type_from_str(&entry_type);
     let entries_root = expand_path(&world_path).join("entries");
@@ -233,9 +243,10 @@ pub fn create_entry(world_path: String, name: String, entry_type: String, body: 
 
     let now = Utc::now().to_rfc3339();
     let body_text = body.unwrap_or_else(|| format!("# {}", name));
+    let constraints_yaml = format_constraints(&constraints.unwrap_or_default());
     let content = format!(
-        "---\nid: {}\nname: {}\ntype: {}\ncreated_at: {}\nupdated_at: {}\ntags: []\n---\n\n{}\n",
-        id, name, entry_type_str(&t), now, now, body_text
+        "---\nid: {}\nname: {}\ntype: {}\ncreated_at: {}\nupdated_at: {}\ntags: []\n{}---\n\n{}\n",
+        id, name, entry_type_str(&t), now, now, constraints_yaml, body_text
     );
     fs::write(&fp, &content).map_err(|e| format!("写入失败: {}", e))?;
     update_index(&world_path)?;
@@ -249,6 +260,7 @@ pub fn update_entry(
     name: String,
     body: String,
     entry_type: Option<String>,
+    constraints: Option<Vec<Constraint>>,
 ) -> Result<Entry, String> {
     let entries_root = expand_path(&world_path).join("entries");
     // Find by UUID first, then fallback to filename
@@ -272,12 +284,17 @@ pub fn update_entry(
     };
     let type_changed = new_type != existing.entry_type;
 
+    // Use provided constraints, or keep existing ones
+    let final_constraints = constraints.unwrap_or(existing.constraints);
+    let constraints_yaml = format_constraints(&final_constraints);
+
     // Build new frontmatter
     let fm = format!(
-        "id: {}\nname: {}\ntype: {}\ncreated_at: {}\nupdated_at: {}\ntags: [{}]\n",
+        "id: {}\nname: {}\ntype: {}\ncreated_at: {}\nupdated_at: {}\ntags: [{}]\n{}",
         existing.id, name, entry_type_str(&new_type),
         existing.created_at.to_rfc3339(), Utc::now().to_rfc3339(),
-        existing.tags.join(", ")
+        existing.tags.join(", "),
+        constraints_yaml
     );
     let body_content = if body.is_empty() { format!("# {}", name) } else { body };
     let new_content = format!("---\n{}---\n\n{}", fm, body_content);

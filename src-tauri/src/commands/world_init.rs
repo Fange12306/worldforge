@@ -40,6 +40,8 @@ pub struct WorldMeta {
     pub name: String,
     pub description: String,
     #[serde(default)]
+    pub world_prompt: String,
+    #[serde(default)]
     pub default_timeline: String,
     pub created_at: String,
     #[serde(default)]
@@ -95,6 +97,7 @@ pub fn init_world(path: String, name: String) -> Result<WorldMeta, String> {
         id: Uuid::new_v4().to_string(),
         name: name.clone(),
         description: String::new(),
+        world_prompt: String::new(),
         default_timeline: String::new(),
         created_at: now,
         language: "zh-CN".to_string(),
@@ -171,6 +174,31 @@ pub fn rename_world(world_path: String, new_name: String) -> Result<(), String> 
         .map_err(|e| format!("序列化失败: {}", e))?;
     fs::write(&world_json_path, &new_json)
         .map_err(|e| format!("写入 world.json 失败: {}", e))
+}
+
+#[tauri::command]
+pub fn save_world_prompt(world_path: String, world_prompt: String) -> Result<(), String> {
+    let root = expand_tilde(&world_path);
+    let world_json_path = root.join("world.json");
+    let json = fs::read_to_string(&world_json_path)
+        .map_err(|e| format!("读取 world.json 失败: {}", e))?;
+    let mut meta: WorldMeta = serde_json::from_str(&json)
+        .map_err(|e| format!("解析 world.json 失败: {}", e))?;
+    meta.world_prompt = world_prompt;
+    let new_json = serde_json::to_string_pretty(&meta)
+        .map_err(|e| format!("序列化失败: {}", e))?;
+    fs::write(&world_json_path, &new_json)
+        .map_err(|e| format!("写入 world.json 失败: {}", e))
+}
+
+#[tauri::command]
+pub fn load_world_prompt(world_path: String) -> Result<String, String> {
+    let root = expand_tilde(&world_path);
+    let json = fs::read_to_string(root.join("world.json"))
+        .map_err(|e| format!("无法读取 world.json: {}", e))?;
+    let meta: WorldMeta = serde_json::from_str(&json)
+        .map_err(|e| format!("解析 world.json 失败: {}", e))?;
+    Ok(meta.world_prompt)
 }
 
 /// Get the worlds directory path (app data dir)

@@ -25,16 +25,12 @@ pub enum StreamEvent {
     TextDelta { text: String, conversation_id: Option<String> },
     #[serde(rename = "thinking_delta")]
     ThinkingDelta { text: String, conversation_id: Option<String> },
-    #[serde(rename = "thinking_done")]
-    ThinkingDone { conversation_id: Option<String> },
     #[serde(rename = "tool_use")]
     ToolUse { id: String, name: String, input: Value, conversation_id: Option<String> },
     #[serde(rename = "stream_end")]
     StreamEnd { stop_reason: String, conversation_id: Option<String> },
     #[serde(rename = "usage")]
     Usage { input_tokens: u64, output_tokens: u64, conversation_id: Option<String> },
-    #[serde(rename = "error")]
-    Error { message: String, conversation_id: Option<String> },
 }
 
 /// Quick connectivity test — sends a single message, returns "ok" or error
@@ -435,7 +431,7 @@ async fn stream_openai_compatible(
     tools: Vec<ToolDef>,
     api_key: String,
     api_url: &str,
-    provider: String,
+    _provider: String,
     _max_tokens: u32,  // OpenAI-compatible: included in body when tool config doesn't provide it
     reasoning_effort: Option<String>,
     conversation_id: Option<String>,

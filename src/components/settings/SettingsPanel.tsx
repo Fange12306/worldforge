@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useStore, type ModelConfig } from "@/lib/store";
 import { invoke } from "@/lib/api";
-import { X, Eye, EyeOff, SlidersHorizontal, Palette, Bot, UserRound, ArrowLeft } from "lucide-react";
+import { X, Eye, EyeOff, SlidersHorizontal, Palette, Bot, UserRound, ArrowLeft, Pencil } from "lucide-react";
 import { MemoryManager } from "./MemoryManager";
 import { useT } from "@/lib/i18n";
 
@@ -420,6 +420,7 @@ function GeneralSection() {
 
 function PersonalizationSection() {
   const { t } = useT();
+  const worlds = useStore((s) => s.worlds);
   const [customPrompt, setCustomPrompt] = useState("");
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -472,8 +473,143 @@ function PersonalizationSection() {
           </div>
         </div>
 
+        <WorldGuidanceSection />
+
         <MemoryManager />
       </div>
     </section>
+  );
+}
+
+function WorldGuidanceSection() {
+  const { t } = useT();
+  const worlds = useStore((s) => s.worlds);
+  const [prompts, setPrompts] = useState<Record<string, string>>({});
+  const [saved, setSaved] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Deduplicate worlds by path
+  const uniqueWorlds = worlds.filter((w, i, arr) => {
+    const first = arr.findIndex((x) => x.path === w.path);
+    return first === i;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      const result: Record<string, string> = {};
+      await Promise.all(
+        uniqueWorlds.map(async (w) => {
+          try {
+            const p = await invoke<string>("load_world_prompt", { worldPath: w.path });
+            result[w.path] = p || "";
+          } catch {
+            result[w.path] = "";
+          }
+        })
+      );
+      if (!cancelled) {
+        setPrompts(result);
+        setLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [worlds.map((w) => w.path).join(",")]);
+
+  const handleEdit = (worldPath: string) => {
+    setEditing(worldPath);
+    setEditContent(prompts[worldPath] || "");
+  };
+
+  const handleSave = async (worldPath: string) => {
+    setSaving(true);
+    try {
+      await invoke("save_world_prompt", { worldPath, worldPrompt: editContent });
+      setPrompts((prev) => ({ ...prev, [worldPath]: editContent }));
+      setSaved((prev) => ({ ...prev, [worldPath]: true }));
+      setTimeout(() => setSaved((prev) => ({ ...prev, [worldPath]: false })), 2000);
+      setEditing(null);
+    } catch (e) {
+      alert(`${t.personalization.saveFailed}: ${e}`);
+    }
+    setSaving(false);
+  };
+
+  const worldName = (path: string) => {
+    const w = uniqueWorlds.find((x) => x.path === path);
+    return w?.name || path;
+  };
+
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-ink mb-3">{t.personalization.worldInstructions}</h3>
+
+      {loading ? (
+        <p className="text-xs text-ink-muted italic">{t.personalization.loading}</p>
+      ) : uniqueWorlds.length === 0 ? (
+        <p className="text-xs text-ink-muted italic">{t.personalization.worldHintNoWorld}</p>
+      ) : (
+        <div className="space-y-0 max-w-[680px]">
+          {uniqueWorlds.map((w) => {
+            const isEditing = editing === w.path;
+            const isSaved = saved[w.path];
+            return (
+              <div key={w.path}>
+                <div className="flex items-center gap-3 py-2 border-b border-edge/30 last:border-0">
+                  <span className="text-xs text-ink bg-surface-800 px-1.5 py-0.5 rounded flex-shrink-0 max-w-[160px] truncate">
+                    {w.name}
+                  </span>
+                  <span className="text-xs text-ink-muted truncate flex-1 min-w-0">
+                    {prompts[w.path]
+                      ? prompts[w.path].slice(0, 80) + (prompts[w.path].length > 80 ? "..." : "")
+                      : t.personalization.worldPlaceholder}
+                  </span>
+                  <button
+                    onClick={() => handleEdit(w.path)}
+                    className="h-6 w-6 flex items-center justify-center rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors flex-shrink-0"
+                    title={t.memory.edit}
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                </div>
+                {isEditing && (
+                  <div className="py-3 px-1 space-y-2 border-b border-edge/30">
+                    <textarea
+                      value={editContent}
+                      onChange={(e) => setEditContent(e.target.value)}
+                      className="w-full h-40 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 py-1.5 outline-none focus:border-brand-500/30 transition-colors resize-y"
+                      placeholder={t.personalization.worldPlaceholder}
+                    />
+                    <p className="text-[10px] text-ink-muted">
+                      {t.personalization.worldHint(w.name)}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleSave(w.path)}
+                        disabled={saving}
+                        className="px-3 h-7 rounded-md bg-brand-600 text-white text-xs font-medium hover:bg-brand-500 transition-colors disabled:opacity-50"
+                      >
+                        {isSaved ? t.personalization.saved : t.personalization.save}
+                      </button>
+                      <button
+                        onClick={() => { setEditing(null); setEditContent(""); }}
+                        className="px-3 h-7 rounded-md border border-edge text-xs text-ink-secondary hover:text-ink hover:bg-surface-800 transition-colors"
+                      >
+                        {t.memory.cancel}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

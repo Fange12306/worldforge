@@ -34,7 +34,7 @@ import { CommandPalette } from "@/components/chat/CommandPalette";
 import { ConsistencyReport } from "@/components/chat/ConsistencyReport";
 import { TimelinePanel } from "@/components/timeline/TimelinePanel";
 import { PanelLeftOpen, PanelRightOpen, Save, X, Edit3, Trash2, Clock, Hash, ChevronDown, ChevronRight } from "lucide-react";
-import type { Entry } from "@/lib/types";
+import type { Entry, ChapterInfo } from "@/lib/types";
 
 type CenterView = null | { type: "entry"; entry: Entry; editing: boolean } | { type: "outline"; chapterOrder: number; chapterId?: string; title: string; content: string; editing: boolean } | { type: "file"; fileName: string; content: string } | { type: "memory"; fileName: string; content: string } | { type: "timeline"; initialEventId?: string; initialTimelineId?: string };
 
@@ -237,7 +237,7 @@ export function AppShell() {
       {rightOpen && (
         <div className="h-full w-60 flex-shrink-0 rounded-2xl bg-surface-900 overflow-hidden">
           <RightSidebar onCloseSidebar={() => setRightOpen(false)} refreshKey={refreshKey}
-            onSelectOutlineChapter={async (order: number) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (!w) return; const story = w.stories.find((s) => s.conversations.some((c) => c.id === activeConversationId)); if (!story) return; const content = await invoke<string>("read_chapter", { worldPath: w.path, storyId: story.id, chapterOrder: order }); const chapters = await invoke<Array<{ id: string; order: number; title: string }>>("read_outline", { worldPath: w.path, storyId: story.id }); const ch = chapters.find((c) => c.order === order); setCenterView({ type: "outline", chapterOrder: order, chapterId: ch?.id, title: ch?.title || `第${order}章`, content, editing: false }); } catch {} }}
+            onSelectOutlineChapter={async (chapter: ChapterInfo) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (!w) return; const story = w.stories.find((s) => s.conversations.some((c) => c.id === activeConversationId)); if (!story) return; const content = await invoke<string>("read_chapter", { worldPath: w.path, storyId: story.id, chapterId: chapter.id }); setCenterView({ type: "outline", chapterOrder: chapter.order, chapterId: chapter.id, title: chapter.title || `第${chapter.order}章`, content, editing: false }); } catch {} }}
             onSelectEntry={async (e) => { try { const w = worlds.find((x) => x.id === activeWorldId); const full = w ? await invoke<Entry>("read_entry", { worldPath: w.path, entryId: e.id }) : e; setCenterView({ type: "entry", entry: full, editing: false }); } catch { setCenterView({ type: "entry", entry: e, editing: false }); } }}
             onSelectFile={async (fileName) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (w) { const content = await invoke<string>("read_file", { worldPath: w.path, filePath: `uploads/${activeConversationId}/${fileName}` }); setCenterView({ type: "file", fileName, content }); } } catch {} }}
             onSelectMemory={async (fileName) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (w) { const content = await invoke<string>("read_memory", { worldPath: w.path, fileName }); setCenterView({ type: "memory", fileName, content }); } } catch {} }}
@@ -277,10 +277,11 @@ function DetailView({ view, onBack, onUpdate, activeWorldId, activeConversationI
         }}
         onNavigateOutline={async (storyId, order) => {
           try {
-            const content = await invoke<string>("read_chapter", { worldPath: w.path, storyId, chapterOrder: order });
             const chapters = await invoke<Array<{ id: string; order: number; title: string }>>("read_outline", { worldPath: w.path, storyId });
             const ch = chapters.find((c) => c.order === order);
-            onUpdate({ type: "outline", chapterOrder: order, chapterId: ch?.id, title: ch?.title || `第${order}章`, content, editing: false });
+            if (!ch) return;
+            const content = await invoke<string>("read_chapter", { worldPath: w.path, storyId, chapterId: ch.id });
+            onUpdate({ type: "outline", chapterOrder: order, chapterId: ch.id, title: ch.title || `第${order}章`, content, editing: false });
           } catch { }
         }}
       />
@@ -308,7 +309,7 @@ function DetailView({ view, onBack, onUpdate, activeWorldId, activeConversationI
             onNavigateToTimeline={(eventId, timelineId) => onUpdate({ type: "timeline", initialEventId: eventId, initialTimelineId: timelineId })}
           />
         ) : view.type === "outline" ? (
-          <OutlineDetail chapterOrder={view.chapterOrder} chapterId={view.chapterId} title={view.title} content={view.content} editing={view.editing} theme={theme} worldPath={worlds.find((w) => w.id === activeWorldId)?.path} onEdit={() => onUpdate({ ...view, editing: true })} onCancel={() => onUpdate({ ...view, editing: false })} onSave={async (title: string, body: string) => { const w = worlds.find((x) => x.id === activeWorldId); const s = w?.stories.find((x) => x.conversations.some((y) => y.id === activeConversationId)); if (w && s) await invoke("write_outline", { worldPath: w.path, storyId: s.id, chapterOrder: view.chapterOrder, title, body }); onUpdate({ ...view, title, content: body, editing: false }); }} onDelete={async () => { const w = worlds.find((x) => x.id === activeWorldId); const s = w?.stories.find((x) => x.conversations.some((y) => y.id === activeConversationId)); if (w && s) await invoke("delete_chapter", { worldPath: w.path, storyId: s.id, chapterOrder: view.chapterOrder }); onBack(); }} onNavigateEntry={async (entryId) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (w) { const full = await invoke<Entry>("read_entry", { worldPath: w.path, entryId }); onUpdate({ type: "entry", entry: full, editing: false }); } } catch {} }} onNavigateToTimeline={(eventId, timelineId) => onUpdate({ type: "timeline", initialEventId: eventId, initialTimelineId: timelineId })} />
+          <OutlineDetail chapterOrder={view.chapterOrder} chapterId={view.chapterId} title={view.title} content={view.content} editing={view.editing} theme={theme} worldPath={worlds.find((w) => w.id === activeWorldId)?.path} onEdit={() => onUpdate({ ...view, editing: true })} onCancel={() => onUpdate({ ...view, editing: false })} onSave={async (title: string, body: string) => { const w = worlds.find((x) => x.id === activeWorldId); const s = w?.stories.find((x) => x.conversations.some((y) => y.id === activeConversationId)); if (w && s && view.chapterId) await invoke("write_outline", { worldPath: w.path, storyId: s.id, chapterId: view.chapterId, title, body }); onUpdate({ ...view, title, content: body, editing: false }); }} onDelete={async () => { const w = worlds.find((x) => x.id === activeWorldId); const s = w?.stories.find((x) => x.conversations.some((y) => y.id === activeConversationId)); if (w && s && view.chapterId) await invoke("delete_chapter", { worldPath: w.path, storyId: s.id, chapterId: view.chapterId }); onBack(); }} onNavigateEntry={async (entryId) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (w) { const full = await invoke<Entry>("read_entry", { worldPath: w.path, entryId }); onUpdate({ type: "entry", entry: full, editing: false }); } } catch {} }} onNavigateToTimeline={(eventId, timelineId) => onUpdate({ type: "timeline", initialEventId: eventId, initialTimelineId: timelineId })} />
         ) : (
           <div className={`p-4 ${proseClass}`}>
             <div className="text-xs text-ink-muted mb-3">

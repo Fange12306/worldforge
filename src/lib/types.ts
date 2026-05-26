@@ -35,7 +35,7 @@ export type ChapterInfo = {
   word_count: number;
   time_period: [number, number] | null;   // deprecated — use linked_events
   involved_entries: string[];              // derived from linked_events
-  linked_events?: LinkedEventRef[];        // 🆕 Phase 5
+  linked_events?: string[];                 // "timeline_id:event_id"
 };
 
 export type LinkedEventRef = {

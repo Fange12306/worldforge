@@ -39,7 +39,7 @@ fn save_store(map: &HashMap<String, String>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_config(provider: String, models: Vec<serde_json::Value>, key: String, base_url: Option<String>, active_model: Option<String>) -> Result<(), String> {
+pub fn save_config(provider: String, models: Vec<serde_json::Value>, key: String, base_url: Option<String>, active_model: Option<String>, compression_threshold: Option<f64>) -> Result<(), String> {
     let mut map = load_store();
     let prov = provider.clone();
     map.insert("provider".to_string(), provider);
@@ -50,6 +50,9 @@ pub fn save_config(provider: String, models: Vec<serde_json::Value>, key: String
     }
     if let Some(am) = active_model {
         map.insert("active_model".to_string(), am);
+    }
+    if let Some(ct) = compression_threshold {
+        map.insert("compression_threshold".to_string(), ct.to_string());
     }
     save_store(&map)
 }
@@ -66,11 +69,15 @@ pub fn load_config() -> Result<serde_json::Value, String> {
         map.get(&format!("{}_base_url", provider)).cloned().unwrap_or_default()
     };
     let active_model = map.get("active_model").cloned().unwrap_or_default();
+    let compression_threshold = map
+        .get("compression_threshold")
+        .and_then(|v| v.parse::<f64>().ok());
     Ok(serde_json::json!({
         "provider": provider,
         "models": models,
         "baseUrl": base_url,
         "activeModel": active_model,
+        "compressionThreshold": compression_threshold,
     }))
 }
 

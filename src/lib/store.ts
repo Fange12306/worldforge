@@ -33,6 +33,10 @@ export type Conversation = {
   contextUsed: number;
   contextBreakdown: ContextBreakdown | null;
   createdAt: number;
+  // Context compression state
+  compressedAt?: number;
+  compressedSummary?: string;
+  compressedTokenSavings?: number;
 };
 
 export type ToolCall = {
@@ -124,6 +128,16 @@ type AppStore = {
   contextWindowSize: number;
   setContextWindow: (provider: string, model: string, modelContextWindow?: number) => void;
   updateContextUsage: (used: number, breakdown: ContextBreakdown, convId?: string) => void;
+
+  // Context compression
+  compressionThreshold: number;
+  isCompressing: boolean;
+  forceCompress: boolean;
+  setCompressionThreshold: (threshold: number) => void;
+  setCompressing: (v: boolean) => void;
+  setForceCompress: (v: boolean) => void;
+  markCompressed: (convId: string, summary: string, tokenSavings: number) => void;
+  replaceMessages: (convId: string, msgs: Message[]) => void;
 
   // Streaming (one at a time, tied to a specific conversation)
   isStreaming: boolean;
@@ -461,6 +475,50 @@ export const useStore = create<AppStore>((set, get) => ({
         stateJson: JSON.stringify({ contextUsed: used, contextBreakdown: breakdown }),
       }).catch(() => {});
     }
+  },
+
+  // Context compression
+  compressionThreshold: 0.8,
+  isCompressing: false,
+  forceCompress: false,
+  setCompressionThreshold: (threshold) => set({ compressionThreshold: threshold }),
+  setCompressing: (v) => set({ isCompressing: v }),
+  setForceCompress: (v) => set({ forceCompress: v }),
+  markCompressed: (convId, summary, tokenSavings) => {
+    set((s) => ({
+      worlds: s.worlds.map((w) => ({
+        ...w,
+        stories: w.stories.map((st) => ({
+          ...st,
+          conversations: st.conversations.map((c) =>
+            c.id === convId
+              ? {
+                  ...c,
+                  compressedAt: Date.now(),
+                  compressedSummary: summary,
+                  compressedTokenSavings: tokenSavings,
+                }
+              : c
+          ),
+        })),
+      })),
+    }));
+  },
+
+  replaceMessages: (convId, msgs) => {
+    set((s) => ({
+      worlds: s.worlds.map((w) => ({
+        ...w,
+        stories: w.stories.map((st) => ({
+          ...st,
+          conversations: st.conversations.map((c) =>
+            c.id === convId
+              ? { ...c, messages: msgs }
+              : c
+          ),
+        })),
+      })),
+    }));
   },
 
   addTokens: (input, output, convId?) => {

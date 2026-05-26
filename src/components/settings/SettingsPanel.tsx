@@ -30,7 +30,6 @@ function inferProviderFromBaseUrl(url: string): string {
   if (value.includes("deepseek")) return "deepseek";
   return "openai";
 }
-
 function sanitizeModelName(value: string): string {
   return value
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
@@ -44,6 +43,10 @@ function normalizeModels(models: ModelConfig[]): ModelConfig[] {
     .filter((model) => model.name.length > 0);
 }
 
+function clampCompressionThreshold(value: number): number {
+  return Math.min(0.9, Math.max(0.5, value));
+}
+
 export function SettingsPanel({ onClose }: Props) {
   const { t } = useT();
   const llmProvider = useStore((s) => s.llmProvider);
@@ -52,10 +55,12 @@ export function SettingsPanel({ onClose }: Props) {
   const setLlmProvider = useStore((s) => s.setLlmProvider);
   const setLlmModels = useStore((s) => s.setLlmModels);
   const setActiveModel = useStore((s) => s.setActiveModel);
+  const setCompressionThreshold = useStore((s) => s.setCompressionThreshold);
   const [activeSection, setActiveSection] = useState<SettingsSection>("model");
   const [models, setModels] = useState(llmModels);
   const [newModelName, setNewModelName] = useState("");
   const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URLS[llmProvider] || DEFAULT_BASE_URLS.deepseek);
+  const [compressionThresholdDraft, setCompressionThresholdDraft] = useState(useStore.getState().compressionThreshold);
 
   useEffect(() => { setModels(normalizeModels(llmModels)); }, [llmModels]);
 
@@ -70,10 +75,15 @@ export function SettingsPanel({ onClose }: Props) {
   }, []);
 
   useEffect(() => {
-    invoke<{ baseUrl?: string; activeModel?: string }>("load_config")
+    invoke<{ baseUrl?: string; activeModel?: string; compressionThreshold?: number }>("load_config")
       .then((cfg) => {
         if (cfg.baseUrl) setBaseUrl(cfg.baseUrl);
         if (cfg.activeModel) setActiveModel(cfg.activeModel);
+        if (cfg.compressionThreshold != null) {
+          const threshold = clampCompressionThreshold(cfg.compressionThreshold);
+          setCompressionThreshold(threshold);
+          setCompressionThresholdDraft(threshold);
+        }
       })
       .catch(() => {});
   }, []);
@@ -90,11 +100,13 @@ export function SettingsPanel({ onClose }: Props) {
     const provider = inferProviderFromBaseUrl(baseUrl);
     const cleanedModels = normalizeModels(models);
     const cleanedActiveModel = sanitizeModelName(useStore.getState().activeModel);
+    const compressionThreshold = clampCompressionThreshold(compressionThresholdDraft);
     try {
-      await invoke("save_config", { provider, models: cleanedModels, key: apiKey, baseUrl, activeModel: useStore.getState().activeModel });
+      await invoke("save_config", { provider, models: cleanedModels, key: apiKey, baseUrl, activeModel: useStore.getState().activeModel, compressionThreshold });
       setLlmProvider(provider);
       setModels(cleanedModels);
       setLlmModels(cleanedModels);
+      setCompressionThreshold(compressionThreshold);
       if (cleanedModels.length > 0) {
         setActiveModel(cleanedModels.some((m) => m.name === cleanedActiveModel) ? cleanedActiveModel : cleanedModels[0].name);
       }
@@ -362,6 +374,11 @@ export function SettingsPanel({ onClose }: Props) {
                     </div>
                   </div>
 
+                  <CompressionThresholdSetting
+                    value={compressionThresholdDraft}
+                    onChange={setCompressionThresholdDraft}
+                  />
+
                   <div className="flex items-center gap-2 pl-[136px]">
                     <button
                       onClick={handleSave}
@@ -483,7 +500,9 @@ function PersonalizationSection() {
 
 function WorldGuidanceSection() {
   const { t } = useT();
-  const worlds = useStore((s) => s.worlds);
+  // Discover ALL worlds from disk, not from the ephemeral store.
+  // This ensures guidance from all worlds (including ones not currently open) is visible.
+  const [diskWorlds, setDiskWorlds] = useState<{ name: string; path: string }[]>([]);
   const [prompts, setPrompts] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
@@ -491,35 +510,38 @@ function WorldGuidanceSection() {
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Deduplicate worlds by path
-  const uniqueWorlds = worlds.filter((w, i, arr) => {
-    const first = arr.findIndex((x) => x.path === w.path);
-    return first === i;
-  });
-
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       setLoading(true);
-      const result: Record<string, string> = {};
-      await Promise.all(
-        uniqueWorlds.map(async (w) => {
-          try {
-            const p = await invoke<string>("load_world_prompt", { worldPath: w.path });
-            result[w.path] = p || "";
-          } catch {
-            result[w.path] = "";
-          }
-        })
-      );
-      if (!cancelled) {
-        setPrompts(result);
-        setLoading(false);
+      try {
+        const rootDir = await invoke<string>("get_worlds_dir");
+        const listings = await invoke<{ name: string; path: string }[]>("list_worlds", { rootDir });
+        if (cancelled) return;
+        setDiskWorlds(listings);
+
+        const result: Record<string, string> = {};
+        await Promise.all(
+          listings.map(async (w) => {
+            try {
+              const p = await invoke<string>("load_world_prompt", { worldPath: w.path });
+              result[w.path] = p || "";
+            } catch {
+              result[w.path] = "";
+            }
+          })
+        );
+        if (!cancelled) {
+          setPrompts(result);
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) setLoading(false);
       }
     };
     load();
     return () => { cancelled = true; };
-  }, [worlds.map((w) => w.path).join(",")]);
+  }, []);
 
   const handleEdit = (worldPath: string) => {
     setEditing(worldPath);
@@ -540,22 +562,17 @@ function WorldGuidanceSection() {
     setSaving(false);
   };
 
-  const worldName = (path: string) => {
-    const w = uniqueWorlds.find((x) => x.path === path);
-    return w?.name || path;
-  };
-
   return (
     <div>
       <h3 className="text-sm font-medium text-ink mb-3">{t.personalization.worldInstructions}</h3>
 
       {loading ? (
         <p className="text-xs text-ink-muted italic">{t.personalization.loading}</p>
-      ) : uniqueWorlds.length === 0 ? (
+      ) : diskWorlds.length === 0 ? (
         <p className="text-xs text-ink-muted italic">{t.personalization.worldHintNoWorld}</p>
       ) : (
         <div className="space-y-0 max-w-[680px]">
-          {uniqueWorlds.map((w) => {
+          {diskWorlds.map((w) => {
             const isEditing = editing === w.path;
             const isSaved = saved[w.path];
             return (
@@ -610,6 +627,38 @@ function WorldGuidanceSection() {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+function CompressionThresholdSetting({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  const { t } = useT();
+
+  return (
+    <div>
+      <h3 className="text-sm font-medium text-ink mb-3">{t.model.advanced}</h3>
+      <div className="flex items-start gap-6 min-h-9">
+        <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.compressionThreshold}</label>
+        <div className="w-96 space-y-1.5">
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min="50"
+              max="90"
+              step="5"
+              value={Math.round(value * 100)}
+              onChange={(e) => onChange(parseInt(e.target.value) / 100)}
+              className="flex-1 h-1.5 rounded-full appearance-none bg-surface-800 accent-brand-500 cursor-pointer"
+            />
+            <span className="w-10 text-right text-xs text-ink font-mono">
+              {Math.round(value * 100)}%
+            </span>
+          </div>
+          <p className="text-[10px] text-ink-muted">
+            {t.model.compressionThresholdDesc}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

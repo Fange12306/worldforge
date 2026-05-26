@@ -5,10 +5,13 @@
 
 import { invoke } from "./api";
 import { useStore } from "./store";
+import type { Message } from "./store";
 import type { Entry } from "./types";
 import { estimateTokens } from "./context-window";
 import type { ContextBreakdown } from "./context-window";
+import { compressMessages, RECENT_TURNS_TO_KEEP } from "./context-compression";
 import { getT } from "./i18n";
+import { rewriteSessionMessages } from "./session-writer";
 
 function t() {
   return getT(useStore.getState().language).agent;
@@ -32,6 +35,15 @@ export type ToolResult = {
   toolName?: string;
   content: string;
 };
+
+function compressedSessionMessages(messages: AgentMessage[]) {
+  const now = Date.now();
+  return messages.map((message, i) => ({
+    type: message.role,
+    content: message.content,
+    timestamp: new Date(now + i).toISOString(),
+  }));
+}
 
 // ── Stream callback ──
 
@@ -166,11 +178,13 @@ function getTools(): ToolDef[] {
   },
   {
     name: "FileRead",
-    description: "List directory or read a file from the world directory. Omit 'path' to list root directory. Pass a directory path (ending with /) to list that subdirectory. Pass a file path to read its contents.",
+    description: "List directory or read a file from the world directory. Omit 'path' to list root directory. Pass a directory path (ending with /) to list that subdirectory. Pass a file path to read its contents. Supports PDF files (auto-extracts text). For long uploaded files, pass offset and limit to read in pages.",
     input_schema: {
       type: "object",
       properties: {
         path: { type: "string", description: "File or directory path relative to world directory. Omit to list root. End with / for dir listing. Otherwise reads file content." },
+        offset: { type: "number", description: "Optional character offset for paged reading. Use 0 for the first page." },
+        limit: { type: "number", description: "Optional max characters to read. Recommended 20000-30000 for long files." },
       },
       required: [],
     },
@@ -646,10 +660,13 @@ async function executeTool(
         return files.length > 0 ? files.join("\n") : t().dirEmpty;
       }
       // Read file
-      return await invoke<string>("read_file", {
+      const params: Record<string, unknown> = {
         worldPath,
         filePath: fp,
-      });
+      };
+      if (input.offset !== undefined) params.offset = input.offset as number;
+      if (input.limit !== undefined) params.limit = input.limit as number;
+      return await invoke<string>("read_file", params);
     }
     case "Memory": {
       const memFile = input.file_name as string | undefined;
@@ -940,6 +957,8 @@ export async function runAgentLoop(
   let finalAnswerNudgeCount = 0;
   let awaitingFinalAnswer = false;
   let fullText = "";
+  let lastUsageTotal = 0;
+  let lastUsageMsgCount = 0;
   let thinkingText = "";
   const messages = [...conversation];
 
@@ -1004,29 +1023,36 @@ export async function runAgentLoop(
             }
             break;
           case "usage":
+            // Track billed tokens for cost estimation
             useStore.getState().addTokens(event.input_tokens ?? 0, event.output_tokens ?? 0, convId);
-            // Update context window breakdown
+            // Hybrid context count: anchor API's real token count, add rough
+            // estimate for messages added since (clamped so total never drops).
             {
-              const inputTokens = event.input_tokens ?? 0;
-              if (inputTokens > 0) {
+              const apiTokens = event.input_tokens ?? 0;
+              if (apiTokens > 0) {
+                const deltaMsgs = messages.slice(lastUsageMsgCount);
+                const deltaEst = estimateTokens(deltaMsgs.map((m) => `[${m.role}] ${m.content}`).join("\n"));
+                const hybridTotal = Math.max(apiTokens, lastUsageTotal + deltaEst);
+                lastUsageTotal = hybridTotal;
+                lastUsageMsgCount = messages.length;
+
                 const skillsIdx = systemPrompt.lastIndexOf("# Skills");
                 const corePrompt = skillsIdx > 0 ? systemPrompt.slice(0, skillsIdx) : systemPrompt;
                 const skillsText = skillsIdx > 0 ? systemPrompt.slice(skillsIdx) : "";
                 const msgsText = messages.map((m) => `[${m.role}] ${m.content}`).join("\n");
                 const toolsText = JSON.stringify(getTools());
                 const totalChars = msgsText.length + corePrompt.length + skillsText.length + toolsText.length;
-                const inputShare = (chars: number) => totalChars > 0
-                  ? Math.round(inputTokens * chars / totalChars)
-                  : 0;
+                const totalEst = estimateTokens(msgsText) + estimateTokens(corePrompt) + estimateTokens(skillsText) + estimateTokens(toolsText);
+                const scale = totalEst > 0 ? hybridTotal / totalEst : 0;
                 const breakdown: ContextBreakdown = {
-                  messages: inputShare(msgsText.length),
-                  systemTools: inputShare(toolsText.length),
+                  messages: Math.round(estimateTokens(msgsText) * scale),
+                  systemTools: Math.round(estimateTokens(toolsText) * scale),
                   mcpTools: 0,
-                  systemPrompt: inputShare(corePrompt.length),
-                  skills: inputShare(skillsText.length),
-                  total: inputTokens,
+                  systemPrompt: Math.round(estimateTokens(corePrompt) * scale),
+                  skills: Math.round(estimateTokens(skillsText) * scale),
+                  total: hybridTotal,
                 };
-                useStore.getState().updateContextUsage(inputTokens, breakdown, convId);
+                useStore.getState().updateContextUsage(hybridTotal, breakdown, convId);
               }
             }
             break;
@@ -1042,6 +1068,88 @@ export async function runAgentLoop(
             break;
         }
       });
+
+      // ── Context compression: check before sending API request ──
+      const storeState = useStore.getState();
+      const storeWindowSize = storeState.contextWindowSize;
+      const compressionThreshold = storeState.compressionThreshold;
+      const forceCompress = storeState.forceCompress;
+      // Estimate context usage from messages + system prompt + tools
+      const estimatedUsed =
+        estimateTokens(messages.map((m) => m.content).join("\n")) +
+        estimateTokens(systemPrompt) +
+        estimateTokens(JSON.stringify(getTools()));
+      const shouldCompress = forceCompress || (
+        storeWindowSize > 0 && estimatedUsed / storeWindowSize > compressionThreshold
+      );
+      if (shouldCompress) {
+        if (forceCompress) useStore.getState().setForceCompress(false);
+        // Show compressing indicator in UI
+        useStore.getState().setCompressing(true);
+        try {
+          const result = await compressMessages(
+            messages,
+            storeWindowSize,
+            estimatedUsed,
+            { threshold: compressionThreshold, keepTurns: RECENT_TURNS_TO_KEEP },
+            provider,
+            model,
+          );
+          if (result.compressed) {
+            // Replace messages array in-place (agent loop's working copy)
+            messages.length = 0;
+            messages.push(...result.messages);
+            // Sync compressed messages back to store so next send doesn't undo it
+            if (convId) {
+              const now = Date.now();
+              const storeMessages: Message[] = result.messages.map((am, i) => ({
+                id: `compressed-${now}-${i}`,
+                role: am.role,
+                content: am.content,
+                timestamp: now + i,
+              }));
+              useStore.getState().replaceMessages(convId, storeMessages);
+              rewriteSessionMessages(
+                worldPath,
+                convId,
+                compressedSessionMessages(result.messages),
+              ).catch(() => {});
+              useStore.getState().markCompressed(
+                convId,
+                result.summary,
+                result.tokenSavings,
+              );
+              // Reset anchor: messages array changed, start fresh from compression result
+              lastUsageTotal = estimateTokens(result.messages.map((m) => m.content).join("\n"));
+              lastUsageMsgCount = result.messages.length;
+              // Immediately update context usage display
+              const used = lastUsageTotal + estimateTokens(systemPrompt) + estimateTokens(JSON.stringify(getTools()));
+              useStore.getState().updateContextUsage(used, {
+                messages: lastUsageTotal,
+                systemTools: estimateTokens(JSON.stringify(getTools())),
+                mcpTools: 0,
+                systemPrompt: estimateTokens(systemPrompt),
+                skills: 0,
+                total: used,
+              }, convId);
+            }
+            // Notify UI
+            window.dispatchEvent(
+              new CustomEvent("worldforge-compressed", {
+                detail: {
+                  summary: result.summary,
+                  tokenSavings: result.tokenSavings,
+                },
+              }),
+            );
+          }
+          useStore.getState().setCompressing(false);
+        } catch {
+          // Compression failure → continue without, don't block the user
+          console.error("[compression] Failed to compress context");
+          useStore.getState().setCompressing(false);
+        }
+      }
 
       // ── Step 2: Send API request (listener is guaranteed ready) ──
 

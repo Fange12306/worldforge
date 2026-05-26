@@ -4,6 +4,7 @@ import { useT } from "@/lib/i18n";
 import { groupSearchReadMessages, type DisplayItem } from "@/lib/collapse-tools";
 import { MessageBubble } from "./MessageBubble";
 import { CollapsedGroupMessage } from "./CollapsedGroupMessage";
+import { CompressedContextBanner } from "./CompressedContextBanner";
 
 function mergeAdjacentAssistantMessages(messages: Message[]): Message[] {
   const merged: Message[] = [];
@@ -37,6 +38,7 @@ function hideCurrentTurnAssistantFragments(messages: Message[], isStreamingHere:
 export function ChatWindow({ messages }: { storyId: string; messages: Message[] }) {
   const { t } = useT();
   const isStreaming = useStore((s) => s.isStreaming);
+  const isCompressing = useStore((s) => s.isCompressing);
   const streamingConversationId = useStore((s) => s.streamingConversationId);
   const activeConversationId = useStore((s) => s.activeConversationId);
   const isStreamingHere = isStreaming && activeConversationId === streamingConversationId;
@@ -106,6 +108,12 @@ export function ChatWindow({ messages }: { storyId: string; messages: Message[] 
             return <CollapsedGroupMessage key={item.messages[0].id} group={item} />;
           }
           const msg = item as Message;
+          // Detect compressed context messages
+          if (msg.content.startsWith("[上下文压缩]")) {
+            const summaryMatch = msg.content.match(/<summary>([\s\S]*)<\/summary>/);
+            const summary = summaryMatch ? summaryMatch[1].trim() : msg.content;
+            return <CompressedContextBanner key={msg.id} summary={summary} />;
+          }
           const isLastUser = msg.role === "user" && msg.id === lastUserMsgId;
           return <MessageBubble key={msg.id} message={msg} isLastUser={isLastUser} theme={theme} />;
         })}

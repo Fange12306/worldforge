@@ -100,8 +100,9 @@ pub async fn test_connection(
 }
 
 /// Non-streaming LLM call — sends one request, waits for full response, returns text.
-/// Used for independent LLM judgment (e.g. consistency check) where the caller
+/// Used for independent LLM judgment (e.g. consistency check, context compression) where the caller
 /// doesn't need streaming deltas.
+#[tauri::command]
 pub async fn single_chat(
     system_prompt: String,
     user_message: String,
@@ -113,6 +114,14 @@ pub async fn single_chat(
         .map_err(|e| format!("未配置 API Key: {}", e))?;
 
     let client = reqwest::Client::new();
+    let default_api_url = match provider.as_str() {
+        "anthropic" => "https://api.anthropic.com/v1/messages",
+        "openai" => "https://api.openai.com/v1/chat/completions",
+        "deepseek" => "https://api.deepseek.com/v1/chat/completions",
+        _ => return Err(format!("未知 Provider: {}", provider)),
+    };
+    let configured_api_url = crate::commands::api_key::get_api_base_url(provider.clone());
+    let api_url = configured_api_url.as_deref().unwrap_or(default_api_url);
 
     if provider == "anthropic" {
         let body = serde_json::json!({
@@ -123,7 +132,7 @@ pub async fn single_chat(
             "stream": false,
         });
         let resp = client
-            .post("https://api.anthropic.com/v1/messages")
+            .post(api_url)
             .header("x-api-key", &api_key)
             .header("anthropic-version", "2023-06-01")
             .json(&body)
@@ -153,11 +162,6 @@ pub async fn single_chat(
             "max_tokens": max_tokens,
             "stream": false,
         });
-        let api_url = match provider.as_str() {
-            "openai" => "https://api.openai.com/v1/chat/completions",
-            "deepseek" => "https://api.deepseek.com/v1/chat/completions",
-            _ => return Err(format!("未知 Provider: {}", provider)),
-        };
         let resp = client
             .post(api_url)
             .header("Authorization", format!("Bearer {}", api_key))

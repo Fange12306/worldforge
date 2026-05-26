@@ -43,6 +43,7 @@ pub fn run() {
             entry_crud::list_entries,
             entry_crud::read_file,
             entry_crud::write_file,
+            entry_crud::pdf_to_text,
             entry_crud::delete_directory,
             entry_crud::grep_entries,
             entry_crud::list_files,
@@ -83,6 +84,7 @@ pub fn run() {
             // LLM API proxy
             api_proxy::stream_chat,
             api_proxy::test_connection,
+            api_proxy::single_chat,
             // Web search + fetch
             web_search::web_search,
             web_search::web_fetch,

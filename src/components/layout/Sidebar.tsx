@@ -3,7 +3,6 @@ import { useStore } from "@/lib/store";
 import {
   Plus,
   Trash2,
-  BookOpen,
   Settings,
   Globe,
   MessageSquare,
@@ -18,6 +17,7 @@ import { SidebarToggle } from "./SidebarToggle";
 import { initWorld, invoke } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useT } from "@/lib/i18n";
+import { WorldForgeLogo } from "@/components/brand/WorldForgeLogo";
 
 export function Sidebar() {
   const { t } = useT();
@@ -63,7 +63,7 @@ export function Sidebar() {
     return (
       <div className="flex flex-col h-full bg-surface-900 select-none">
         <div className="h-12 flex items-center gap-2.5 px-3 flex-shrink-0">
-          <BookOpen className="w-5 h-5 text-brand-500" />
+          <WorldForgeLogo className="w-5 h-5 flex-shrink-0" />
           <span className="font-semibold text-sm tracking-tight flex-1">WorldForge</span>
         </div>
 
@@ -174,7 +174,7 @@ export function Sidebar() {
     <div className="flex flex-col h-full bg-surface-900 select-none">
       {/* World header */}
       <div className="h-12 flex items-center gap-2 px-3 flex-shrink-0">
-        <Globe className="w-4 h-4 text-brand-500 flex-shrink-0" />
+        <WorldForgeLogo className="w-4 h-4 flex-shrink-0" />
         <span className="font-semibold text-sm tracking-tight truncate flex-1"
           onDoubleClick={() => setEditing({ type: "world", id: activeWorld.id, value: activeWorld.name })}
         >

@@ -4,6 +4,7 @@ use crate::models::relationship::Relationship;
 use chrono::Utc;
 use serde_json;
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -422,9 +423,43 @@ pub fn delete_directory(world_path: String, dir_name: String) -> Result<(), Stri
 }
 
 /// Read a file from the world directory (for FileRead tool).
+/// Extract text from PDF bytes using pdf-extract
+fn pdf_bytes_to_text(data: &[u8]) -> Result<String, String> {
+    let mut cursor = std::io::Cursor::new(data);
+    let mut buf = Vec::new();
+    cursor.read_to_end(&mut buf).map_err(|e| format!("读取 PDF 数据失败: {}", e))?;
+    // pdf_extract needs a second cursor
+    let doc = pdf_extract::extract_text_from_mem(&buf)
+        .map_err(|e| format!("PDF 解析失败: {}", e))?;
+    if doc.trim().is_empty() {
+        return Err("PDF 中未提取到文本（可能是扫描图片或加密文件）".to_string());
+    }
+    Ok(doc)
+}
+
+/// Extract text from uploaded PDF bytes (called from frontend on file pick)
+#[tauri::command]
+pub fn pdf_to_text(bytes: Vec<u8>) -> Result<String, String> {
+    pdf_bytes_to_text(&bytes)
+}
+
+fn slice_text(content: &str, offset: usize, limit: usize) -> serde_json::Value {
+    let total_chars = content.chars().count();
+    let start = offset.min(total_chars);
+    let end = (start + limit).min(total_chars);
+    let text: String = content.chars().skip(start).take(end - start).collect();
+    serde_json::json!({
+        "content": text,
+        "offset": start,
+        "next_offset": if end < total_chars { Some(end) } else { None },
+        "total_chars": total_chars,
+        "truncated": end < total_chars,
+    })
+}
+
 /// Searches: exact path, uploads/*/ (per-conversation), uploads/ (legacy), and bare filename in uploads/*/.
 #[tauri::command]
-pub fn read_file(world_path: String, file_path: String) -> Result<String, String> {
+pub fn read_file(world_path: String, file_path: String, offset: Option<usize>, limit: Option<usize>) -> Result<String, String> {
     let root = expand_path(&world_path);
     // Build candidate list dynamically: exact path first, then uploads subdirs, then legacy
     let mut candidates = vec![root.join(&file_path)];
@@ -449,8 +484,21 @@ pub fn read_file(world_path: String, file_path: String) -> Result<String, String
         if let Ok(canonical) = full.canonicalize() {
             let root_canonical = root.canonicalize().unwrap_or(root.clone());
             if canonical.starts_with(&root_canonical) {
-                return fs::read_to_string(&canonical)
-                    .map_err(|e| format!("读取失败: {}", e));
+                // PDF files need special handling
+                let content = if canonical.extension().map(|e| e == "pdf").unwrap_or(false) {
+                    let data = fs::read(&canonical)
+                        .map_err(|e| format!("读取 PDF 文件失败: {}", e))?;
+                    pdf_bytes_to_text(&data)?
+                } else {
+                    fs::read_to_string(&canonical)
+                        .map_err(|e| format!("读取失败: {}", e))?
+                };
+                if offset.is_some() || limit.is_some() {
+                    let page = slice_text(&content, offset.unwrap_or(0), limit.unwrap_or(20_000));
+                    return serde_json::to_string_pretty(&page)
+                        .map_err(|e| format!("序列化分页结果失败: {}", e));
+                }
+                return Ok(content);
             }
         }
     }
@@ -506,7 +554,10 @@ fn add_relationship_to_file(path: &std::path::PathBuf, target_id: &str, relation
 }
 
 /// List all files in the world directory (excluding entries/ — use EntrySearch for entries)
+/// Recursively list files and directories under a path, with depth limit.
 /// Results cached for 5 seconds — repeated calls within that window return same data.
+/// Directories end with "/", files are shown with their relative path from subdir root.
+/// Skips `entries/` (huge, not useful for file listing) and hidden files.
 #[tauri::command]
 pub fn list_files(world_path: String, subdir: Option<String>) -> Result<Vec<String>, String> {
     use std::sync::Mutex;
@@ -533,26 +584,58 @@ pub fn list_files(world_path: String, subdir: Option<String>) -> Result<Vec<Stri
         None => root.clone(),
     };
     if !dir.exists() {
-        // Cache empty result too
         let mut cache = CACHE.lock().unwrap();
         let map = cache.get_or_insert_with(HashMap::new);
         map.insert(cache_key, (Vec::new(), std::time::Instant::now()));
         return Ok(Vec::new());
     }
+
     let mut files: Vec<String> = Vec::new();
-    for entry in std::fs::read_dir(&dir).map_err(|e| format!("读取目录失败: {}", e))? {
-        let entry = entry.map_err(|e| format!("{}", e))?;
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name == "entries" || name.starts_with('.') { continue; }
-        let ft = entry.file_type().map_err(|e| format!("{}", e))?;
-        files.push(if ft.is_dir() { format!("{}/", name) } else { name });
-    }
+    let max_depth = 3;
+    collect_files(&dir, &dir, "", 0, max_depth, &mut files);
     files.sort();
+
+    // Truncate if too many entries
+    if files.len() > 200 {
+        files.truncate(200);
+        files.push("...(已截断，共 200+ 项)".to_string());
+    }
 
     let mut cache = CACHE.lock().unwrap();
     let map = cache.get_or_insert_with(HashMap::new);
     map.insert(cache_key, (files.clone(), std::time::Instant::now()));
     Ok(files)
+}
+
+fn collect_files(
+    root: &std::path::Path,
+    current: &std::path::Path,
+    prefix: &str,
+    depth: u32,
+    max_depth: u32,
+    out: &mut Vec<String>,
+) {
+    if depth > max_depth { return; }
+    let entries = match std::fs::read_dir(current) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') { continue; }
+        if depth == 0 && name == "entries" { continue; } // skip huge entries/ dir at root
+        let ft = match entry.file_type() { Ok(t) => t, Err(_) => continue, };
+        let rel = if prefix.is_empty() { name.clone() } else { format!("{}/{}", prefix, name) };
+        if ft.is_dir() {
+            out.push(format!("{}/", rel));
+            // Recurse into subdirectories (but limit depth)
+            if depth < max_depth {
+                collect_files(root, &entry.path(), &rel, depth + 1, max_depth, out);
+            }
+        } else {
+            out.push(rel);
+        }
+    }
 }
 
 /// Grep entries — search full text of all .md entry files

@@ -2,8 +2,9 @@ import { memo, useState } from "react";
 import { useStore, type Message } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { BookOpen, User, FileText, Copy, Check, RefreshCw } from "lucide-react";
+import { User, FileText, Copy, Check, RefreshCw } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
+import { WorldForgeLogo } from "@/components/brand/WorldForgeLogo";
 
 type BubbleProps = {
   message: Message;
@@ -41,9 +42,9 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
 
   return (
     <div className={cn("flex gap-3 animate-fade-in", isUser && "flex-row-reverse")}>
-      <div className={cn("flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center",
-        isUser ? "bg-surface-700 text-ink-secondary" : "bg-brand-900/50 text-brand-400")}>
-        {isUser ? <User className="w-3.5 h-3.5" /> : <BookOpen className="w-3.5 h-3.5" />}
+      <div className={cn("flex-shrink-0 w-7 h-7 flex items-center justify-center",
+        isUser && "rounded-lg bg-surface-700 text-ink-secondary")}>
+        {isUser ? <User className="w-3.5 h-3.5" /> : <WorldForgeLogo className="w-6 h-6" />}
       </div>
       <div className={cn("flex-1 min-w-0", isUser && "flex flex-col")}>
         {isUser ? (

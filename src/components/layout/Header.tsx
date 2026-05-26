@@ -4,6 +4,7 @@ import { invoke } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Sun, Moon, Command, BookOpen } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
+import { WorldForgeLogo } from "@/components/brand/WorldForgeLogo";
 
 export function Header() {
   const { t } = useT();
@@ -78,7 +79,10 @@ export function Header() {
               )}
             </>
           ) : (
-            "WorldForge"
+            <span className="inline-flex items-center gap-2">
+              <WorldForgeLogo className="w-4 h-4" />
+              <span>WorldForge</span>
+            </span>
           )}
         </span>
 

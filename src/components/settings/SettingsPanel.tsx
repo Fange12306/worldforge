@@ -66,6 +66,8 @@ export function SettingsPanel({ onClose }: Props) {
 
   const [apiKey, setApiKey] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [bingApiKey, setBingApiKey] = useState("");
+  const [showBingKey, setShowBingKey] = useState(false);
   const [saved, setSaved] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -95,6 +97,12 @@ export function SettingsPanel({ onClose }: Props) {
       .catch(() => { setApiKey(""); });
   }, [llmProvider]);
 
+  useEffect(() => {
+    invoke<string>("get_api_key", { provider: "bing_search" })
+      .then((key) => { if (key) setBingApiKey(key); })
+      .catch(() => {});
+  }, []);
+
   const handleSave = async () => {
     if (!apiKey) return;
     const provider = inferProviderFromBaseUrl(baseUrl);
@@ -103,6 +111,9 @@ export function SettingsPanel({ onClose }: Props) {
     const compressionThreshold = clampCompressionThreshold(compressionThresholdDraft);
     try {
       await invoke("save_config", { provider, models: cleanedModels, key: apiKey, baseUrl, activeModel: useStore.getState().activeModel, compressionThreshold });
+      if (bingApiKey) {
+        await invoke("save_api_key", { provider: "bing_search", key: bingApiKey });
+      }
       setLlmProvider(provider);
       setModels(cleanedModels);
       setLlmModels(cleanedModels);
@@ -247,6 +258,29 @@ export function SettingsPanel({ onClose }: Props) {
                         )}
                       </div>
                     </div>
+                  </div>
+
+                  <div className="pt-4">
+                    <h3 className="text-sm font-medium text-ink mb-3">搜索</h3>
+                    <div className="flex items-start gap-6 min-h-9">
+                      <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">Bing Search API Key</label>
+                      <div className="relative w-96">
+                        <input
+                          type={showBingKey ? "text" : "password"}
+                          value={bingApiKey}
+                          onChange={(e) => setBingApiKey(e.target.value)}
+                          placeholder="免费层 1000次/月，portal.azure.com 创建 Bing Search 资源获取"
+                          className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 pr-9 outline-none focus:border-brand-500/30 transition-colors font-mono"
+                        />
+                        <button
+                          onClick={() => setShowBingKey(!showBingKey)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
+                        >
+                          {showBingKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                    <p className="pl-[136px] text-[10px] text-ink-muted mt-1">Bing Web Search API v7，免费层每月 1000 次调用。不填则使用内置搜索。</p>
                   </div>
 
                   <div>

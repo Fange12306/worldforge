@@ -66,7 +66,8 @@ fn sync_entry_event_edges(world_path: &str, event: &Event) -> Result<(), String>
             to: event_ref.clone(),
             description: "参与事件".into(),
             timeline_id: Some(event.timeline_id.clone()),
-            active_period: None,
+            start_event_id: None,
+            end_event_id: None,
         };
         graph_storage::with_graph(world_path, |g| {
             g.add_edge(edge);
@@ -145,7 +146,8 @@ fn sync_outline_event_edges(world_path: &str, event: &Event) -> Result<(), Strin
             to,
             description: "章节描绘".into(),
             timeline_id: Some(event.timeline_id.clone()),
-            active_period: None,
+            start_event_id: None,
+            end_event_id: None,
         };
         graph_storage::with_graph(world_path, |g| {
             // Check by (from, to, description) to avoid duplicates
@@ -164,38 +166,41 @@ fn sync_outline_event_edges(world_path: &str, event: &Event) -> Result<(), Strin
 /// Apply relationship_changes as Entry↔Entry edges in relations/index.json.
 fn apply_entry_entry_edges(world_path: &str, event: &Event) -> Result<(), String> {
     for rc in &event.relationship_changes {
-        let from = EntityRef { name: None, 
+        let from = EntityRef { name: None,
             entity_type: EntityType::Entry,
             id: rc.entry_a.clone(),
         };
-        let to = EntityRef { name: None, 
+        let to = EntityRef { name: None,
             entity_type: EntityType::Entry,
             id: rc.entry_b.clone(),
         };
-        let desc = rc.description.as_deref().unwrap_or(&rc.relation);
 
         match rc.change_type {
             RelationChangeType::Add | RelationChangeType::Update => {
-                // For add/update, ensure the edge exists. Remove old then add new.
                 graph_storage::with_graph(world_path, |g| {
-                    // Try to remove any existing edge between these two entries
-                    g.edges.retain(|e| {
-                        !(e.from == from && e.to == to && e.description == desc)
-                    });
-                    g.add_edge(RelationEdge {
+                    g.upsert_edge(RelationEdge {
                         id: Uuid::new_v4().to_string(),
                         from,
                         to,
                         description: rc.relation.clone(),
                         timeline_id: Some(event.timeline_id.clone()),
-                        active_period: None,
+                        start_event_id: Some(event.id.clone()),
+                        end_event_id: None,
                     });
                     Ok(())
                 })?;
             }
             RelationChangeType::Delete => {
                 graph_storage::with_graph(world_path, |g| {
-                    g.remove_edge_scoped(&from, &to, desc, Some(&event.timeline_id));
+                    g.upsert_edge(RelationEdge {
+                        id: Uuid::new_v4().to_string(),
+                        from,
+                        to,
+                        description: rc.relation.clone(),
+                        timeline_id: Some(event.timeline_id.clone()),
+                        start_event_id: None,
+                        end_event_id: Some(event.id.clone()),
+                    });
                     Ok(())
                 })?;
             }
@@ -219,23 +224,20 @@ fn remove_event_edges(world_path: &str, event: &Event) -> Result<(), String> {
     Ok(())
 }
 
-/// Remove Entry↔Entry edges created from this event's relationship_changes.
+/// Clear event references on edges created from this event's relationship_changes.
+/// Edges remain, just unlinked from this event.
 fn remove_relationship_change_edges(world_path: &str, event: &Event) -> Result<(), String> {
-    for rc in &event.relationship_changes {
-        let from = EntityRef { name: None, 
-            entity_type: EntityType::Entry,
-            id: rc.entry_a.clone(),
-        };
-        let to = EntityRef { name: None, 
-            entity_type: EntityType::Entry,
-            id: rc.entry_b.clone(),
-        };
-        let desc = rc.description.as_deref().unwrap_or(&rc.relation);
-        graph_storage::with_graph(world_path, |g| {
-            g.remove_edge_scoped(&from, &to, desc, Some(&event.timeline_id));
-            Ok(())
-        })?;
-    }
+    graph_storage::with_graph(world_path, |g| {
+        for e in &mut g.edges {
+            if e.start_event_id.as_deref() == Some(&event.id) {
+                e.start_event_id = None;
+            }
+            if e.end_event_id.as_deref() == Some(&event.id) {
+                e.end_event_id = None;
+            }
+        }
+        Ok(())
+    })?;
     Ok(())
 }
 

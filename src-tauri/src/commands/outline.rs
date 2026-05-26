@@ -238,6 +238,26 @@ pub fn read_chapter(world_path: String, story_id: String, chapter_id: String) ->
     fs::read_to_string(&file).map_err(|e| format!("读取失败: {}", e))
 }
 
+/// Parse linked_events from JSON array.
+/// Format: [{"timeline_id":"...","event_id":"..."},...]
+fn parse_linked_events(raw: &str) -> Vec<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || !trimmed.starts_with('[') {
+        return Vec::new();
+    }
+    if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(trimmed) {
+        return arr
+            .iter()
+            .filter_map(|v| {
+                let tl = v.get("timeline_id")?.as_str()?;
+                let ev = v.get("event_id")?.as_str()?;
+                Some(format!("{}:{}", tl, ev))
+            })
+            .collect();
+    }
+    Vec::new()
+}
+
 #[tauri::command]
 pub fn write_outline(
     world_path: String,
@@ -248,7 +268,7 @@ pub fn write_outline(
     status: Option<String>,
     summary: Option<String>,
     body: Option<String>,
-    linked_events: Option<String>,  // 🆕 Phase 5: "timeline_id:event_id,timeline_id:event_id"
+    linked_events: Option<String>,  // JSON array: [{"timeline_id":"...","event_id":"..."},...] or legacy "tl:evt,tl:evt"
 ) -> Result<ChapterInfo, String> {
     let root = expand(&world_path);
     // Auto-migrate
@@ -257,13 +277,7 @@ pub fn write_outline(
     fs::create_dir_all(&dir).map_err(|e| format!("创建大纲目录失败: {}", e))?;
 
     let linked_events_provided = linked_events.is_some();
-    let linked_evts: Vec<String> = linked_events
-        .as_deref()
-        .unwrap_or_default()
-        .split(',')
-        .map(|s| s.trim().trim_matches('"').to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+    let linked_evts: Vec<String> = parse_linked_events(linked_events.as_deref().unwrap_or_default());
 
     if let Some(chapter_id) = chapter_id {
         let existing = find_chapter_file_by_id(&dir, &chapter_id)
@@ -434,7 +448,8 @@ fn sync_outline_event_links(
             to,
             description: "章节描绘".into(),
             timeline_id: None,
-            active_period: None,
+            start_event_id: None,
+            end_event_id: None,
         };
         graph_storage::with_graph(world_path, |g| {
             if !g.edges.iter().any(|e|

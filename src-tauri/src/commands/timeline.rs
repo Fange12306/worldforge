@@ -205,38 +205,36 @@ pub fn list_timelines(
 
 /// Parse comma-separated linked entries string from Agent tool input.
 fn parse_linked_entries(input: Option<&str>) -> Vec<LinkedEntry> {
-    input.unwrap_or("").split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            // Check for perspective summary: "entry_id|summary text"
-            if let Some((id, summary)) = s.split_once('|') {
-                LinkedEntry {
-                    entry_id: id.trim().to_string(),
-                    perspective_summary: Some(summary.trim().to_string()),
-                }
-            } else {
-                LinkedEntry { entry_id: s.to_string(), perspective_summary: None }
-            }
-        })
-        .collect()
+    let raw = input.unwrap_or("").trim();
+    if raw.is_empty() { return Vec::new(); }
+    // JSON array: [{"entry_id":"...","perspective_summary":"..."}]
+    if raw.starts_with('[') {
+        if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(raw) {
+            return arr.iter().filter_map(|v| {
+                let id = v.get("entry_id")?.as_str()?;
+                let summary = v.get("perspective_summary").and_then(|s| s.as_str()).map(|s| s.to_string());
+                Some(LinkedEntry { entry_id: id.to_string(), perspective_summary: summary })
+            }).collect();
+        }
+    }
+    Vec::new()
 }
 
-/// Parse comma-separated linked chapters: "story_id:order,story_id:order"
+/// Parse linked chapters from JSON array or legacy comma-separated format.
+/// JSON: [{"story_id":"...","chapter_order":1},...]
 fn parse_linked_chapters(input: Option<&str>) -> Vec<LinkedChapter> {
-    input.unwrap_or("").split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .filter_map(|s| {
-            let parts: Vec<&str> = s.split(':').collect();
-            if parts.len() >= 2 {
-                Some(LinkedChapter {
-                    story_id: parts[0].trim().to_string(),
-                    chapter_order: parts[1].trim().parse().unwrap_or(0),
-                })
-            } else { None }
-        })
-        .collect()
+    let raw = input.unwrap_or("").trim();
+    if raw.is_empty() { return Vec::new(); }
+    if raw.starts_with('[') {
+        if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(raw) {
+            return arr.iter().filter_map(|v| {
+                let sid = v.get("story_id")?.as_str()?;
+                let order = v.get("chapter_order")?.as_i64().unwrap_or(0) as i32;
+                Some(LinkedChapter { story_id: sid.to_string(), chapter_order: order })
+            }).collect();
+        }
+    }
+    Vec::new()
 }
 
 fn parse_relation_changes(input: Option<&str>) -> Vec<RelationChange> {

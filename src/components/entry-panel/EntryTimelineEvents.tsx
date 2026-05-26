@@ -10,7 +10,7 @@ import { useT } from "@/lib/i18n";
 
 const a = (x: any) => x || [];
 
-interface Props { worldPath: string; entryId: string; onNavigateToTimeline?: (eventId: string, timelineId: string) => void; initialActiveTlId?: string; }
+interface Props { worldPath: string; entryId: string; onNavigateToTimeline?: (eventId: string, timelineId: string) => void; onNavigateEntry?: (entryId: string) => void; initialActiveTlId?: string; }
 interface SimpleEvent { id: string; timeline_id: string; time_point: string; precision?: number; summary: string;
   linked_entries: { entry_id: string; perspective_summary?: string }[];
   relationship_changes: { entry_a: string; entry_b: string; change_type: string; relation: string }[];
@@ -78,7 +78,7 @@ function buildTree(events: SimpleEvent[], u: TU[]): { key: string; depth: number
 }
 
 // ── Component ──
-export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, initialActiveTlId }: Props) {
+export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, onNavigateEntry, initialActiveTlId }: Props) {
   const { t } = useT();
   const [allTls, setAllTls] = useState<any[]>([]);
   const [activeTlId, setActiveTlId] = useState("");
@@ -219,10 +219,10 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, 
                                   </button>
                                   {rcs.length > 0 && (<div className="mt-0.5 flex flex-wrap gap-1">
                                     {rcs.map((r: any, j: number) => (
-                                      <span key={j} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] rounded-full ${
-                                        r.change_type === "add" ? "bg-emerald-500/10 text-emerald-500" : r.change_type === "delete" ? "bg-red-500/10 text-red-500 line-through" : "bg-amber-500/10 text-amber-500"}`}>
+                                      <button key={j} onClick={(e) => { e.stopPropagation(); onNavigateEntry?.(r.entry_a === entryId ? r.entry_b : r.entry_a); }} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] rounded-full cursor-pointer transition-colors ${
+                                        r.change_type === "add" ? "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20" : r.change_type === "delete" ? "bg-red-500/10 text-red-500 hover:bg-red-500/20 line-through" : "bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"}`}>
                                         {r.change_type === "add" ? "+" : r.change_type === "delete" ? "−" : "~"} {entryNames.get(r.entry_a === entryId ? r.entry_b : r.entry_a) || (r.entry_a === entryId ? r.entry_b : r.entry_a).slice(0, 8)}: {r.relation}
-                                      </span>
+                                      </button>
                                     ))}</div>)}
                                 </div>
                               );

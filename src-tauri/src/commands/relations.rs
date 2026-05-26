@@ -3,8 +3,9 @@
 /// These commands read/write the relations/index.json file via GraphStorage.
 /// The frontend or Agent invokes them to manage cross-entity relations.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::path::PathBuf;
 
 use uuid::Uuid;
 use crate::models::graph::{EntityRef, EntityType, RelationEdge, RelationGraph};
@@ -192,7 +193,8 @@ pub fn add_relation(
         to,
         description,
         timeline_id,
-        active_period: None,
+        start_event_id: None,
+        end_event_id: None,
     };
     graph_storage::with_graph(&world_path, |g| {
         g.add_edge(edge);
@@ -311,11 +313,53 @@ pub fn traverse_graph(
     let mut results = index.bfs(&et, &entity_id, max_depth);
     // Enrich with display names
     let mut refs: Vec<&mut EntityRef> = Vec::new();
+    let mut event_ids: HashSet<String> = HashSet::new();
     for r in &mut results {
         refs.push(&mut r.entity);
         refs.push(&mut r.via_entity);
+        if let Some(ref id) = r.start_event_id { event_ids.insert(id.clone()); }
+        if let Some(ref id) = r.end_event_id { event_ids.insert(id.clone()); }
     }
     resolve_names(&world_path, &mut refs);
+
+    // Resolve event names for start/end event IDs
+    if !event_ids.is_empty() {
+        let mut event_names: HashMap<String, String> = HashMap::new();
+        let tls_dir = PathBuf::from(&world_path).join("timelines");
+        if tls_dir.exists() {
+            if let Ok(read) = fs::read_dir(&tls_dir) {
+                for tl_entry in read.flatten() {
+                    let events_path = tl_entry.path().join("events.json");
+                    if !events_path.exists() { continue; }
+                    if let Ok(raw) = fs::read_to_string(&events_path) {
+                        if let Ok(el) = serde_json::from_str::<serde_json::Value>(&raw) {
+                            if let Some(events) = el["events"].as_array() {
+                                for evt in events {
+                                    let id = evt["id"].as_str().unwrap_or("");
+                                    if event_ids.contains(id) {
+                                        let name = evt["name"].as_str().unwrap_or_else(|| evt["summary"].as_str().unwrap_or("未命名")).to_string();
+                                        event_names.insert(id.to_string(), name);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        for r in &mut results {
+            if let Some(ref id) = r.start_event_id {
+                if let Some(name) = event_names.get(id) {
+                    r.start_event_id = Some(format!("{} ({})", name, id));
+                }
+            }
+            if let Some(ref id) = r.end_event_id {
+                if let Some(name) = event_names.get(id) {
+                    r.end_event_id = Some(format!("{} ({})", name, id));
+                }
+            }
+        }
+    }
     Ok(results)
 }
 

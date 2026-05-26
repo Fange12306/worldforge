@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 /// Calendar epoch definition for the world's timeline system.
@@ -192,20 +191,22 @@ pub fn load_world_prompt(world_path: String) -> Result<String, String> {
     Ok(meta.world_prompt)
 }
 
-/// Get the worlds directory path (app data dir)
+/// Get the worlds directory path under ~/.worldforge/
 #[tauri::command]
-pub fn get_worlds_dir(app: AppHandle) -> Result<String, String> {
-    let path = app.path().app_data_dir()
-        .map_err(|e| format!("{}", e))?
+pub fn get_worlds_dir() -> Result<String, String> {
+    let path = crate::utils::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".worldforge")
         .join("worlds");
     Ok(path.to_string_lossy().to_string())
 }
 
-/// Get the world path from the app state
+/// Get the WorldForge data root (~/.worldforge/)
 #[tauri::command]
-pub fn get_world_path(app: AppHandle) -> Result<String, String> {
-    let path = app.path().app_data_dir()
-        .map_err(|e| format!("{}", e))?;
+pub fn get_world_path() -> Result<String, String> {
+    let path = crate::utils::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".worldforge");
     Ok(path.to_string_lossy().to_string())
 }
 

@@ -17,13 +17,17 @@ pub struct TraversalResult {
     pub distance: u32,
     pub via_description: String,
     pub via_entity: EntityRef,  // the intermediate entity that connects
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_event_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_event_id: Option<String>,
 }
 
 /// An adjacency list built from the relation graph
 #[derive(Debug)]
 pub struct GraphIndex {
-    /// adjacency[entity_key] = Vec<(neighbor_key, description)>
-    adjacency: HashMap<String, Vec<(String, String)>>,
+    /// adjacency[entity_key] = Vec<(neighbor_key, description, start_event_id, end_event_id)>
+    adjacency: HashMap<String, Vec<(String, String, Option<String>, Option<String>)>>,
     /// Reverse lookup: entity_key -> (type, id)
     node_map: HashMap<String, EntityRef>,
 }
@@ -45,27 +49,26 @@ impl GraphIndex {
     /// Build a GraphIndex from the full list of edges.
     /// Edges are treated as undirected for traversal purposes.
     pub fn build(edges: &[&crate::models::graph::RelationEdge]) -> Self {
-        let mut adjacency: HashMap<String, Vec<(String, String)>> = HashMap::new();
+        let mut adjacency: HashMap<String, Vec<(String, String, Option<String>, Option<String>)>> = HashMap::new();
         let mut node_map: HashMap<String, EntityRef> = HashMap::new();
 
         for edge in edges {
             let from_key = entity_key(&edge.from.entity_type, &edge.from.id);
             let to_key = entity_key(&edge.to.entity_type, &edge.to.id);
-            let rel = edge.description.clone();
+            let se = edge.start_event_id.clone();
+            let ee = edge.end_event_id.clone();
 
-            // Store node lookups
             node_map.entry(from_key.clone())
                 .or_insert_with(|| edge.from.clone());
             node_map.entry(to_key.clone())
                 .or_insert_with(|| edge.to.clone());
 
-            // Undirected: add both directions
             adjacency.entry(from_key.clone())
                 .or_default()
-                .push((to_key.clone(), rel.clone()));
+                .push((to_key.clone(), edge.description.clone(), se.clone(), ee.clone()));
             adjacency.entry(to_key)
                 .or_default()
-                .push((from_key, rel));
+                .push((from_key, edge.description.clone(), se, ee));
         }
 
         Self { adjacency, node_map }
@@ -93,7 +96,7 @@ impl GraphIndex {
             }
 
             if let Some(neighbors) = self.adjacency.get(&current_key) {
-                for (neighbor_key, rel) in neighbors {
+                for (neighbor_key, rel, se, ee) in neighbors {
                     if visited.insert(neighbor_key.clone()) {
                         let neighbor = self.node_map.get(neighbor_key);
                         let current = self.node_map.get(&current_key);
@@ -103,6 +106,8 @@ impl GraphIndex {
                                 distance: distance + 1,
                                 via_description: rel.clone(),
                                 via_entity: c.clone(),
+                                start_event_id: se.clone(),
+                                end_event_id: ee.clone(),
                             });
                         }
                         queue.push_back((neighbor_key.clone(), distance + 1));

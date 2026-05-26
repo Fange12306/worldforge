@@ -78,14 +78,13 @@ export function EntryEditor({ entry, editing, worldPath, onEdit, onCancel, onSav
               {entry.body ? <MarkdownContent content={entry.body} /> : <span className="text-ink-muted italic">{t.entry.noBody}</span>}
             </div>
             {worldPath && !editing && (
-              <EntryTimelineEvents worldPath={worldPath} entryId={entry.id} onNavigateToTimeline={onNavigateToTimeline} />
+              <EntryTimelineEvents worldPath={worldPath} entryId={entry.id} onNavigateToTimeline={onNavigateToTimeline} onNavigateEntry={onNavigateEntry} />
             )}
             {worldPath && !editing && (
               <ImplicationTrace
                 worldPath={worldPath}
                 entryId={entry.id}
                 entryName={entry.name}
-                timelineSummary={entry.timeline_summary}
                 onNavigate={(type, id) => {
                   if (type === "entry" && onNavigateEntry) onNavigateEntry(id);
                 }}

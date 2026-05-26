@@ -79,7 +79,7 @@ function getTools(): ToolDef[] {
     input_schema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Search keyword for name/type/tag lookup. Leave empty to list all entries." },
+        query: { type: "string", description: "Search keyword for name/type/tag lookup. Leave empty to list all entries. NOTE: when 'pattern' is set, 'query' and 'entry_type' are ignored — pattern triggers full-text grep instead." },
         entry_type: { type: "string", description: "Optional: filter by entry type slug (character/location/organization/system/artifact/era/concept)" },
         pattern: { type: "string", description: "Full-text search keyword to grep within entry bodies. When set, returns {path, matches} instead of entry list." },
       },
@@ -162,7 +162,7 @@ function getTools(): ToolDef[] {
         status: { type: "string", description: "Chapter status: 'outline', 'drafting', or 'done'" },
         summary: { type: "string", description: "Brief summary of this chapter" },
         body: { type: "string", description: "The actual chapter text / draft content" },
-        linked_events: { type: "string", description: "Comma-separated 'timeline_id:event_id' pairs for linking chapter to timeline events. Format: 'tl-id:evt-id,tl-id:evt-id2'" },
+        linked_events: { type: "string", description: "JSON array of {timeline_id, event_id} objects to link this chapter to timeline events. Example: [{\"timeline_id\":\"tl-uuid\",\"event_id\":\"evt-uuid\"}]" },
       },
       required: [],
     },
@@ -196,7 +196,7 @@ function getTools(): ToolDef[] {
   },
   {
     name: "ExploreGraph",
-    description: "Explore the unified relation graph. Pass mode='direct' to find all entities directly related to a given entity (returns edges with from/to/description). Pass mode='traverse' for BFS multi-hop traversal (returns reachable entities with distance and path info). entity_type: 'entry'/'outline'/'timeline'/'event'. Optionally filter by timeline_id to scope to a specific timeline's events. Read-only.",
+    description: "Explore the unified relation graph. Returns all relations connected to an entity, including both static relations (from Relation tool) and event-driven relations (from EventWrite.relationship_changes). Each result includes start_event_id/end_event_id when applicable. Use this as the primary tool to understand entity connections.",
     input_schema: {
       type: "object",
       properties: {
@@ -211,7 +211,7 @@ function getTools(): ToolDef[] {
   },
   {
     name: "Relation",
-    description: ta.relationToolDesc,
+    description: "Create, update, or remove a static relation between entities. Use for facts not tied to a specific event (e.g. '暗月匕首是暗月帝国的皇室圣物'). For event-driven relationship changes, use EventWrite.relationship_changes instead. Multiple edges between the same two entities are allowed — use different descriptions to distinguish them (e.g. both '养父女' and '师徒' between the same pair).",
     input_schema: {
       type: "object",
       properties: {
@@ -247,7 +247,7 @@ function getTools(): ToolDef[] {
   // ── Phase 5: Timeline & Event tools ──
   {
     name: "ListTimelines",
-    description: "List all timelines in the current world. Returns {id, name, description, is_default, time_format}. Most worlds have exactly one default timeline.",
+    description: "List all timelines in the current world. Returns {id, name, description, is_default, time_format}. time_format.units lists time units (e.g. [{key:'era',name:'纪元'},{key:'year',name:'年'}]). time_point format: segment 0 is always '000' (reserved), then one segment per unit in display_order. Example for 4 units: '000-003000-000300-08-15'. Most worlds have exactly one default timeline.",
     input_schema: { type: "object", properties: {} },
   },
   {
@@ -293,11 +293,24 @@ function getTools(): ToolDef[] {
         time_point: { type: "string", description: ta.eventTimePoint },
         summary: { type: "string", description: "Event description. Required for new events." },
         precision: { type: "number", description: ta.eventPrecision },
-        linked_entries: { type: "string", description: ta.eventLinkedEntries },
-        linked_chapters: { type: "string", description: "Comma-separated: 'story_id:order,story_id:order'" },
-        relationship_changes: { type: "string", description: "Newline-separated: 'entry_a|entry_b|add|ally_of|description\\\\nentry_c|entry_d|delete|enemy_of'" },
+        linked_entries: { type: "string", description: "JSON array of {entry_id, perspective_summary} objects. Example: [{\"entry_id\":\"uuid\",\"perspective_summary\":\"简述\"}]" },
+        linked_chapters: { type: "string", description: "JSON array of {story_id, chapter_order} objects. Example: [{\"story_id\":\"uuid\",\"chapter_order\":1}]" },
+        relationship_changes: { type: "string", description: "JSON array of {entry_a, entry_b, change_type, relation, description} objects. These are automatically synced to the relation graph (ExploreGraph). Example: [{\"entry_a\":\"uuid\",\"entry_b\":\"uuid2\",\"change_type\":\"add\",\"relation\":\"战友\",\"description\":\"共同抵御虚空入侵\"}]" },
       },
       required: ["timeline_id"],
+    },
+  },
+  {
+    name: "MoveEvent",
+    description: "Move an event to a new time point on the timeline. This repositions the event and re-sorts the timeline. Use when you need to adjust when an event happened without rewriting all its details.",
+    input_schema: {
+      type: "object",
+      properties: {
+        timeline_id: { type: "string", description: "Timeline ID (required)" },
+        event_id: { type: "string", description: "Event ID to move (required)" },
+        new_time_point: { type: "string", description: "New time point. Segment 0 is always '000' (placeholder), remaining segments match timeline units. Get the exact count from ListTimelines time_format." },
+      },
+      required: ["timeline_id", "event_id", "new_time_point"],
     },
   },
   ];
@@ -319,7 +332,7 @@ export function resetPermissions(convId?: string) {
 
 const WRITE_TOOLS = new Set([
   "EntryWrite", "OutlineWrite", "Memory",
-  "EventWrite", "TimelineWrite",
+  "EventWrite", "TimelineWrite", "MoveEvent",
 ]);
 
 // Destructive — always require per-use confirmation, never approved for session
@@ -570,6 +583,7 @@ async function executeTool(
         sceneText: input.scene_text as string,
       };
       if (input.aspect) params.aspect = input.aspect;
+      params.language = useStore.getState().language;
       const analysis = await invoke<{
         word_count: number;
         paragraph_count: number;
@@ -920,6 +934,19 @@ async function executeTool(
         }
         return msg;
       }
+    }
+    case "MoveEvent": {
+      const evTlId = input.timeline_id as string;
+      const evId = input.event_id as string;
+      const newTp = input.new_time_point as string;
+      if (!evTlId || !evId || !newTp) return t().moveEventMissingParams;
+      const event = await invoke<any>("move_event", {
+        worldPath,
+        timelineId: evTlId,
+        eventId: evId,
+        newTimePoint: newTp,
+      });
+      return t().eventUpdatedResult(JSON.stringify(event, null, 2));
     }
     default:
       return t().unknownTool(name);

@@ -27,9 +27,9 @@ pub struct EntityRef {
 
 /// A single directed edge in the unified relation graph.
 ///
-/// `timeline_id`: None = cross-timeline static relation (from RelationAdd).
-/// Some(id) = scoped to events on this timeline (from relationship_changes).
-/// `active_period` is reserved for Phase 6 timeline-aware consistency.
+/// Static edges (from Relation tool) have both start_event_id and end_event_id = None.
+/// Event-driven edges (from EventWrite relationship_changes) have start_event_id and/or
+/// end_event_id pointing to the events that triggered the add/delete.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RelationEdge {
     #[serde(default)]
@@ -41,7 +41,9 @@ pub struct RelationEdge {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeline_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub active_period: Option<[Option<i64>; 2]>,
+    pub start_event_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_event_id: Option<String>,
 }
 
 /// The top-level structure stored in relations/index.json
@@ -97,17 +99,23 @@ impl RelationGraph {
         Self::match_timeline(e, filter)
     }
 
-    /// Remove edges matching from, to, description, and optionally timeline_id.
-    pub fn remove_edge_scoped(
-        &mut self,
-        from: &EntityRef,
-        to: &EntityRef,
-        description: &str,
-        timeline_id: Option<&str>,
-    ) {
-        self.edges.retain(|e| {
-            !(e.from == *from && e.to == *to && e.description == description
-                && timeline_id == e.timeline_id.as_deref())
-        });
+    /// Upsert an edge: if an edge with the same (from, to, description) exists,
+    /// update start_event_id / end_event_id; otherwise insert a new edge.
+    pub fn upsert_edge(&mut self, edge: RelationEdge) {
+        for existing in &mut self.edges {
+            if existing.from == edge.from
+                && existing.to == edge.to
+                && existing.description == edge.description
+            {
+                if edge.start_event_id.is_some() {
+                    existing.start_event_id = edge.start_event_id;
+                }
+                if edge.end_event_id.is_some() {
+                    existing.end_event_id = edge.end_event_id;
+                }
+                return;
+            }
+        }
+        self.edges.push(edge);
     }
 }

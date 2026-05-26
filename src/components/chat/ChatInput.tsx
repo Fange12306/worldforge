@@ -552,7 +552,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
             </button>
             <div className="flex-1" />
             <ContextRing />
-            {llmModels.length > 1 && (
+            {llmModels.length >= 1 && (
               <select value={activeModel} onChange={(e) => setActiveModel(e.target.value)}
                 className="text-[11px] bg-transparent text-ink-muted py-0 appearance-none outline-none cursor-pointer truncate max-w-[220px]"
               >

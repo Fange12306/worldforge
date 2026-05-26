@@ -83,9 +83,10 @@ pub struct SceneAnalysis {
 }
 
 #[tauri::command]
-pub fn scene_analyze(world_path: String, scene_text: String, aspect: Option<String>) -> Result<SceneAnalysis, String> {
+pub fn scene_analyze(world_path: String, scene_text: String, aspect: Option<String>, language: Option<String>) -> Result<SceneAnalysis, String> {
     let root = expand(&world_path);
     let aspect = aspect.unwrap_or_else(|| "all".to_string());
+    let lang = language.unwrap_or_else(|| "zh".to_string());
 
     // Basic text stats
     let word_count = scene_text.chars().count();
@@ -134,25 +135,26 @@ pub fn scene_analyze(world_path: String, scene_text: String, aspect: Option<Stri
         }
     }
 
-    // Structure hints — filtered by aspect
+    // Structure hints — bilingual, filtered by aspect
     let mut structure_hints: Vec<String> = Vec::new();
     let show_structure = aspect == "all" || aspect == "structure";
     let show_characters = aspect == "all" || aspect == "characters";
     let show_pacing = aspect == "all" || aspect == "pacing";
+    let is_en = lang == "en";
 
     if show_structure && word_count < 200 {
-        structure_hints.push("场景较短，可能需要扩展描写".into());
+        structure_hints.push(if is_en { "Scene is short, may need more descriptive detail".into() } else { "场景较短，可能需要扩展描写".into() });
     }
     if show_pacing && dialogue_ratio > 0.7 {
-        structure_hints.push("对话比例较高，考虑增加叙述和描写".into());
+        structure_hints.push(if is_en { "Dialogue ratio is high, consider adding more narrative and description".into() } else { "对话比例较高，考虑增加叙述和描写".into() });
     } else if show_pacing && dialogue_ratio < 0.1 && word_count > 500 {
-        structure_hints.push("对话比例很低，纯叙述可能让读者感到疏离".into());
+        structure_hints.push(if is_en { "Dialogue ratio is very low, pure narration may feel distant to readers".into() } else { "对话比例很低，纯叙述可能让读者感到疏离".into() });
     }
     if show_structure && paragraph_count > 0 && (word_count / paragraph_count) > 300 {
-        structure_hints.push("段落较长，考虑拆分以提升可读性".into());
+        structure_hints.push(if is_en { "Paragraphs are long, consider splitting for readability".into() } else { "段落较长，考虑拆分以提升可读性".into() });
     }
     if show_characters && referenced_entries.is_empty() && word_count > 100 {
-        structure_hints.push("未检测到已有词条的引用，确认场景是否充分利用了设定".into());
+        structure_hints.push(if is_en { "No existing entry references detected — check if the scene fully uses the world setting".into() } else { "未检测到已有词条的引用，确认场景是否充分利用了设定".into() });
     }
 
     Ok(SceneAnalysis {

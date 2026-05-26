@@ -30,7 +30,10 @@ export function CollapsedGroupMessage({ group }: { group: CollapsedGroup }) {
 
   const totalCount = group.toolCalls.length;
   const totalMessages = group.messages.length;
-  const uniqueTypes = new Set(group.toolCalls.map((tc) => tc.name));
+  const webTools = new Set(["WebSearch", "WebFetch"]);
+  const webCalls = group.toolCalls.filter((tc) => webTools.has(tc.name));
+  const otherCalls = group.toolCalls.filter((tc) => !webTools.has(tc.name));
+  const uniqueOther = new Set(otherCalls.map((tc) => tc.name));
 
   return (
     <div className="flex gap-3 animate-fade-in">
@@ -47,11 +50,18 @@ export function CollapsedGroupMessage({ group }: { group: CollapsedGroup }) {
           ) : (
             <ChevronRight className="w-3 h-3" />
           )}
-          <span className="text-ink-muted/70 group-hover:text-ink-muted transition-colors">
-            {uniqueTypes.size} tools used
-          </span>
+          {uniqueOther.size > 0 && (
+            <span className="text-ink-muted/70 group-hover:text-ink-muted transition-colors">
+              {uniqueOther.size} tools used
+            </span>
+          )}
+          {webCalls.length > 0 && (
+            <span className="text-ink-muted/60 group-hover:text-ink-muted transition-colors">
+              {webCalls.length} webpage{webCalls.length > 1 ? "s" : ""} searched
+            </span>
+          )}
           <span className="text-ink-muted/40">
-            ({totalCount} 次调用 / {totalMessages} 轮)
+            ({totalCount} calls / {totalMessages} turns)
           </span>
         </button>
         {expanded && (

@@ -12,6 +12,8 @@ import type { PermissionChoice } from "@/lib/agent-loop";
 import type { Entry } from "@/lib/types";
 import { useT, getT } from "@/lib/i18n";
 
+type UploadedFile = { name: string; storedName: string; content: string };
+
 function toSessionMessages(messages: Message[]) {
   return messages.map((message) => {
     const timestamp = new Date(message.timestamp || Date.now()).toISOString();
@@ -40,7 +42,9 @@ function toSessionMessages(messages: Message[]) {
 
 export function ChatInput({ storyId }: { storyId: string }) {
   const { t } = useT();
-  const [files, setFiles] = useState<{ name: string; content: string }[]>([]);
+  const [files, setFiles] = useState<UploadedFile[]>([]);
+  const [pendingUploads, setPendingUploads] = useState<string[]>([]);
+  const [uploadErrors, setUploadErrors] = useState<string[]>([]);
   const [permission, setPermission] = useState<null | { toolName: string; details: string; callback: (c: PermissionChoice) => void }>(null);
   const [newEntryForm, setNewEntryForm] = useState(false);
   const [newEntryName, setNewEntryName] = useState("");
@@ -169,12 +173,31 @@ export function ChatInput({ storyId }: { storyId: string }) {
     input.addEventListener("change", async () => {
       const selected = input.files;
       if (!selected || selected.length === 0) return;
-      const newFiles: { name: string; content: string }[] = [];
-      for (let i = 0; i < selected.length; i++) {
-        const f = selected[i];
-        try { const text = await f.text(); if (text) newFiles.push({ name: f.name, content: text }); } catch {}
+      const picked = Array.from(selected);
+      setPendingUploads(picked.map((f) => f.name));
+      setUploadErrors([]);
+      const newFiles: UploadedFile[] = [];
+      const errors: string[] = [];
+      for (const f of picked) {
+        try {
+          if (f.name.toLowerCase().endsWith(".pdf")) {
+            // PDF: extract text via Rust backend
+            const buf = await f.arrayBuffer();
+            const text = await invoke<string>("pdf_to_text", { bytes: Array.from(new Uint8Array(buf)) });
+            if (text) newFiles.push({ name: f.name, storedName: `${f.name}.txt`, content: text });
+            else errors.push(`${f.name}: 未提取到文本`);
+          } else {
+            const text = await f.text();
+            if (text) newFiles.push({ name: f.name, storedName: f.name, content: text });
+            else errors.push(`${f.name}: 文件为空`);
+          }
+        } catch (e) {
+          errors.push(`${f.name}: ${String(e)}`);
+        }
       }
       if (newFiles.length > 0) setFiles((prev) => [...prev, ...newFiles]);
+      setUploadErrors(errors);
+      setPendingUploads([]);
     }, { once: true });
     input.click();
   };
@@ -276,7 +299,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
       // Persist files to disk (per-conversation)
       for (const f of currentFiles) {
         try {
-          await invoke("write_file", { worldPath: world.path, fileName: f.name, content: f.content, conversationId: convId });
+          await invoke("write_file", { worldPath: world.path, fileName: f.storedName, content: f.content, conversationId: convId });
         } catch {}
       }
     }
@@ -297,15 +320,11 @@ export function ChatInput({ storyId }: { storyId: string }) {
       ?.conversations.find((c) => c.id === activeConversationId);
     const history: AgentMessage[] = buildModelMessages(latestConv?.messages ?? []);
 
-    // ── Step 2: Inject file content into LLM context only (UI stays clean) ──
+    // ── Step 2: Inject file references into LLM context only (UI stays clean) ──
     if (currentFiles.length > 0) {
-      const MAX_FILE_CHARS = 8000;
-      const fileBlocks = currentFiles.map((f) => {
-        const truncated = f.content.length > MAX_FILE_CHARS
-          ? f.content.slice(0, MAX_FILE_CHARS) + `\n...[截断, 共 ${f.content.length} 字符]`
-          : f.content;
-        return `[上传文件: ${f.name}]\n---\n${truncated}\n---`;
-      });
+      const fileBlocks = currentFiles.map((f) =>
+        `[上传文件: ${f.name}]\n路径: uploads/${convId}/${f.storedName}\n字符数: ${f.content.length}\n如需阅读内容，使用 FileRead(path="uploads/${convId}/${f.storedName}", offset=0, limit=20000) 分页读取。不要假设文件内容已自动进入上下文。`,
+      );
       // Inject before the last user message in history
       const lastUser = history.filter(m => m.role === "user").pop();
       if (lastUser) {
@@ -487,8 +506,14 @@ export function ChatInput({ storyId }: { storyId: string }) {
           </div>
         )}
         {/* File chips */}
-        {files.length > 0 && (
+        {(files.length > 0 || pendingUploads.length > 0 || uploadErrors.length > 0) && (
           <div className="flex flex-wrap gap-1 mb-2">
+            {pendingUploads.map((name, i) => (
+              <span key={`pending-${i}`} className="flex items-center gap-1 px-2 py-0.5 text-[11px] bg-surface-700 text-ink-muted rounded-full">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                {name}
+              </span>
+            ))}
             {files.map((f, i) => (
               <span key={i} className="flex items-center gap-1 px-2 py-0.5 text-[11px] bg-surface-700 text-ink-secondary rounded-full">
                 <Paperclip className="w-3 h-3" />
@@ -496,6 +521,12 @@ export function ChatInput({ storyId }: { storyId: string }) {
                 <button onClick={() => setFiles((p) => p.filter((_, j) => j !== i))} className="ml-0.5 hover:text-error">
                   <X className="w-3 h-3" />
                 </button>
+              </span>
+            ))}
+            {uploadErrors.map((error, i) => (
+              <span key={`error-${i}`} className="flex items-center gap-1 px-2 py-0.5 text-[11px] bg-error/10 text-error rounded-full" title={error}>
+                <X className="w-3 h-3" />
+                {error}
               </span>
             ))}
           </div>

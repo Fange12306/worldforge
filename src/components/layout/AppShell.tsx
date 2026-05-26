@@ -258,6 +258,7 @@ function DetailView({ view, onBack, onUpdate, activeWorldId, activeConversationI
   activeWorldId: string | null; activeConversationId: string | null; worlds: ReturnType<typeof useStore.getState>["worlds"];
   sidebarOpen: boolean; rightOpen: boolean; theme: "dark" | "light";
 }) {
+  const { t } = useT();
   if (view.type === "timeline") {
     const w = worlds.find((x) => x.id === activeWorldId);
     if (!w) return null;
@@ -292,7 +293,6 @@ function DetailView({ view, onBack, onUpdate, activeWorldId, activeConversationI
     : view.type === "outline" ? view.title
     : view.type === "file" ? view.fileName
     : view.type === "memory" ? view.fileName : "";
-  const { t } = useT();
   const label = view.type === "entry" ? t.labels.entry : view.type === "outline" ? t.labels.outline : view.type === "file" ? t.labels.file : t.labels.memory;
   const proseClass = `prose prose-sm max-w-none ${theme === "dark" ? "prose-invert" : ""}`;
   return (

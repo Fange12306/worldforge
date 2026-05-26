@@ -6,6 +6,8 @@ const SEARCH_READ_TOOLS = new Set([
   "EntryRead",
   "OutlineRead",
   "FileRead",
+  "WebSearch",
+  "WebFetch",
   "ExploreGraph",      // Phase 4/5 — read-only graph exploration (direct + BFS)
   "TraverseGraph",     // Phase 4 — legacy, kept for collapsed display in old convos
   "ConsistencyCheck",  // Phase 4 — read-only constraint matching

@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { useStore } from "@/lib/store";
+import type { Message } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import type { ContextBreakdown } from "@/lib/context-window";
+import { buildModelMessages } from "@/lib/model-context";
+import { compressMessages, RECENT_TURNS_TO_KEEP } from "@/lib/context-compression";
+import { estimateTokens } from "@/lib/context-window";
+import { rewriteSessionMessages } from "@/lib/session-writer";
+import { buildSystemPrompt } from "@/lib/system-prompt";
 
 const RING_SIZE = 16;
 const RADIUS = 6;
@@ -48,9 +54,23 @@ export function ContextRing() {
   const activeModel = useStore((s) => s.activeModel);
   const llmModels = useStore((s) => s.llmModels);
   const setContextWindow = useStore((s) => s.setContextWindow);
+  const isCompressing = useStore((s) => s.isCompressing);
+  const setCompressing = useStore((s) => s.setCompressing);
+  const markCompressed = useStore((s) => s.markCompressed);
+  const replaceMessages = useStore((s) => s.replaceMessages);
+  const compressedSummary = activeConv?.compressedSummary;
 
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  const toSessionMessages = (messages: ReturnType<typeof buildModelMessages>) => {
+    const now = Date.now();
+    return messages.map((message, i) => ({
+      type: message.role,
+      content: message.content,
+      timestamp: new Date(now + i).toISOString(),
+    }));
+  };
 
   useEffect(() => {
     if (llmProvider && activeModel) {
@@ -132,6 +152,78 @@ export function ContextRing() {
           ) : (
             <p className="text-[11px] text-ink-muted">{t.chat.contextEmpty}</p>
           )}
+          {compressedSummary && (
+            <>
+              <div className="h-px bg-edge" />
+              <p className="text-[10px] text-ink-muted">{t.chat.compression.banner}</p>
+            </>
+          )}
+          <div className="h-px bg-edge" />
+          <button
+            onClick={async () => {
+              setOpen(false);
+              if (!activeConv || !llmProvider || !activeModel) return;
+              const convId = activeConversationId;
+              if (!convId) return;
+              setCompressing(true);
+              try {
+                const agentMsgs = buildModelMessages(activeConv.messages);
+                const estTokens = estimateTokens(agentMsgs.map((m) => m.content).join("\n"));
+                const result = await compressMessages(
+                  agentMsgs,
+                  contextWindowSize,
+                  Math.max(estTokens, contextUsed),
+                  { threshold: 0, keepTurns: RECENT_TURNS_TO_KEEP },
+                  llmProvider,
+                  activeModel,
+                );
+                if (result.compressed) {
+                  const now = Date.now();
+                  const newMsgs: Message[] = result.messages.map((am, i) => ({
+                    id: `compressed-${now}-${i}`,
+                    role: am.role,
+                    content: am.content,
+                    timestamp: now + i,
+                  }));
+                  replaceMessages(convId, newMsgs);
+                  if (activeWorld) {
+                    rewriteSessionMessages(
+                      activeWorld.path,
+                      convId,
+                      toSessionMessages(result.messages),
+                    ).catch(() => {});
+                  }
+                  markCompressed(convId, result.summary, result.tokenSavings);
+                  const story = activeWorld?.stories.find((s) => s.conversations.some((c) => c.id === convId));
+                  const systemPrompt = buildSystemPrompt(activeWorld?.name || "", story?.title || "", [], undefined, "", "", useStore.getState().language);
+                  const messagesTokens = estimateTokens(result.messages.map((m) => m.content).join("\n"));
+                  const systemPromptTokens = estimateTokens(systemPrompt);
+                  const used = messagesTokens + systemPromptTokens;
+                  useStore.getState().updateContextUsage(used, {
+                    messages: messagesTokens,
+                    systemTools: 0,
+                    mcpTools: 0,
+                    systemPrompt: systemPromptTokens,
+                    skills: 0,
+                    total: used,
+                  }, convId);
+                  window.dispatchEvent(
+                    new CustomEvent("worldforge-compressed", {
+                      detail: { summary: result.summary, tokenSavings: result.tokenSavings },
+                    }),
+                  );
+                }
+              } catch (e) {
+                console.error("[compression] Manual compress failed:", e);
+              } finally {
+                setCompressing(false);
+              }
+            }}
+            disabled={isCompressing || !activeConv || !llmProvider}
+            className="w-full py-1.5 text-[11px] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded transition-colors disabled:opacity-50"
+          >
+            {isCompressing ? t.chat.compressing : t.chat.compressNow}
+          </button>
         </div>
       )}
     </div>

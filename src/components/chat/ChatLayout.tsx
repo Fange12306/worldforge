@@ -11,6 +11,7 @@ export function ChatLayout() {
   const worlds = useStore((s) => s.worlds);
   const activeWorldId = useStore((s) => s.activeWorldId);
   const activeConversationId = useStore((s) => s.activeConversationId);
+  const isCompressing = useStore((s) => s.isCompressing);
 
   const activeWorld = worlds.find((w) => w.id === activeWorldId);
 
@@ -126,12 +127,28 @@ export function ChatLayout() {
   }
 
   return (
-    <>
+    <div className="relative flex flex-col flex-1 min-h-0">
+      {isCompressing && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-surface-950/60 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="w-2 h-2 rounded-full bg-brand-500 animate-pulse"
+                  style={{ animationDelay: `${i * 200}ms` }}
+                />
+              ))}
+            </div>
+            <span className="text-xs text-ink-muted">{t.chat.compressing}</span>
+          </div>
+        </div>
+      )}
       <ChatWindow
         storyId={activeStory.id}
         messages={activeConv.messages}
       />
       <ChatInput storyId={activeStory.id} />
-    </>
+    </div>
   );
 }

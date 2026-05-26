@@ -54,36 +54,193 @@ pub async fn web_fetch(url: String) -> Result<String, String> {
     }
 }
 
-/// Web search using DuckDuckGo Lite (no JS required, no API key)
+/// Web search with multi-engine fallback: Google → Bing → Baidu
 #[tauri::command]
 pub async fn web_search(query: String, count: Option<usize>) -> Result<Vec<SearchResult>, String> {
     let limit = count.unwrap_or(5).min(10);
-    let url = format!("https://lite.duckduckgo.com/lite/?q={}", urlencoding(&query));
+    let engines: &[(fn(&str, &str, usize) -> Vec<SearchResult>, &str, &str)] = &[
+        (parse_google, "https://www.google.com/search?q={q}&hl=zh-CN", "Google"),
+        (parse_bing, "https://www.bing.com/search?q={q}&setlang=zh-Hans", "Bing"),
+        (parse_baidu, "https://www.baidu.com/s?wd={q}", "百度"),
+    ];
 
+    let mut errors: Vec<String> = Vec::new();
+
+    for (parser, url_template, engine_name) in engines {
+        let url = url_template.replace("{q}", &urlencode(&query));
+        match fetch_page(&url).await {
+            Ok(html) => {
+                let results = parser(&html, engine_name, limit);
+                if !results.is_empty() {
+                    return Ok(results);
+                }
+                errors.push(format!("{} 返回空结果", engine_name));
+            }
+            Err(e) => {
+                errors.push(format!("{}: {}", engine_name, e));
+            }
+        }
+    }
+
+    Err(format!("所有搜索引擎均失败:\n{}", errors.join("\n")))
+}
+
+async fn fetch_page(url: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (compatible; WorldForge/0.1)")
+        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        .timeout(std::time::Duration::from_secs(8))
         .build()
         .map_err(|e| format!("构建客户端失败: {}", e))?;
 
-    let html = client
-        .get(&url)
+    client
+        .get(url)
         .send()
         .await
-        .map_err(|e| format!("搜索请求失败: {}", e))?
+        .map_err(|e| format!("请求失败: {}", e))?
         .text()
         .await
-        .map_err(|e| format!("读取响应失败: {}", e))?;
-
-    let results = parse_duckduckgo_lite(&html, limit);
-    if results.is_empty() {
-        Err("未找到搜索结果（可能是 DuckDuckGo 暂时不可用，请稍后重试）".to_string())
-    } else {
-        Ok(results)
-    }
+        .map_err(|e| format!("读取响应失败: {}", e))
 }
 
-fn urlencoding(s: &str) -> String {
-    // Proper UTF-8 percent-encoding
+// ── Google parser ──
+
+fn parse_google(html: &str, _engine: &str, limit: usize) -> Vec<SearchResult> {
+    let mut results = Vec::new();
+
+    // Google search result blocks: <div class="g"> or <div data-sokoban-container>
+    for block in html.split("<div class=\"g\">").skip(1) {
+        if results.len() >= limit { break; }
+
+        // Try to find link in <a href="/url?q=..."> or <a href="https://...">
+        let url = block
+            .split("href=\"/url?q=").nth(1)
+            .and_then(|s| s.split('&').next())
+            .map(|s| percent_decode(s))
+            .or_else(|| {
+                block.split("href=\"").nth(1)
+                    .and_then(|s| s.split('"').next())
+                    .filter(|u| u.starts_with("http"))
+                    .map(|s| s.to_string())
+            })
+            .unwrap_or_default();
+
+        let title = block
+            .split("<h3").nth(1)
+            .and_then(|s| s.split("</h3>").next())
+            .map(|s| strip_html(s).trim().to_string())
+            .unwrap_or_default();
+
+        let snippet = block
+            .split("<span class=\"st\">").nth(1)
+            .or_else(|| block.split("<div class=\"VwiC3b\"").nth(1))
+            .or_else(|| block.split("<span class=\"aCOpRe\"").nth(1))
+            .and_then(|s| s.split("</span>").next())
+            .map(|s| strip_html(s).trim().to_string())
+            .unwrap_or_default();
+
+        if !title.is_empty() && !url.is_empty()
+            && results.iter().all(|r: &SearchResult| r.title != title)
+        {
+            results.push(SearchResult { title, url, snippet });
+        }
+    }
+
+    results
+}
+
+// ── Bing parser ──
+
+fn parse_bing(html: &str, _engine: &str, limit: usize) -> Vec<SearchResult> {
+    let mut results = Vec::new();
+
+    // Bing result blocks: <li class="b_algo">
+    for block in html.split("class=\"b_algo\"").skip(1) {
+        if results.len() >= limit { break; }
+
+        let url = block
+            .split("href=\"").nth(1)
+            .and_then(|s| s.split('"').next())
+            .filter(|u| u.starts_with("http"))
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+
+        let title = block
+            .split("<h2>").nth(1)
+            .or_else(|| block.split("<h2 ").nth(1))
+            .and_then(|s| s.split("</h2>").next())
+            .map(|s| strip_html(s).trim().to_string())
+            .unwrap_or_default();
+
+        let snippet = block
+            .split("<p>").nth(1)
+            .or_else(|| block.split("<p ").nth(1))
+            .and_then(|s| s.split("</p>").next())
+            .map(|s| strip_html(s).trim().to_string())
+            .or_else(|| {
+                block.split("<span class=\"algoSlug_icon\"").nth(1)
+                    .and_then(|s| s.split("</div>").next())
+                    .map(|s| strip_html(s).trim().to_string())
+            })
+            .unwrap_or_default();
+
+        if !title.is_empty() && !url.is_empty()
+            && results.iter().all(|r: &SearchResult| r.title != title)
+        {
+            results.push(SearchResult { title, url, snippet });
+        }
+    }
+
+    results
+}
+
+// ── Baidu parser ──
+
+fn parse_baidu(html: &str, _engine: &str, limit: usize) -> Vec<SearchResult> {
+    let mut results = Vec::new();
+
+    // Baidu result blocks: <div class="result c-container" or <div class="c-container">
+    for block in html.split("class=\"c-container").skip(1) {
+        if results.len() >= limit { break; }
+
+        let url = block
+            .split("href=\"").nth(1)
+            .and_then(|s| s.split('"').next())
+            .filter(|u| u.starts_with("http"))
+            .map(|s| s.to_string())
+            .unwrap_or_default();
+
+        let title = block
+            .split("<h3").nth(1)
+            .and_then(|s| s.split("</h3>").next())
+            .or_else(|| block.split("<a ").nth(1).and_then(|s| s.split("</a>").next()))
+            .map(|s| strip_html(s).trim().to_string())
+            .unwrap_or_default();
+
+        let snippet = block
+            .split("class=\"c-abstract\"").nth(1)
+            .or_else(|| block.split("class=\"c-span-last\"").nth(1))
+            .or_else(|| block.split("<span class=\"content-right_").nth(1))
+            .and_then(|s| s.split("</span>").next())
+            .or_else(|| {
+                block.split("<div class=\"c-span18").nth(1)
+                    .and_then(|s| s.split("</div>").next())
+            })
+            .map(|s| strip_html(s).trim().to_string())
+            .unwrap_or_default();
+
+        if !title.is_empty() && !url.is_empty()
+            && results.iter().all(|r: &SearchResult| r.title != title)
+        {
+            results.push(SearchResult { title, url, snippet });
+        }
+    }
+
+    results
+}
+
+// ── Helpers ──
+
+fn urlencode(s: &str) -> String {
     let mut result = String::new();
     for byte in s.as_bytes() {
         match *byte {
@@ -101,97 +258,35 @@ fn urlencoding(s: &str) -> String {
     result
 }
 
-fn parse_duckduckgo_lite(html: &str, limit: usize) -> Vec<SearchResult> {
-    let mut results = Vec::new();
-
-    // Split into blocks around result links. Each result has:
-    //   <a rel="nofollow" href="..." class="result-link">Title</a>
-    //   <span class="result-snippet">Snippet...</span>
-    let blocks: Vec<&str> = html.split("result-link").collect();
-    for block in &blocks[1..] { // skip first (before any result)
-        if results.len() >= limit { break; }
-
-        let url = extract_between(block, "href=\"", "\"")
-            .map(|u| u.to_string())
-            .unwrap_or_default();
-
-        let title = block
-            .split("</a>").next()
-            .map(|s| {
-                let parts: Vec<&str> = s.split('>').collect();
-                strip_html(parts.last().unwrap_or(&"")).trim().to_string()
-            })
-            .unwrap_or_default();
-
-        // Extract snippet — either from <span class="result-snippet"> or subsequent text
-        let snippet = extract_between(block, "result-snippet\">", "</span>")
-            .or_else(|| {
-                // Fallback: text after </a> up to next <
-                block.split("</a>").nth(1)
-                    .and_then(|s| s.split('<').next())
-                    .map(|s| s.trim())
-                    .filter(|s| s.len() > 20)
-            })
-            .map(|s| strip_html(s).trim().to_string())
-            .unwrap_or_default();
-
-        if !title.is_empty() && !url.is_empty()
-            && results.iter().all(|r: &SearchResult| r.title != title)
-        {
-            results.push(SearchResult { title, url, snippet });
+fn percent_decode(s: &str) -> String {
+    let mut result = String::new();
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h), Some(l)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
+                result.push((h << 4 | l) as char);
+                i += 3;
+                continue;
+            }
+        } else if bytes[i] == b'+' {
+            result.push(' ');
+            i += 1;
+            continue;
         }
+        result.push(bytes[i] as char);
+        i += 1;
     }
-
-    if results.is_empty() {
-        results = parse_duckduckgo_legacy(html, limit);
-    }
-    results
+    result
 }
 
-fn parse_duckduckgo_legacy(html: &str, limit: usize) -> Vec<SearchResult> {
-    let mut results = Vec::new();
-
-    // Parse each result block
-    for block in html.split("result__body") {
-        if results.len() >= limit { break; }
-
-        let title = block
-            .split("result__title\"").nth(1)
-            .and_then(|s| s.split("</a>").next())
-            .map(|s| strip_html(s).trim().to_string())
-            .unwrap_or_default();
-
-        let snippet = block
-            .split("result__snippet\"").nth(1)
-            .and_then(|s| s.split("</").next())
-            .map(|s| strip_html(s).trim().to_string())
-            .unwrap_or_default();
-
-        let url = block
-            .split("result__url\"").nth(1)
-            .and_then(|s| s.split("href=\"").nth(1))
-            .and_then(|s| s.split('"').next())
-            .map(|s| s.trim().to_string())
-            .unwrap_or_default();
-
-        if !title.is_empty() && results.iter().all(|r: &SearchResult| r.title != title) {
-            results.push(SearchResult { title, url, snippet });
-        }
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        _ => None,
     }
-
-    // Fallback: try simpler pattern
-    if results.is_empty() {
-        for block in html.split("result__title") {
-            if results.len() >= limit { break; }
-            let title = block.split("</a>").next().unwrap_or("")
-                .split('>').last().unwrap_or("").trim().to_string();
-            if !title.is_empty() && title.len() < 200 {
-                results.push(SearchResult { title, url: String::new(), snippet: String::new() });
-            }
-        }
-    }
-
-    results
 }
 
 fn strip_html(s: &str) -> String {
@@ -206,10 +301,4 @@ fn strip_html(s: &str) -> String {
         }
     }
     result
-}
-
-fn extract_between<'a>(text: &'a str, start: &str, end: &str) -> Option<&'a str> {
-    let s = text.find(start)? + start.len();
-    let e = text[s..].find(end)?;
-    Some(&text[s..s + e])
 }

@@ -61,6 +61,9 @@ const zh = {
     save: "保存",
     saved: "已保存 ✓",
     apiKeyStorageNote: "API Key 存储在 ~/.worldforge/credentials.json（仅限本机访问）。",
+    advanced: "高级",
+    compressionThreshold: "压缩阈值",
+    compressionThresholdDesc: "当上下文用量超过此百分比时，自动用 LLM 摘要替换更早的对话轮次。",
   },
 
   // Settings — personalization
@@ -139,6 +142,15 @@ const zh = {
     createFailed: (err: unknown) => `创建失败: ${err}`,
     contextTooltip: (used: string, total: string, pct: string) => `上下文: ${used} / ${total} (${pct}%)`,
     contextEmpty: "发送第一条消息后显示详情",
+
+    // Context compression
+    compression: {
+      banner: "更早的对话已压缩",
+      saved: (n: number) => `节省 ${n} tokens`,
+      summaryLabel: "对话摘要",
+    },
+    compressing: "正在压缩上下文...",
+    compressNow: "立即压缩",
   },
 
   // Command palette
@@ -487,6 +499,9 @@ const en: typeof zh = {
     save: "Save",
     saved: "Saved ✓",
     apiKeyStorageNote: "API Key stored in ~/.worldforge/credentials.json (local access only).",
+    advanced: "Advanced",
+    compressionThreshold: "Compression Threshold",
+    compressionThresholdDesc: "Automatically replace earlier turns with an LLM summary when context usage exceeds this percentage.",
   },
 
   personalization: {
@@ -563,6 +578,15 @@ const en: typeof zh = {
     createFailed: (err: unknown) => `Create failed: ${err}`,
     contextTooltip: (used: string, total: string, pct: string) => `Context: ${used} / ${total} (${pct}%)`,
     contextEmpty: "Details appear after the first message",
+
+    // Context compression
+    compression: {
+      banner: "Earlier conversation summarized",
+      saved: (n: number) => `Saved ${n} tokens`,
+      summaryLabel: "Summary",
+    },
+    compressing: "Compressing context...",
+    compressNow: "Compress now",
   },
 
   commands: {

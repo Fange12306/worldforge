@@ -19,35 +19,6 @@ fn old_outline_file(root: &PathBuf, story_id: &str) -> PathBuf {
     root.join("outline").join(format!("{}.md", story_id))
 }
 
-/// Status of a chapter.
-#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ChapterStatus {
-    Outline,
-    Drafting,
-    Done,
-}
-
-impl std::fmt::Display for ChapterStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ChapterStatus::Outline => write!(f, "outline"),
-            ChapterStatus::Drafting => write!(f, "drafting"),
-            ChapterStatus::Done => write!(f, "done"),
-        }
-    }
-}
-
-impl ChapterStatus {
-    fn from_str(s: &str) -> Self {
-        match s {
-            "drafting" => ChapterStatus::Drafting,
-            "done" => ChapterStatus::Done,
-            _ => ChapterStatus::Outline,
-        }
-    }
-}
-
 /// Each chapter lives as its own .md file under outline/<storyId>/
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct ChapterInfo {
@@ -106,8 +77,12 @@ fn strip_body_frontmatter(body: &str) -> &str {
 }
 
 fn build_chapter_md(
-    id: &str, title: &str, order: i32, status: &str, summary: &str, body: &str,
-    time_period: Option<&str>, involved_entries: &[String],
+    id: &str,
+    title: &str,
+    order: i32,
+    status: &str,
+    summary: &str,
+    body: &str,
     linked_events: &[String],
 ) -> String {
     let mut md = String::new();
@@ -117,15 +92,6 @@ fn build_chapter_md(
     md.push_str(&format!("order: {}\n", order));
     md.push_str(&format!("status: {}\n", status));
     md.push_str(&format!("summary: \"{}\"\n", summary));
-    if let Some(tp) = time_period {
-        md.push_str(&format!("time_period: \"{}\"\n", tp));
-    }
-    if !involved_entries.is_empty() {
-        md.push_str(&format!("involved_entries: [{}]\n", involved_entries.iter()
-            .map(|e| format!("\"{}\"", e))
-            .collect::<Vec<_>>()
-            .join(", ")));
-    }
     if !linked_events.is_empty() {
         md.push_str(&format!("linked_events: [{}]\n", linked_events.iter()
             .map(|e| format!("\"{}\"", e))
@@ -188,15 +154,21 @@ fn scan_chapters(dir: &PathBuf) -> Result<Vec<ChapterInfo>, String> {
     Ok(chapters)
 }
 
-/// Find chapter file by order prefix.
-fn find_chapter_file(dir: &PathBuf, order: i32) -> Option<PathBuf> {
+/// Find chapter file by immutable frontmatter id.
+fn find_chapter_file_by_id(dir: &PathBuf, chapter_id: &str) -> Option<PathBuf> {
     if !dir.exists() { return None; }
-    let prefix = format!("{:02}-", order);
     fs::read_dir(dir).ok()?.flatten().find_map(|e| {
-        let name = e.file_name().to_string_lossy().to_string();
-        if name.starts_with(&prefix) && name.ends_with(".md") {
-            Some(e.path())
-        } else { None }
+        let path = e.path();
+        if !path.extension().map_or(false, |ext| ext == "md") {
+            return None;
+        }
+        let content = fs::read_to_string(&path).ok()?;
+        let (fields, _) = parse_chapter_file(&content);
+        if fields.get("id").map(|id| id == chapter_id).unwrap_or(false) {
+            Some(path)
+        } else {
+            None
+        }
     })
 }
 
@@ -220,7 +192,7 @@ fn migrate_old_outline(root: &PathBuf, story_id: &str) -> Result<(), String> {
             // Flush previous chapter
             if !current_title.is_empty() {
                 order += 1;
-                let md = build_chapter_md(&Uuid::new_v4().to_string(), &current_title, order, "outline", "", &current_body, None, &[], &[]);
+                let md = build_chapter_md(&Uuid::new_v4().to_string(), &current_title, order, "outline", "", &current_body, &[]);
                 let filename = sanitize_filename(&current_title);
                 let _ = fs::write(dir.join(format!("{:02}-{}.md", order, filename)), &md);
             }
@@ -234,7 +206,7 @@ fn migrate_old_outline(root: &PathBuf, story_id: &str) -> Result<(), String> {
     // Flush last chapter
     if !current_title.is_empty() {
         order += 1;
-        let md = build_chapter_md(&Uuid::new_v4().to_string(), &current_title, order, "outline", "", &current_body, None, &[], &[]);
+        let md = build_chapter_md(&Uuid::new_v4().to_string(), &current_title, order, "outline", "", &current_body, &[]);
         let filename = sanitize_filename(&current_title);
         let _ = fs::write(dir.join(format!("{:02}-{}.md", order, filename)), &md);
     }
@@ -263,11 +235,11 @@ pub fn read_outline(world_path: String, story_id: String) -> Result<Vec<ChapterI
 }
 
 #[tauri::command]
-pub fn read_chapter(world_path: String, story_id: String, chapter_order: i32) -> Result<String, String> {
+pub fn read_chapter(world_path: String, story_id: String, chapter_id: String) -> Result<String, String> {
     let root = expand(&world_path);
     let dir = outline_dir(&root, &story_id);
-    let file = find_chapter_file(&dir, chapter_order)
-        .ok_or_else(|| format!("章节 {} 不存在", chapter_order))?;
+    let file = find_chapter_file_by_id(&dir, &chapter_id)
+        .ok_or_else(|| format!("章节 {} 不存在", chapter_id))?;
     fs::read_to_string(&file).map_err(|e| format!("读取失败: {}", e))
 }
 
@@ -275,76 +247,72 @@ pub fn read_chapter(world_path: String, story_id: String, chapter_order: i32) ->
 pub fn write_outline(
     world_path: String,
     story_id: String,
-    chapter_order: i32,
-    title: String,
+    chapter_id: Option<String>,
+    order: Option<i32>,
+    title: Option<String>,
     status: Option<String>,
     summary: Option<String>,
     body: Option<String>,
-    time_period: Option<String>,
-    involved_entries: Option<String>,
     linked_events: Option<String>,  // 🆕 Phase 5: "timeline_id:event_id,timeline_id:event_id"
-) -> Result<(), String> {
+) -> Result<ChapterInfo, String> {
     let root = expand(&world_path);
     // Auto-migrate
     migrate_old_outline(&root, &story_id)?;
     let dir = outline_dir(&root, &story_id);
     fs::create_dir_all(&dir).map_err(|e| format!("创建大纲目录失败: {}", e))?;
 
-    let inv_entries: Vec<String> = involved_entries
-        .unwrap_or_default()
-        .split(',')
-        .map(|s| s.trim().trim_matches('"').to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
-
+    let linked_events_provided = linked_events.is_some();
     let linked_evts: Vec<String> = linked_events
+        .as_deref()
         .unwrap_or_default()
         .split(',')
         .map(|s| s.trim().trim_matches('"').to_string())
         .filter(|s| !s.is_empty())
         .collect();
 
-    if let Some(existing) = find_chapter_file(&dir, chapter_order) {
+    if let Some(chapter_id) = chapter_id {
+        let existing = find_chapter_file_by_id(&dir, &chapter_id)
+            .ok_or_else(|| format!("章节 {} 不存在", chapter_id))?;
         // Update existing chapter — merge fields
         let content = fs::read_to_string(&existing).map_err(|e| format!("读取章节失败: {}", e))?;
         let (mut fields, old_body) = parse_chapter_file(&content);
-        // Preserve existing UUID or generate one for legacy chapters without id
-        let chapter_id = fields.get("id").cloned().filter(|s| !s.is_empty())
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
         let old_title = fields.get("title").cloned().unwrap_or_default();
-        fields.insert("title".into(), title.clone());
-        fields.insert("order".into(), chapter_order.to_string());
+        let next_title = title.unwrap_or_else(|| old_title.clone());
+        let next_order = order.unwrap_or_else(|| fields.get("order").and_then(|v| v.parse().ok()).unwrap_or(0));
+        fields.insert("id".into(), chapter_id.clone());
+        fields.insert("title".into(), next_title.clone());
+        fields.insert("order".into(), next_order.to_string());
         if let Some(s) = status { fields.insert("status".into(), s); }
         if let Some(s) = summary { fields.insert("summary".into(), s); }
-        if time_period.is_some() { fields.insert("time_period".into(), time_period.clone().unwrap_or_default()); }
-        if !inv_entries.is_empty() {
-            fields.insert("involved_entries".into(), inv_entries.iter()
-                .map(|e| format!("\"{}\"", e))
-                .collect::<Vec<_>>()
-                .join(", "));
-        }
-        if !linked_evts.is_empty() {
+        let next_linked_evts = if linked_events_provided {
             fields.insert("linked_events".into(), linked_evts.iter()
                 .map(|e| format!("\"{}\"", e))
                 .collect::<Vec<_>>()
                 .join(", "));
-        }
+            linked_evts.clone()
+        } else {
+            fields.get("linked_events").map(|v| {
+                v.trim_matches('"').trim_matches('[').trim_matches(']')
+                    .split(',')
+                    .map(|s| s.trim().trim_matches('"').to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect::<Vec<_>>()
+            }).unwrap_or_default()
+        };
         let new_body = body.unwrap_or(old_body);
         let new_md = build_chapter_md(
             &chapter_id,
-            &title,
-            chapter_order,
+            &next_title,
+            next_order,
             &fields.get("status").cloned().unwrap_or_else(|| "outline".into()),
             &fields.get("summary").cloned().unwrap_or_default(),
             &new_body,
-            fields.get("time_period").map(|s| s.as_str()),
-            &inv_entries,
-            &linked_evts,
+            &next_linked_evts,
         );
         // Rename file if title changed
-        let new_filename = format!("{:02}-{}.md", chapter_order, sanitize_filename(&title));
+        let new_filename = format!("{:02}-{}.md", next_order, sanitize_filename(&next_title));
         let new_path = existing.parent().unwrap_or(&dir).join(&new_filename);
-        if new_path != existing && title != old_title {
+        if new_path != existing {
         fs::write(&new_path, &new_md).map_err(|e| format!("写入失败: {}", e))?;
             if existing != new_path { let _ = fs::remove_file(&existing); }
         } else {
@@ -352,21 +320,46 @@ pub fn write_outline(
         }
 
         // 🆕 Phase 5: Sync linked events — backfill event.linked_chapters
-        sync_outline_event_links(&world_path, &story_id, chapter_order, &chapter_id, &linked_evts)?;
-        Ok(())
+        sync_outline_event_links(&world_path, &story_id, next_order, &chapter_id, &next_linked_evts)?;
+        Ok(ChapterInfo {
+            id: chapter_id,
+            order: next_order,
+            title: next_title,
+            status: fields.get("status").cloned().unwrap_or_else(|| "outline".into()),
+            summary: fields.get("summary").cloned().unwrap_or_default(),
+            has_body: !new_body.trim().is_empty(),
+            word_count: new_body.chars().count(),
+            time_period: None,
+            involved_entries: Vec::new(),
+            linked_events: next_linked_evts,
+        })
     } else {
         // Create new chapter file
+        let title = title.ok_or_else(|| "创建章节需要 title".to_string())?;
+        let chapter_order = order.ok_or_else(|| "创建章节需要 order".to_string())?;
         let filename = sanitize_filename(&title);
         let st = status.unwrap_or_else(|| "outline".into());
         let sm = summary.unwrap_or_default();
         let bd = body.unwrap_or_default();
         let chapter_id = Uuid::new_v4().to_string();
-        let md = build_chapter_md(&chapter_id, &title, chapter_order, &st, &sm, &bd, time_period.as_deref(), &inv_entries, &linked_evts);
+        let md = build_chapter_md(&chapter_id, &title, chapter_order, &st, &sm, &bd, &linked_evts);
         let path = dir.join(format!("{:02}-{}.md", chapter_order, filename));
         fs::write(&path, &md).map_err(|e| format!("写入失败: {}", e))?;
 
         // 🆕 Phase 5: Sync linked events
-        sync_outline_event_links(&world_path, &story_id, chapter_order, &chapter_id, &linked_evts)
+        sync_outline_event_links(&world_path, &story_id, chapter_order, &chapter_id, &linked_evts)?;
+        Ok(ChapterInfo {
+            id: chapter_id,
+            order: chapter_order,
+            title,
+            status: st,
+            summary: sm,
+            has_body: !bd.trim().is_empty(),
+            word_count: bd.chars().count(),
+            time_period: None,
+            involved_entries: Vec::new(),
+            linked_events: linked_evts,
+        })
     }
 }
 
@@ -461,10 +454,10 @@ fn sync_outline_event_links(
 }
 
 #[tauri::command]
-pub fn delete_chapter(world_path: String, story_id: String, chapter_order: i32) -> Result<(), String> {
+pub fn delete_chapter(world_path: String, story_id: String, chapter_id: String) -> Result<(), String> {
     let root = expand(&world_path);
     let dir = outline_dir(&root, &story_id);
-    let file = find_chapter_file(&dir, chapter_order)
-        .ok_or_else(|| format!("章节 {} 不存在", chapter_order))?;
+    let file = find_chapter_file_by_id(&dir, &chapter_id)
+        .ok_or_else(|| format!("章节 {} 不存在", chapter_id))?;
     fs::remove_file(&file).map_err(|e| format!("删除失败: {}", e))
 }

@@ -74,7 +74,3 @@ where
 pub fn load_graph(world_path: &str) -> Result<RelationGraph, String> {
     JsonFileStorage.load(world_path)
 }
-
-pub fn save_graph(world_path: &str, graph: &RelationGraph) -> Result<(), String> {
-    JsonFileStorage.save(world_path, graph)
-}

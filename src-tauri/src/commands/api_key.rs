@@ -4,10 +4,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
-
-static STORE: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
 
 fn store_path() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());

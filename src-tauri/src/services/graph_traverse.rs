@@ -114,20 +114,4 @@ impl GraphIndex {
         results
     }
 
-    /// Check if a specific relation exists between two entities
-    pub fn has_relation(
-        &self,
-        from_type: &EntityType,
-        from_id: &str,
-        to_type: &EntityType,
-        to_id: &str,
-    ) -> bool {
-        let from_key = entity_key(from_type, from_id);
-        let to_key = entity_key(to_type, to_id);
-        self.adjacency
-            .get(&from_key)
-            .map_or(false, |neighbors| {
-                neighbors.iter().any(|(n, _)| n == &to_key)
-            })
-    }
 }

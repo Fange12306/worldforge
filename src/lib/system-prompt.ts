@@ -7,6 +7,7 @@ export function buildSystemPrompt(
   _entries: Entry[],
   timelines?: Timeline[],
   customPrompt?: string,
+  worldPrompt?: string,
   language: "zh" | "en" = "zh",
 ): string {
   const isEn = language === "en";
@@ -67,8 +68,8 @@ export function buildSystemPrompt(
     }
   }
 
-  const lines = isEn ? buildEnPrompt(worldName, storyTitle, customPrompt, timeFormatSection, skillPrompts)
-    : buildZhPrompt(worldName, storyTitle, customPrompt, timeFormatSection, skillPrompts);
+  const lines = isEn ? buildEnPrompt(worldName, storyTitle, customPrompt, worldPrompt, timeFormatSection, skillPrompts)
+    : buildZhPrompt(worldName, storyTitle, customPrompt, worldPrompt, timeFormatSection, skillPrompts);
 
   return lines.filter(Boolean).join("\n\n");
 }
@@ -77,6 +78,7 @@ function buildZhPrompt(
   worldName: string,
   storyTitle: string,
   customPrompt: string | undefined,
+  worldPrompt: string | undefined,
   timeFormatSection: string,
   skillPrompts: string,
 ): string[] {
@@ -84,6 +86,8 @@ function buildZhPrompt(
     `你是 WorldForge，帮助用户管理"${worldName}"的设定词条，辅助创作"${storyTitle}"。用中文。`,
 
     customPrompt ? `# Custom Instructions\n${customPrompt}` : "",
+
+    worldPrompt ? `# World Guidance\n${worldPrompt}` : "",
 
     `# System`,
     `- 工具在用户确认后执行。如果用户拒绝了一个工具调用，不要用相同参数重试。`,
@@ -120,12 +124,12 @@ function buildZhPrompt(
     ``,
     `## 图遍历`,
     `- ExploreGraph(entity_type, entity_id, mode?, max_depth?, timeline_id?): mode="direct" 查直接关联，mode="traverse" 做 BFS 多跳遍历。entity_type: entry/outline/timeline/event。传入 timeline_id 时只返回跨时间轴边 + 该时间轴的事件关系边。`,
-    `- entity_id 的取值：entity_type="entry" 用 EntrySearch 返回的 id；entity_type="outline" 用 OutlineRead 列表返回的 id (UUID)；entity_type="timeline" 用 ListTimelines 返回的 id；entity_type="event" 用 ListEvents 返回的 id 或 name。`,
+    `- entity_id 的取值：entity_type="entry" 用 EntrySearch 返回的 id；entity_type="outline" 用 OutlineRead 列表返回的 id (UUID)；entity_type="timeline" 用 ListTimelines 返回的 id；entity_type="event" 只用 ListEvents 返回的 id。`,
     `- 创作前用它了解相关角色、地点、组织的间接关联。`,
     ``,
     `## 关系建立`,
     `- 关系分两条路径，互不替代：`,
-    `  1) Relation — 词条之间的本质关系，跨所有时间轴成立。如"张三是李四的父亲""精灵族起源于生命之树"。只有关系的成立不依赖任何事件时才用。传入 delete:true 可移除关系。`,
+    `  1) Relation — 词条之间的本质关系，跨所有时间轴成立。如"张三是李四的父亲""精灵族起源于生命之树"。只有关系的成立不依赖任何事件时才用。创建关系传 from/to/description；更新或删除关系前先用 ExploreGraph/QueryRelations 拿 relation_id，再传 relation_id 修改字段或 relation_id + delete:true。`,
     `  2) Event 的 relationship_changes — 某个事件导致的关系变化，绑定特定时间轴。如"张三在战斗中救了李四，两人结为盟友"——只在当前时间轴成立，平行世界的同一事件可能走向不同。`,
     `- 判断标准：问自己"换个世界线，这个关系还成立吗？" 成立→Relation；不一定→事件的 relationship_changes。`,
     `- 写完章节后，后端 OutlineWrite 会自动建立章节↔事件的关联图边和反向填充 linked_chapters，不需要手动调 Relation。`,
@@ -138,7 +142,7 @@ function buildZhPrompt(
     `- FileRead 读文件/列目录：无参列根目录，path 以 / 结尾列子目录（如 "memory/"），path 为文件路径读内容。Memory(file_name) 无 content 读取记忆，传 content 写入。`,
     ``,
     `## 大纲`,
-    `- OutlineRead 列所有章节（返回每章的 id (UUID)、order、title、status、word_count）；OutlineRead(chapter_order) 读全文；OutlineWrite 创建/更新章，用 linked_events 关联时间轴事件。`,
+    `- OutlineRead 列所有章节（返回每章的 id (UUID)、order、title、status、word_count）；OutlineRead(chapter_id) 读全文；OutlineWrite 创建章时传 title/order，更新或删除章时用 chapter_id，order 只是可变排序字段。用 linked_events 关联时间轴事件。`,
 
     `# Consistency`,
     `- 约束检查必须在写入前执行，不允许先写后报。流程：`,
@@ -148,7 +152,7 @@ function buildZhPrompt(
     `  4. 用户确认或没有硬违反 → 执行 EntryWrite / EventWrite / OutlineWrite 等写入操作`,
     `- 触发条件：`,
     `  - EntryWrite: 当该词条自身有 constraints 字段时，先检查再写`,
-    `  - OutlineWrite: 章的 involved_entries 中有约束词条时，先检查再写`,
+    `  - OutlineWrite: 写章节正文前，先根据 linked_events 相关事件和词条约束检查`,
     `  - EventWrite: linked_entries 中有约束词条时，先检查再写（传入 timeline_id）。删除事件 (delete:true) 不触发约束检查。`,
     `  - Relation: 关系两端有约束词条时，先检查再写。删除关系 (delete:true) 不触发约束检查`,
     `  - 用户主动说"检查一致性"、"校验世界"时，遍历所有带约束的词条逐一调用 ConsistencyCheck`,
@@ -156,6 +160,13 @@ function buildZhPrompt(
     `- 约束带 timeline_id 时，只在该时间线生效（空 = 通用）。系统自动过滤。`,
     `- 软约束提醒即可不阻断；硬约束必须报告 + 等待用户确认。`,
     `- 用户表示"有意为之"后用 Memory 记录例外。`,
+    ``,
+    `# 何时为词条添加 constraints`,
+    `- 用户明确说出"必须"/"不能"/"永远"/"设定"/"法则"等规则性语句时，主动为其关联词条添加 constraints。`,
+    `- 用户描述世界的基本物理法则、社会组织规则、角色行为准则时，适时建议添加约束。`,
+    `- 一致性检查中反复出现同类问题时，主动建议添加约束以固化规则。`,
+    `- 不添加的情况：一次性描述（无复用价值）、纯故事叙述（非设定内容）、临时性说明。`,
+    `- 添加约束时通过 EntryWrite 的 constraints 参数写入，不要单独说明"需要添加约束"而不写入。`,
 
     `# Timeline & Events`,
     `- 事件连接词条和大纲。一个事件坐落在时间轴的唯一时间点上，可关联多个词条和多个大纲章。同一词条可能在不同时间轴上参与不同事件——这意味着只看词条本身的属性不足以了解它的完整历史。`,
@@ -195,6 +206,7 @@ function buildEnPrompt(
   worldName: string,
   storyTitle: string,
   customPrompt: string | undefined,
+  worldPrompt: string | undefined,
   timeFormatSection: string,
   skillPrompts: string,
 ): string[] {
@@ -202,6 +214,8 @@ function buildEnPrompt(
     `You are WorldForge, helping the user manage setting entries for "${worldName}" and assist with writing "${storyTitle}". Respond in English.`,
 
     customPrompt ? `# Custom Instructions\n${customPrompt}` : "",
+
+    worldPrompt ? `# World Guidance\n${worldPrompt}` : "",
 
     `# System`,
     `- Tools execute after user confirmation. If the user denies a tool call, do not retry with the same parameters.`,
@@ -238,12 +252,12 @@ function buildEnPrompt(
     ``,
     `## Graph Traversal`,
     `- ExploreGraph(entity_type, entity_id, mode?, max_depth?, timeline_id?): mode="direct" for direct relations, mode="traverse" for BFS multi-hop traversal. entity_type: entry/outline/timeline/event. When timeline_id is passed, only returns cross-timeline edges + event relation edges for that timeline.`,
-    `- entity_id values: for entity_type="entry" use the id from EntrySearch; entity_type="outline" use the id (UUID) from OutlineRead list; entity_type="timeline" use the id from ListTimelines; entity_type="event" use the id or name from ListEvents.`,
+    `- entity_id values: for entity_type="entry" use the id from EntrySearch; entity_type="outline" use the id (UUID) from OutlineRead list; entity_type="timeline" use the id from ListTimelines; entity_type="event" only use the id from ListEvents.`,
     `- Use it before writing to understand indirect connections between relevant characters, locations, and organizations.`,
     ``,
     `## Building Relationships`,
     `- Relationships follow two paths, neither replacing the other:`,
-    `  1) Relation — essential relationships between entries, valid across all timelines. E.g. "Zhang San is Li Si's father", "Elves originated from the Tree of Life". Only use when the relationship's existence doesn't depend on any event. Pass delete:true to remove a relation.`,
+    `  1) Relation — essential relationships between entries, valid across all timelines. E.g. "Zhang San is Li Si's father", "Elves originated from the Tree of Life". Only use when the relationship's existence doesn't depend on any event. Create with from/to/description; before updating or deleting, use ExploreGraph/QueryRelations to get relation_id, then pass relation_id plus changed fields or relation_id + delete:true.`,
     `  2) Event relationship_changes — relationship changes caused by a specific event, bound to a specific timeline. E.g. "Zhang San saved Li Si in battle, and the two became allies" — only valid on the current timeline; parallel world versions of the same event may diverge.`,
     `- Criterion: ask yourself "if we change worldlines, would this relationship still hold?" Yes → Relation; Not necessarily → event relationship_changes.`,
     `- After writing a chapter, the backend OutlineWrite automatically creates chapter↔event graph edges and back-fills linked_chapters — no need to manually call Relation.`,
@@ -256,7 +270,7 @@ function buildEnPrompt(
     `- FileRead reads files/lists directories: no args lists root, path ending with / lists subdirectories (e.g. "memory/"), path as file path reads content. Memory(file_name) without content reads the memory, with content writes it.`,
     ``,
     `## Outline`,
-    `- OutlineRead lists all chapters (returns id (UUID), order, title, status, word_count per chapter); OutlineRead(chapter_order) reads full text; OutlineWrite creates/updates chapters, use linked_events to associate timeline events.`,
+    `- OutlineRead lists all chapters (returns id (UUID), order, title, status, word_count per chapter); OutlineRead(chapter_id) reads full text; OutlineWrite creates chapters with title/order, updates or deletes chapters by chapter_id, and treats order as a mutable sort field. Use linked_events to associate timeline events.`,
 
     `# Consistency`,
     `- Constraint checks MUST run before writes; never write first and report after. Flow:`,
@@ -266,7 +280,7 @@ function buildEnPrompt(
     `  4. User confirms or no hard violations → execute EntryWrite / EventWrite / OutlineWrite etc.`,
     `- Trigger conditions:`,
     `  - EntryWrite: when the entry itself has a constraints field, check before writing`,
-    `  - OutlineWrite: when the chapter's involved_entries include constrained entries, check before writing`,
+    `  - OutlineWrite: before writing chapter body, check constraints from entries related through linked_events`,
     `  - EventWrite: when linked_entries include constrained entries, check before writing (pass timeline_id). Deleting events (delete:true) does not trigger constraint check.`,
     `  - Relation: when either end of the relation has constrained entries, check before writing. Deleting relations (delete:true) does not trigger constraint check.`,
     `  - User explicitly says "check consistency" or "validate world": iterate all constrained entries and call ConsistencyCheck for each`,

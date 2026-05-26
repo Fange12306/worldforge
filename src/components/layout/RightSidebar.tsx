@@ -9,7 +9,7 @@ type Tab = "entries" | "outline" | "resources";
 
 type Props = {
   onSelectEntry: (entry: Entry) => void;
-  onSelectOutlineChapter: (chapterOrder: number) => void;
+  onSelectOutlineChapter: (chapter: ChapterInfo) => void;
   onSelectFile?: (fileName: string) => void;
   onSelectMemory?: (fileName: string) => void;
   onClose: () => void;
@@ -144,7 +144,7 @@ function EntriesTab({ entries, onSelect, onRefresh, worldPath }: { entries: Entr
   );
 }
 
-function OutlineTab({ worldPath, storyId, refreshKey, onClick }: { worldPath: string; storyId: string; refreshKey?: number; onClick: (chapterOrder: number) => void }) {
+function OutlineTab({ worldPath, storyId, refreshKey, onClick }: { worldPath: string; storyId: string; refreshKey?: number; onClick: (chapter: ChapterInfo) => void }) {
   const { t } = useT();
   const [chapters, setChapters] = useState<ChapterInfo[]>([]);
   useEffect(() => {
@@ -159,7 +159,7 @@ function OutlineTab({ worldPath, storyId, refreshKey, onClick }: { worldPath: st
     <div className="p-2">
       {chapters.length > 0 ? (
         chapters.map((ch) => (
-          <button key={ch.order} onClick={() => onClick(ch.order)} className="w-full text-left text-[11px] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded px-2 py-1 transition-colors">
+            <button key={ch.id} onClick={() => onClick(ch)} className="w-full text-left text-[11px] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded px-2 py-1 transition-colors">
             <span className={statusColor(ch.status)}>{statusIcon(ch.status)}</span>{" "}
             <span>Ch{ch.order} {ch.title}</span>
             {ch.word_count > 0 && <span className="text-ink-muted ml-1">({ch.word_count}{t.common.words})</span>}
@@ -255,4 +255,3 @@ function ResourcesTab({ worldPath, conversationId, onSelectFile, onSelectMemory 
     </div>
   );
 }
-

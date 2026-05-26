@@ -21,7 +21,7 @@ export function CollapsedGroupMessage({ group }: { group: CollapsedGroup }) {
       else if (tc.name === "TraverseGraph") hint = `${input.entity_id || ""} (${input.max_depth || 1}跳)`;
       else if (tc.name === "ConsistencyCheck") hint = `${(input.passage as string || "").slice(0, 30)}…`;
       else if (tc.name === "UseSkill") hint = (input.name as string) || "列出技能";
-      else hint = (input.query || input.id || input.chapter_order || input.pattern || input.path || input.subdir || "") as string;
+      else hint = (input.query || input.chapter_id || input.id || input.order || input.pattern || input.path || input.subdir || "") as string;
     }
 
     const label = hint ? `${tc.name} ${String(hint)}` : tc.name;

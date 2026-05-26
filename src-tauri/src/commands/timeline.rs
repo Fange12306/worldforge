@@ -282,7 +282,7 @@ pub fn create_event(
     relationship_changes: Option<String>,
 ) -> Result<Event, String> {
     // Generate name from summary if not provided
-    let event_name = name.unwrap_or_else(|| {
+    let event_display_name = name.unwrap_or_else(|| {
         // Simple slug: take first 30 chars of summary, replace problematic chars
         let s = summary.chars().take(30).collect::<String>();
         s.chars()
@@ -319,7 +319,7 @@ pub fn create_event(
 
     let event = Event {
         id: Uuid::new_v4().to_string(),
-        name: event_name,
+        name: event_display_name,
         timeline_id: timeline_id.clone(),
         time_point,
         precision: precision.map(|p| if p > 0 { Some(p) } else { None }).flatten(),
@@ -347,8 +347,7 @@ pub fn create_event(
 pub fn update_event(
     world_path: String,
     timeline_id: String,
-    event_id: Option<String>,      // UUID or name for lookup; supports both
-    event_name: Option<String>,    // readable slug for lookup by name
+    event_id: Option<String>,
     time_point: Option<String>,
     summary: Option<String>,
     name_update: Option<String>,   // rename the event
@@ -358,16 +357,11 @@ pub fn update_event(
     relationship_changes: Option<String>,
 ) -> Result<Event, String> {
     let mut event_list = load_events(&world_path, &timeline_id)?;
-    let pos = if let Some(ref name) = event_name {
+    let event_id = event_id.ok_or_else(|| "必须提供 event_id".to_string())?;
+    let pos = {
         event_list.events.iter()
-            .position(|e| e.name == *name)
-            .ok_or_else(|| format!("事件 {} 不存在", name))?
-    } else if let Some(ref id) = event_id {
-        event_list.events.iter()
-            .position(|e| e.id == *id)
-            .ok_or_else(|| format!("事件 {} 不存在", id))?
-    } else {
-        return Err("必须提供 event_id 或 event_name".into());
+            .position(|e| e.id == event_id)
+            .ok_or_else(|| format!("事件 {} 不存在", event_id))?
     };
 
     // Save old state for cascade diff
@@ -414,7 +408,10 @@ pub fn update_event(
     event_list.events.sort_by(|a, b| a.time_point.cmp(&b.time_point));
     save_events(&world_path, &timeline_id, &event_list)?;
 
-    let updated_event = event_list.events[pos].clone();
+    let updated_event = event_list.events.iter()
+        .find(|e| e.id == event_id)
+        .cloned()
+        .ok_or_else(|| "更新后的事件不存在".to_string())?;
 
     // Cascade: remove old relations, apply new ones
     event_cascade::on_event_updated(&world_path, &old_event, &updated_event)?;
@@ -427,21 +424,15 @@ pub fn delete_event(
     world_path: String,
     timeline_id: String,
     event_id: Option<String>,
-    event_name: Option<String>,
 ) -> Result<(), String> {
     let mut event_list = load_events(&world_path, &timeline_id)?;
-    let event = if let Some(ref name) = event_name {
+    let event_id = event_id.ok_or_else(|| "必须提供 event_id".to_string())?;
+    let event = {
         event_list.events.iter()
-            .find(|e| e.name == *name)
+            .find(|e| e.id == event_id)
             .cloned()
-    } else if let Some(ref id) = event_id {
-        event_list.events.iter()
-            .find(|e| e.id == *id)
-            .cloned()
-    } else {
-        return Err("必须提供 event_id 或 event_name".into());
     }
-        .ok_or_else(|| format!("事件不存在 (id: {:?}, name: {:?})", event_id, event_name))?;
+        .ok_or_else(|| format!("事件不存在 (id: {})", event_id))?;
 
     let event_id_to_remove = &event.id;
     event_list.events.retain(|e| e.id != *event_id_to_remove);
@@ -492,20 +483,14 @@ pub fn move_event(
     world_path: String,
     timeline_id: String,
     event_id: Option<String>,
-    event_name: Option<String>,
     new_time_point: String,
 ) -> Result<Event, String> {
     let mut event_list = load_events(&world_path, &timeline_id)?;
-    let event = if let Some(ref name) = event_name {
+    let event_id = event_id.ok_or_else(|| "必须提供 event_id".to_string())?;
+    let event = {
         event_list.events.iter_mut()
-            .find(|e| e.name == *name)
-            .ok_or_else(|| format!("事件 {} 不存在", name))?
-    } else if let Some(ref id) = event_id {
-        event_list.events.iter_mut()
-            .find(|e| e.id == *id)
-            .ok_or_else(|| format!("事件 {} 不存在", id))?
-    } else {
-        return Err("必须提供 event_id 或 event_name".into());
+            .find(|e| e.id == event_id)
+            .ok_or_else(|| format!("事件 {} 不存在", event_id))?
     };
 
     event.time_point = new_time_point;

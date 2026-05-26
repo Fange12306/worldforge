@@ -94,6 +94,7 @@ function getTools(): ToolDef[] {
         name: { type: "string", description: "Entry display name" },
         entry_type: { type: "string", description: "Entry type slug (character/location/organization/system/artifact/era/concept). Required for new entries; can also be used to change an existing entry's type." },
         body: { type: "string", description: "MANDATORY: the entry's full markdown body content. If you don't pass this, the file will be empty. Anything you want to save must go here." },
+        constraints: { type: "array", items: { type: "object", properties: { rule: { type: "string", description: "The constraint rule text" }, severity: { type: "string", enum: ["hard", "soft"], description: "hard = must pass (blocks write), soft = reminder only" }, timeline_id: { type: "string", description: "Optional timeline ID to scope this constraint" } }, required: ["rule", "severity"] }, description: "Optional list of consistency constraints for this entry. Omit to keep existing (on update) or leave empty (on create). Pass [] to clear existing constraints." },
       },
       required: ["name"],
     },
@@ -136,11 +137,11 @@ function getTools(): ToolDef[] {
   },
   {
     name: "OutlineRead",
-    description: "Read the story outline. Pass chapter_order to read a specific chapter's full content; omit to list all chapters with title, status, summary, and word count.",
+    description: "Read the story outline. Pass chapter_id to read a specific chapter's full content; omit to list all chapters with id, order, title, status, summary, and word count.",
     input_schema: {
       type: "object",
       properties: {
-        chapter_order: { type: "number", description: "Optional: chapter order number to read full body. Omit to list all chapters." },
+        chapter_id: { type: "string", description: "Optional: chapter UUID from OutlineRead list. Omit to list all chapters." },
       },
       required: [],
     },
@@ -151,17 +152,16 @@ function getTools(): ToolDef[] {
     input_schema: {
       type: "object",
       properties: {
-        chapter_order: { type: "number", description: "Chapter order number (1, 2, 3...)" },
-        title: { type: "string", description: "Chapter title" },
-        delete: { type: "boolean", description: "Set to true to DELETE this chapter. Irreversible." },
+        chapter_id: { type: "string", description: "Existing chapter UUID. Required for update/delete. Omit to create a new chapter." },
+        order: { type: "number", description: "Chapter order number (1, 2, 3...). Required for new chapters; optional when updating/reordering." },
+        title: { type: "string", description: "Chapter title. Required for new chapters; optional when updating/renaming." },
+        delete: { type: "boolean", description: "Set to true to DELETE this chapter. Requires chapter_id. Irreversible." },
         status: { type: "string", description: "Chapter status: 'outline', 'drafting', or 'done'" },
         summary: { type: "string", description: "Brief summary of this chapter" },
         body: { type: "string", description: "The actual chapter text / draft content" },
-        time_period: { type: "string", description: "World timeline period, e.g. '355,355' for a single year or '341,349' for a range" },
-        involved_entries: { type: "string", description: "Comma-separated entry IDs that appear in this chapter, e.g. '艾琳-暗月,暗月要塞'" },
         linked_events: { type: "string", description: "Comma-separated 'timeline_id:event_id' pairs for linking chapter to timeline events. Format: 'tl-id:evt-id,tl-id:evt-id2'" },
       },
-      required: ["chapter_order", "title"],
+      required: [],
     },
   },
   {
@@ -206,18 +206,20 @@ function getTools(): ToolDef[] {
   },
   {
     name: "Relation",
-    description: "Create or remove a relation between two entities. Pass delete:true to remove. Both entities can be any type (entry/outline/timeline). REQUIRES PERMISSION.",
+    description: ta.relationToolDesc,
     input_schema: {
       type: "object",
       properties: {
-        from_type: { type: "string", description: "Source entity type: 'entry', 'outline', 'timeline'" },
+        relation_id: { type: "string", description: ta.relationId },
+        from_type: { type: "string", description: ta.relationSourceType },
         from_id: { type: "string", description: "Source entity ID" },
-        to_type: { type: "string", description: "Target entity type" },
+        to_type: { type: "string", description: ta.relationTargetType },
         to_id: { type: "string", description: "Target entity ID" },
         description: { type: "string", description: ta.relationDesc },
-        delete: { type: "boolean", description: "Set to true to REMOVE this relation. REQUIRES PERMISSION." },
+        timeline_id: { type: "string", description: ta.relationTimeline },
+        delete: { type: "boolean", description: "Set to true to REMOVE this relation. Requires relation_id." },
       },
-      required: ["from_type", "from_id", "to_type", "to_id", "description"],
+      required: [],
     },
   },
   {
@@ -227,7 +229,7 @@ function getTools(): ToolDef[] {
       type: "object",
       properties: {
         passage: { type: "string", description: "The text passage to check for consistency violations." },
-        entity_type: { type: "string", description: "Starting entity type for graph traversal: 'entry', 'outline', 'timeline'. Use with entity_id." },
+        entity_type: { type: "string", description: ta.consistencyEntityType },
         entity_id: { type: "string", description: "Starting entity ID for graph traversal. The tool will traverse 1 hop to find related entries and load their constraints." },
         entity_ids: { type: "array", items: { type: "string" }, description: "Alternative: directly specify which entry IDs to load constraints from (skips graph traversal)." },
       },
@@ -245,18 +247,18 @@ function getTools(): ToolDef[] {
   },
   {
     name: "TimelineWrite",
-    description: "Create, update, or delete a timeline. Pass timeline_id + delete:true to delete (world must have ≥2 timelines). Pass timeline_id to update an existing timeline. Omit timeline_id to create new. The first timeline in a world is auto-marked as default.",
+    description: ta.timelineWriteDesc,
     input_schema: {
       type: "object",
       properties: {
         timeline_id: { type: "string", description: "Existing timeline ID. Omit to create new. Required for update/delete." },
         delete: { type: "boolean", description: "Set to true to DELETE this timeline and all its events (requires timeline_id). World must have ≥2 timelines." },
-        name: { type: "string", description: "Timeline display name. Required for new timelines." },
+        name: { type: "string", description: ta.timelineName },
         description: { type: "string", description: "Optional description" },
         time_format_json: { type: "string", description: "Optional JSON TimeFormat (only for new timelines). If omitted, uses standard medieval fantasy format." },
         is_default: { type: "boolean", description: "Set as the default timeline (update only)" },
       },
-      required: ["name"],
+      required: [],
     },
   },
   {
@@ -275,16 +277,17 @@ function getTools(): ToolDef[] {
   },
   {
     name: "EventWrite",
-    description: "Create, update, or delete an event on a timeline. Pass event_name + delete:true to delete. Pass event_name to update an existing event. Omit event_name to create new (slug auto-generated from summary). Events bridge entries and outline chapters.",
+    description: ta.eventWriteDesc,
     input_schema: {
       type: "object",
       properties: {
         timeline_id: { type: "string", description: "Timeline ID (required)" },
-        event_name: { type: "string", description: "Event slug for update/delete reference. Omit when creating new — slug will be auto-generated from summary." },
-        delete: { type: "boolean", description: "Set to true to DELETE this event (requires event_name). Irreversible." },
-        time_point: { type: "string", description: "8-segment time string. Required for new events, optional for updates (to move the event). e.g. '000-3-000225-05-00-00-00-00'" },
+        event_id: { type: "string", description: ta.eventId },
+        name: { type: "string", description: ta.eventName },
+        delete: { type: "boolean", description: "Set to true to DELETE this event (requires event_id). Irreversible." },
+        time_point: { type: "string", description: ta.eventTimePoint },
         summary: { type: "string", description: "Event description. Required for new events." },
-        precision: { type: "number", description: "Optional: precision index into time_format.units (0=era, 1=year, 2=month, 3=day, 4=hour, 5=minute, 6=second). Display truncates at this level." },
+        precision: { type: "number", description: ta.eventPrecision },
         linked_entries: { type: "string", description: ta.eventLinkedEntries },
         linked_chapters: { type: "string", description: "Comma-separated: 'story_id:order,story_id:order'" },
         relationship_changes: { type: "string", description: "Newline-separated: 'entry_a|entry_b|add|ally_of|description\\\\nentry_c|entry_d|delete|enemy_of'" },
@@ -329,12 +332,12 @@ async function checkPermission(name: string, input: Record<string, unknown>): Pr
   if (isDangerous) {
     return new Promise((resolve) => {
       const labelMap: Record<string, string> = {
-        Relation: t().toolRelation(!!input.delete, (input.description as string) || ""),
+        Relation: t().toolRelation(!!input.delete, ((input.relation_id || input.description) as string) || ""),
         EntryWrite: t().toolEntryWriteDelete((input.entry_id as string) || ""),
-        EventWrite: t().toolEventWriteDelete((input.event_name as string) || ""),
+        EventWrite: t().toolEventWriteDelete((input.event_id as string) || ""),
         TimelineWrite: t().toolTimelineDelete((input.timeline_id as string) || ""),
       };
-      const genericId = (input.event_name || input.entry_id || input.timeline_id || "") as string;
+      const genericId = (input.event_id || input.entry_id || input.timeline_id || "") as string;
       const label = isDelete ? (labelMap[name] || t().toolGenericDelete(genericId)) : (input.description || "");
       const evt = new CustomEvent("worldforge-permission", {
         detail: {
@@ -354,8 +357,8 @@ async function checkPermission(name: string, input: Record<string, unknown>): Pr
   if (writeApproved) return true;
   return new Promise((resolve) => {
     const labelMap: Record<string, string> = {
-      OutlineWrite: `Ch${input.chapter_order} ${input.title || ""}`,
-      EventWrite: t().toolEventLabel((input.event_name as string) || "", (input.summary as string) || ""),
+      OutlineWrite: input.chapter_id ? `Chapter ${input.chapter_id}` : `Ch${input.order} ${input.title || ""}`,
+      EventWrite: t().toolEventLabel((input.event_id as string) || "", (input.summary as string) || ""),
       TimelineWrite: t().toolTimelineLabel((input.timeline_id as string) || "", (input.name as string) || ""),
     };
     const detail = labelMap[name] || `${input.name || input.entry_id || ""}`;
@@ -526,6 +529,7 @@ async function executeTool(
           body: eBody,
         };
         if (input.entry_type) updateParams.entryType = input.entry_type;
+        if (input.constraints !== undefined) updateParams.constraints = input.constraints;
         await invoke("update_entry", updateParams);
         let msg = t().entryUpdated(input.name as string);
         if (ccResult && ccResult.soft.length > 0) {
@@ -540,6 +544,7 @@ async function executeTool(
           entryType,
         };
         if (input.body) createParams.body = input.body;
+        if (input.constraints) createParams.constraints = input.constraints;
         await invoke("create_entry", createParams);
         return t().entryCreated(input.name as string, entryType);
       }
@@ -581,10 +586,10 @@ async function executeTool(
       return lines.join("\n");
     }
     case "OutlineRead": {
-      const order = input.chapter_order as number | undefined;
+      const chapterId = input.chapter_id as string | undefined;
       // Read specific chapter
-      if (order != null) {
-        return await invoke<string>("read_chapter", { worldPath, storyId, chapterOrder: order });
+      if (chapterId) {
+        return await invoke<string>("read_chapter", { worldPath, storyId, chapterId });
       }
       // List all chapters
       const chapters = await invoke<Array<{
@@ -600,32 +605,33 @@ async function executeTool(
     }
     case "OutlineWrite": {
       const chBody = (input.body as string) || "";
+      const chapterId = input.chapter_id as string | undefined;
       // Delete path
       if (input.delete === true) {
-        await invoke("delete_chapter", { worldPath, storyId, chapterOrder: input.chapter_order as number });
-        return t().chapterDeleted(input.chapter_order as number);
+        if (!chapterId) return t().chapterDeleteNeedsId;
+        await invoke("delete_chapter", { worldPath, storyId, chapterId });
+        return t().chapterDeleted(chapterId);
       }
       // Consistency check before write: traverse from story via outline entity type
       let ccResult: { hard: string[]; soft: string[] } | null = null;
-      if (chBody.trim().length >= 10) {
-        ccResult = await runConsistencyCheck(worldPath, chBody, "outline", storyId);
+      if (chBody.trim().length >= 10 && chapterId) {
+        ccResult = await runConsistencyCheck(worldPath, chBody, "outline", chapterId);
         if (ccResult && ccResult.hard.length > 0) {
           return t().hardConstraintBlock(ccResult.hard.join("\n\n"));
         }
       }
       const params: Record<string, unknown> = {
         worldPath, storyId,
-        chapterOrder: input.chapter_order as number,
-        title: input.title as string,
       };
+      if (chapterId) params.chapterId = chapterId;
+      if (input.order !== undefined) params.order = input.order as number;
+      if (input.title !== undefined) params.title = input.title as string;
       if (input.status !== undefined) params.status = input.status as string;
       if (input.summary !== undefined) params.summary = input.summary as string;
       if (input.body !== undefined) params.body = input.body as string;
-      if (input.time_period !== undefined) params.timePeriod = input.time_period as string;
-      if (input.involved_entries !== undefined) params.involvedEntries = input.involved_entries as string;
       if (input.linked_events !== undefined) params.linkedEvents = input.linked_events as string;
-      await invoke("write_outline", params);
-      let msg = t().chapterUpdated(input.chapter_order as number);
+      const chapter = await invoke<{ id: string; order: number }>("write_outline", params);
+      let msg = t().chapterSaved(chapter.id, chapter.order);
       if (ccResult && ccResult.soft.length > 0) {
         msg += `\n\n${t().softConstraintReminder(ccResult.soft.join("\n"))}`;
       }
@@ -705,17 +711,29 @@ async function executeTool(
       }).join("\n");
     }
     case "Relation": {
+      const relationId = input.relation_id as string | undefined;
       // Remove path
       if (input.delete === true) {
+        if (!relationId) return t().relationDeleteNeedsId;
         await invoke("remove_relation", {
           worldPath,
-          fromType: input.from_type as string,
-          fromId: input.from_id as string,
-          toType: input.to_type as string,
-          toId: input.to_id as string,
-          description: input.description as string,
+          relationId,
         });
-        return t().relationRemoved(input.from_type as string, input.from_id as string, input.description as string, input.to_type as string, input.to_id as string);
+        return t().relationRemoved(relationId);
+      }
+      if (relationId) {
+        const params: Record<string, unknown> = {
+          worldPath,
+          relationId,
+        };
+        if (input.from_type) params.fromType = input.from_type;
+        if (input.from_id) params.fromId = input.from_id;
+        if (input.to_type) params.toType = input.to_type;
+        if (input.to_id) params.toId = input.to_id;
+        if (input.description) params.description = input.description;
+        if (input.timeline_id !== undefined) params.timelineId = input.timeline_id;
+        const graph = await invoke<any>("update_relation", params);
+        return t().relationUpdated(JSON.stringify(graph, null, 2));
       }
       // Add path
       await invoke("add_relation", {
@@ -725,6 +743,7 @@ async function executeTool(
         toType: input.to_type as string,
         toId: input.to_id as string,
         description: input.description as string,
+        timelineId: input.timeline_id,
       });
       return t().relationCreated(input.from_type as string, input.from_id as string, input.description as string, input.to_type as string, input.to_id as string);
     }
@@ -830,38 +849,39 @@ async function executeTool(
     }
     case "EventWrite": {
       const evTlId = input.timeline_id as string;
-      const evName = input.event_name as string | undefined;
+      const evId = input.event_id as string | undefined;
       const evSummary = (input.summary as string) || "";
-      const hasName = !!evName;
+      const hasRef = !!evId;
       // Delete path
       if (input.delete === true) {
-        if (!evName) return t().eventDeleteNeedsName;
+        if (!evId) return t().eventDeleteNeedsId;
         await invoke("delete_event", {
           worldPath,
           timelineId: evTlId,
-          eventName: evName,
+          eventId: evId,
         });
-        return t().eventDeleted(evName);
+        return t().eventDeleted(evId);
       }
       // Consistency check
       let ccResult: { hard: string[]; soft: string[] } | null = null;
       if (evSummary.trim().length >= 10) {
-        const ccEntityType = hasName ? "event" : "timeline";
-        const ccEntityId = hasName ? evName : evTlId;
+        const ccEntityType = hasRef ? "event" : "timeline";
+        const ccEntityId = evId || evTlId;
         ccResult = await runConsistencyCheck(worldPath, evSummary, ccEntityType, ccEntityId, evTlId);
         if (ccResult && ccResult.hard.length > 0) {
           return t().hardConstraintBlock(ccResult.hard.join("\n\n"));
         }
       }
-      if (evName) {
+      if (hasRef) {
         // Update existing event
         const params: Record<string, unknown> = {
           worldPath,
           timelineId: evTlId,
-          eventName: evName,
         };
+        if (evId) params.eventId = evId;
         if (input.time_point) params.timePoint = input.time_point;
         if (input.summary) params.summary = input.summary;
+        if (input.name) params.nameUpdate = input.name;
         if (input.precision != null) params.precision = input.precision as number;
         if (input.linked_entries) params.linkedEntries = input.linked_entries;
         if (input.linked_chapters) params.linkedChapters = input.linked_chapters;
@@ -880,6 +900,7 @@ async function executeTool(
           timePoint: input.time_point as string,
           summary: evSummary,
         };
+        if (input.name) params.name = input.name;
         if (input.precision != null) params.precision = input.precision as number;
         if (input.linked_entries) params.linkedEntries = input.linked_entries;
         if (input.linked_chapters) params.linkedChapters = input.linked_chapters;

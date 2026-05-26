@@ -288,8 +288,9 @@ export function ChatInput({ storyId }: { storyId: string }) {
     try { entries = await invoke<Entry[]>("list_entries", { worldPath: world.path }); } catch {}
 
     const customPrompt = await invoke<string>("load_custom_prompt").catch(() => "");
+    const worldPrompt = await invoke<string>("load_world_prompt", { worldPath: world.path }).catch(() => "");
     const lang = useStore.getState().language;
-    const systemPrompt = buildSystemPrompt(world.name, story.title, entries, undefined, customPrompt, lang);
+    const systemPrompt = buildSystemPrompt(world.name, story.title, entries, undefined, customPrompt, worldPrompt, lang);
     const latestConv = useStore.getState().worlds
       .find((w) => w.id === activeWorldId)
       ?.stories.find((s) => s.id === storyId)

@@ -5,7 +5,6 @@
 
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
 
 use uuid::Uuid;
 use crate::models::graph::{EntityRef, EntityType, RelationEdge, RelationGraph};
@@ -17,11 +16,7 @@ use crate::services::graph_traverse::GraphIndex;
 fn resolve_names(world_path: &str, refs: &mut [&mut EntityRef]) {
     if refs.is_empty() { return; }
 
-    let root = if world_path.starts_with("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            PathBuf::from(world_path.replacen("~", &home, 1))
-        } else { PathBuf::from(world_path) }
-    } else { PathBuf::from(world_path) };
+    let root = crate::utils::expand_tilde(world_path);
 
     // Collect IDs by type
     let mut entry_ids: HashSet<String> = HashSet::new();

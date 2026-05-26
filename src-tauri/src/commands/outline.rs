@@ -3,12 +3,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 fn expand(path: &str) -> PathBuf {
-    if path.starts_with("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(path.replacen("~", &home, 1));
-        }
-    }
-    PathBuf::from(path)
+    crate::utils::expand_tilde(path)
 }
 
 fn outline_dir(root: &PathBuf, story_id: &str) -> PathBuf {

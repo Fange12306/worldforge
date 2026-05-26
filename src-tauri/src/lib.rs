@@ -71,6 +71,7 @@ pub fn run() {
             file_watch::start_file_watch,
             // API key + config
             api_key::save_config,
+            api_key::save_active_model,
             api_key::load_config,
             api_key::save_api_key,
             api_key::get_api_key,

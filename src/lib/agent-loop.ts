@@ -11,7 +11,7 @@ import { estimateTokens } from "./context-window";
 import type { ContextBreakdown } from "./context-window";
 import { compressMessages, RECENT_TURNS_TO_KEEP } from "./context-compression";
 import { getT } from "./i18n";
-import { rewriteSessionMessages } from "./session-writer";
+import { rewriteSessionMessages, messagesToSessionLines } from "./session-writer";
 
 function t() {
   return getT(useStore.getState().language).agent;
@@ -35,15 +35,6 @@ export type ToolResult = {
   toolName?: string;
   content: string;
 };
-
-function compressedSessionMessages(messages: AgentMessage[]) {
-  const now = Date.now();
-  return messages.map((message, i) => ({
-    type: message.role,
-    content: message.content,
-    timestamp: new Date(now + i).toISOString(),
-  }));
-}
 
 // ── Stream callback ──
 
@@ -999,6 +990,7 @@ export async function runAgentLoop(
       const streamPromise = new Promise<void>((resolve) => { streamResolve = resolve; });
 
       const unlisten = await setupStreamListener(convId || "", (event) => {
+        if (abortRef?.current) return;
         if (streamDone) return;
         switch (event.type) {
           case "text_delta":
@@ -1096,23 +1088,41 @@ export async function runAgentLoop(
             model,
           );
           if (result.compressed) {
-            // Replace messages array in-place (agent loop's working copy)
+            // Replace messages array in-place (agent loop's working copy — LLM sees summary)
             messages.length = 0;
             messages.push(...result.messages);
-            // Sync compressed messages back to store so next send doesn't undo it
+            // Sync compressed messages back to store, preserving metadata for kept zone
             if (convId) {
               const now = Date.now();
-              const storeMessages: Message[] = result.messages.map((am, i) => ({
-                id: `compressed-${now}-${i}`,
-                role: am.role,
-                content: am.content,
-                timestamp: now + i,
-              }));
-              useStore.getState().replaceMessages(convId, storeMessages);
+              const SEP = "之前的对话已被压缩";
+              const conv = useStore.getState().worlds
+                .find((w) => w.id === useStore.getState().activeWorldId)
+                ?.stories.flatMap((s) => s.conversations)
+                .find((c) => c.id === convId);
+              const snapshot = conv?.messages ?? [];
+              const keepStart = result.originalRange?.[1] ?? 0;
+
+              // Compressed zone: keep message text, strip thinking/toolCalls, remove old separators
+              const compressedZone: Message[] = snapshot.slice(0, keepStart)
+                .filter((m) => m.content !== SEP)
+                .map((m) => ({ ...m, thinking: undefined, toolCalls: undefined }));
+              // Separator between compressed zone and kept zone
+              const separator: Message = {
+                id: `compressed-sep-${now}`,
+                role: "user",
+                content: SEP,
+                timestamp: now,
+              };
+              // Kept zone: preserve full metadata, remove any old separators
+              const keptMsgs: Message[] = snapshot.slice(keepStart)
+                .filter((m) => m.content !== SEP)
+                .map((m, i) => ({ ...m, id: `kept-${now}-${i}` }));
+
+              useStore.getState().replaceMessages(convId, [...compressedZone, separator, ...keptMsgs]);
               rewriteSessionMessages(
                 worldPath,
                 convId,
-                compressedSessionMessages(result.messages),
+                [...messagesToSessionLines(compressedZone), ...messagesToSessionLines([separator]), ...messagesToSessionLines(keptMsgs)],
               ).catch(() => {});
               useStore.getState().markCompressed(
                 convId,

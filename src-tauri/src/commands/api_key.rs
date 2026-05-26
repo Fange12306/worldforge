@@ -7,19 +7,26 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 fn store_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let dir = PathBuf::from(&home).join(".worldforge");
+    let dir = crate::utils::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".worldforge");
     let _ = fs::create_dir_all(&dir);
     dir.join("credentials.json")
 }
 
+fn legacy_store_path() -> PathBuf {
+    PathBuf::from(".").join(".worldforge").join("credentials.json")
+}
+
 fn load_store() -> HashMap<String, String> {
     let path = store_path();
-    if path.exists() {
-        if let Ok(data) = fs::read_to_string(&path) {
+    for candidate in [&path, &legacy_store_path()] {
+        if candidate.exists() {
+            if let Ok(data) = fs::read_to_string(candidate) {
             if let Ok(map) = serde_json::from_str(&data) {
                 return map;
             }
+        }
         }
     }
     HashMap::new()
@@ -79,6 +86,13 @@ pub fn load_config() -> Result<serde_json::Value, String> {
         "activeModel": active_model,
         "compressionThreshold": compression_threshold,
     }))
+}
+
+#[tauri::command]
+pub fn save_active_model(active_model: String) -> Result<(), String> {
+    let mut map = load_store();
+    map.insert("active_model".to_string(), active_model);
+    save_store(&map)
 }
 
 #[tauri::command]

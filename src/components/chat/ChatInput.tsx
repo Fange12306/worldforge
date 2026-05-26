@@ -393,6 +393,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
           const b: TimelineBlock = { type: "tool", call: tc }; timeline.push(b); prevBlock = b;
         },
         onToolResult: (result, toolName) => {
+          if (abortRef.current) return;
           let tc = toolCalls.find((c) => c.id === result.toolUseId);
           if (!tc && toolName) {
             const matching = toolCalls.filter((c) => c.name === toolName && !c.result);
@@ -572,6 +573,9 @@ export function ChatInput({ storyId }: { storyId: string }) {
                     toolCalls: tc.length > 0 ? [...tc] : undefined,
                   }, scid);
                   if (world && scid) appendSessionMessage(world.path, scid, { type: "assistant", content: turnTextRef.current + ` ${t.chat.stopped}`, thinking: thinking || null, timestamp: new Date().toISOString() }).catch(() => {});
+                  turnTextRef.current = "";
+                  turnThinkingRef.current = "";
+                  turnToolCallsRef.current = [];
                   setStreaming(false);
                   clearStreamText();
                 }}

@@ -9,12 +9,7 @@ use std::path::PathBuf;
 use uuid::Uuid;
 
 fn expand_path(path: &str) -> PathBuf {
-    if path.starts_with("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(path.replacen("~", &home, 1));
-        }
-    }
-    PathBuf::from(path)
+    crate::utils::expand_tilde(path)
 }
 
 fn type_dir(entries_root: &PathBuf, t: &EntryType) -> String {

@@ -6,7 +6,7 @@ import type { ContextBreakdown } from "@/lib/context-window";
 import { buildModelMessages } from "@/lib/model-context";
 import { compressMessages, RECENT_TURNS_TO_KEEP } from "@/lib/context-compression";
 import { estimateTokens } from "@/lib/context-window";
-import { rewriteSessionMessages } from "@/lib/session-writer";
+import { rewriteSessionMessages, messagesToSessionLines } from "@/lib/session-writer";
 import { buildSystemPrompt } from "@/lib/system-prompt";
 
 const RING_SIZE = 16;
@@ -47,6 +47,8 @@ export function ContextRing() {
   const activeConv = activeWorld?.stories
     .flatMap((s) => s.conversations)
     .find((c) => c.id === activeConversationId);
+  const turnCount = (activeConv?.messages ?? []).filter((m) => m.role === "user").length;
+  const canCompress = turnCount >= 8;
   const contextUsed = activeConv?.contextUsed ?? 0;
   const contextBreakdown = activeConv?.contextBreakdown ?? null;
   const contextWindowSize = useStore((s) => s.contextWindowSize);
@@ -62,15 +64,6 @@ export function ContextRing() {
 
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
-
-  const toSessionMessages = (messages: ReturnType<typeof buildModelMessages>) => {
-    const now = Date.now();
-    return messages.map((message, i) => ({
-      type: message.role,
-      content: message.content,
-      timestamp: new Date(now + i).toISOString(),
-    }));
-  };
 
   useEffect(() => {
     if (llmProvider && activeModel) {
@@ -179,18 +172,30 @@ export function ContextRing() {
                 );
                 if (result.compressed) {
                   const now = Date.now();
-                  const newMsgs: Message[] = result.messages.map((am, i) => ({
-                    id: `compressed-${now}-${i}`,
-                    role: am.role,
-                    content: am.content,
-                    timestamp: now + i,
-                  }));
-                  replaceMessages(convId, newMsgs);
+                  const SEP = "之前的对话已被压缩";
+                  const keepStart = result.originalRange?.[1] ?? 0;
+                  const snapshot = activeConv.messages;
+                  // Compressed zone: strip thinking/toolCalls, remove old separators
+                  const compressedZone: Message[] = snapshot.slice(0, keepStart)
+                    .filter((m) => m.content !== SEP)
+                    .map((m) => ({ ...m, thinking: undefined, toolCalls: undefined }));
+                  // Separator between compressed zone and kept zone
+                  const separator: Message = {
+                    id: `compressed-sep-${now}`,
+                    role: "user",
+                    content: SEP,
+                    timestamp: now,
+                  };
+                  // Kept zone: preserve full metadata, remove old separators
+                  const keptMsgs: Message[] = snapshot.slice(keepStart)
+                    .filter((m) => m.content !== SEP)
+                    .map((m, i) => ({ ...m, id: `kept-${now}-${i}` }));
+                  replaceMessages(convId, [...compressedZone, separator, ...keptMsgs]);
                   if (activeWorld) {
                     rewriteSessionMessages(
                       activeWorld.path,
                       convId,
-                      toSessionMessages(result.messages),
+                      [...messagesToSessionLines(compressedZone), ...messagesToSessionLines([separator]), ...messagesToSessionLines(keptMsgs)],
                     ).catch(() => {});
                   }
                   markCompressed(convId, result.summary, result.tokenSavings);
@@ -219,10 +224,10 @@ export function ContextRing() {
                 setCompressing(false);
               }
             }}
-            disabled={isCompressing || !activeConv || !llmProvider}
+            disabled={isCompressing || !activeConv || !llmProvider || !canCompress}
             className="w-full py-1.5 text-[11px] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded transition-colors disabled:opacity-50"
           >
-            {isCompressing ? t.chat.compressing : t.chat.compressNow}
+            {isCompressing ? t.chat.compressing : canCompress ? t.chat.compressNow : "暂不可压缩"}
           </button>
         </div>
       )}

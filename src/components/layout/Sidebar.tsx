@@ -116,10 +116,41 @@ export function Sidebar() {
                       if (stories.length > 0) {
                         const convId = useStore.getState().hydrateStories(wid, stories);
                         if (convId) {
-                          const msgs = await invoke<Array<{ type: string; content: string }>>("load_session", { worldPath: w.path, sessionId: convId });
-                          const convMsgs = msgs.filter((m) => m.type === "user" || m.type === "assistant").map((m, i) => ({
-                            id: `msg_${i}`, role: m.type as "user" | "assistant", content: m.content, timestamp: Date.now() - (msgs.length - i) * 1000,
-                          }));
+                          const msgs = await invoke<Array<{ type: string; content: string; thinking?: string; tool?: string; input?: unknown; output?: string }>>("load_session", { worldPath: w.path, sessionId: convId });
+                          type StoreMessage = { id: string; role: "user" | "assistant" | "system"; content: string; thinking?: string; toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }>; timestamp: number };
+                          const convMsgs: StoreMessage[] = [];
+                          let pendingToolCalls: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }> = [];
+                          let lastAssistantIdx: number | null = null;
+                          for (const m of msgs) {
+                            if (m.type === "user") {
+                              convMsgs.push({ id: `msg_${convMsgs.length}`, role: "user", content: m.content, timestamp: Date.now() });
+                              pendingToolCalls = [];
+                              lastAssistantIdx = null;
+                            } else if (m.type === "assistant") {
+                              convMsgs.push({ id: `msg_${convMsgs.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: pendingToolCalls.length > 0 ? [...pendingToolCalls] : undefined, timestamp: Date.now() });
+                              lastAssistantIdx = convMsgs.length - 1;
+                              pendingToolCalls = [];
+                            } else if (m.type === "system") {
+                              convMsgs.push({ id: `msg_${convMsgs.length}`, role: "system", content: m.content, timestamp: Date.now() });
+                            } else if (m.type === "tool_use") {
+                              pendingToolCalls.push({ id: `tc_${pendingToolCalls.length}`, name: m.tool || "", input: (m.input as Record<string, unknown>) || {}, result: "" });
+                            } else if (m.type === "tool_result") {
+                              const output = (m.output as string) || "";
+                              const last = pendingToolCalls[pendingToolCalls.length - 1];
+                              if (last) {
+                                last.result = output;
+                              } else if (lastAssistantIdx !== null) {
+                                const lastMsg = convMsgs[lastAssistantIdx];
+                                if (lastMsg?.toolCalls) {
+                                  for (const tc of lastMsg.toolCalls) {
+                                    if (!tc.result) { tc.result = output; break; }
+                                  }
+                                }
+                              }
+                              const toolName = m.tool || "tool";
+                              convMsgs.push({ id: `msg_${convMsgs.length}`, role: "system", content: `[工具结果: ${toolName}]\n${output}`, timestamp: Date.now() });
+                            }
+                          }
                           if (convMsgs.length > 0) {
                             useStore.setState((prev) => ({
                               worlds: prev.worlds.map((ww) => ww.id === wid ? {

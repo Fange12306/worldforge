@@ -17,12 +17,7 @@ use crate::services::graph_storage;
 // ── Helpers ────────────────────────────────────────
 
 fn expand(path: &str) -> std::path::PathBuf {
-    if path.starts_with("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return std::path::PathBuf::from(path.replacen("~", &home, 1));
-        }
-    }
-    std::path::PathBuf::from(path)
+    crate::utils::expand_tilde(path)
 }
 
 fn entries_root(world_path: &str) -> std::path::PathBuf {

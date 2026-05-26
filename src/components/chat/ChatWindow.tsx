@@ -108,6 +108,16 @@ export function ChatWindow({ messages }: { storyId: string; messages: Message[] 
             return <CollapsedGroupMessage key={item.messages[0].id} group={item} />;
           }
           const msg = item as Message;
+          // Detect compression separator
+          if (msg.content.includes("之前的对话已被压缩")) {
+            return (
+              <div key={msg.id} className="flex items-center gap-3 py-2">
+                <div className="flex-1 h-px bg-surface-700" />
+                <span className="text-[11px] text-ink-muted flex-shrink-0">之前的对话已被压缩</span>
+                <div className="flex-1 h-px bg-surface-700" />
+              </div>
+            );
+          }
           // Detect compressed context messages
           if (msg.content.startsWith("[上下文压缩]")) {
             const summaryMatch = msg.content.match(/<summary>([\s\S]*)<\/summary>/);

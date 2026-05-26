@@ -3,12 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 fn expand(path: &str) -> PathBuf {
-    if path.starts_with("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(path.replacen("~", &home, 1));
-        }
-    }
-    PathBuf::from(path)
+    crate::utils::expand_tilde(path)
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

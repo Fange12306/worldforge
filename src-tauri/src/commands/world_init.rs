@@ -52,16 +52,7 @@ pub struct WorldMeta {
 
 /// Expand ~ in a path to the user's home directory
 fn expand_tilde(path: &str) -> PathBuf {
-    if path.starts_with("~/") {
-        if let Some(home) = dirs_next() {
-            return PathBuf::from(path.replacen("~", &home, 1));
-        }
-    }
-    PathBuf::from(path)
-}
-
-fn dirs_next() -> Option<String> {
-    std::env::var("HOME").ok()
+    crate::utils::expand_tilde(path)
 }
 
 /// Initialize a new world directory.

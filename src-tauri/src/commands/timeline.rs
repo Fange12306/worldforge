@@ -18,12 +18,7 @@ use crate::services::event_cascade;
 // ── Path helpers ──────────────────────────────────
 
 fn expand(path: &str) -> PathBuf {
-    if path.starts_with("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return PathBuf::from(path.replacen("~", &home, 1));
-        }
-    }
-    PathBuf::from(path)
+    crate::utils::expand_tilde(path)
 }
 
 fn timelines_dir(world_path: &str) -> PathBuf {

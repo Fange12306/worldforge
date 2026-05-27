@@ -38,6 +38,10 @@ const zh = {
     releasesPage: "Release 页面",
     checkFailed: "检查更新失败",
     checkRateLimit: "API 频率限制，请稍后再试或前往 GitHub 查看。",
+    about: "关于",
+    aboutDesc: "AI 驱动的架空世界创作助手。构建角色、地点、组织、时间线，绘制关系图谱，用大语言模型探索故事的无限可能。",
+    license: "开源协议",
+    sourceCode: "源代码",
   },
 
   // Settings — appearance
@@ -505,6 +509,10 @@ const en: typeof zh = {
     releasesPage: "Releases page",
     checkFailed: "Update check failed",
     checkRateLimit: "API rate limited. Please try later or visit GitHub directly.",
+    about: "About",
+    aboutDesc: "AI-powered worldbuilding and storytelling assistant. Create characters, locations, organizations, timelines, map relationships, and explore infinite story possibilities with large language models.",
+    license: "License",
+    sourceCode: "Source Code",
   },
 
   appearance: {

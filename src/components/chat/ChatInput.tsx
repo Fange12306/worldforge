@@ -200,7 +200,8 @@ export function ChatInput({ storyId }: { storyId: string }) {
   };
 
   const handleSend = async () => {
-    const text = input.trim();
+    // Read directly from store so retry handler sees the updated draft immediately
+    const text = (useStore.getState().conversationDrafts[activeConversationId!] || input).trim();
     if ((!text && files.length === 0) || isStreaming || !world || !story) return;
     const convId = activeConversationId!; // Lock to this conversation for the entire send
 

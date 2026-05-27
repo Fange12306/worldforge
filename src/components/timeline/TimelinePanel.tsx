@@ -23,17 +23,20 @@ function segs(tp: string): number[] { return tp.split("-").map(s => parseInt(s, 
 function leafLabel(tp: string, tl: Timeline | null, precision?: number | null): string {
   const s = segs(tp); const u = getUnits(tl);
   const maxIdx = precision != null ? precision : u.length - 1;
-  // Tree already shows era + year — leaf label only covers month onward
   const mi = u.findIndex(x => x.key === "month");
   const di = u.findIndex(x => x.key === "day");
-  const parts: string[] = [];
-  if (mi >= 0 && mi <= maxIdx) { const v = s[mi + 1] || 0; if (v > 0) parts.push(`${v}${u[mi].name}`); }
-  if (di >= 0 && di <= maxIdx) { const v = s[di + 1] || 0; if (v > 0) parts.push(`${v}${u[di].name}`); }
-  // Time portion
+  const dateParts: string[] = [];
+  const timeParts: { val: string; name: string }[] = [];
+  if (mi >= 0 && mi <= maxIdx) { const v = s[mi + 1] || 0; if (v > 0) dateParts.push(`${v}${u[mi].name}`); }
+  if (di >= 0 && di <= maxIdx) { const v = s[di + 1] || 0; if (v > 0) dateParts.push(`${v}${u[di].name}`); }
+  // Time portion — single unit gets its name suffix, multiple get colons
   for (let i = Math.max(di, mi) + 1; i < u.length && i <= maxIdx; i++) {
-    parts.push(String(s[i + 1] || 0).padStart(u[i].digits, "0"));
+    timeParts.push({ val: String(s[i + 1] || 0).padStart(u[i].digits, "0"), name: u[i].name });
   }
-  return parts.join("");
+  if (timeParts.length === 1) {
+    return dateParts.join("") + timeParts[0].val + timeParts[0].name;
+  }
+  return dateParts.join("") + (timeParts.length > 1 ? timeParts.map(t => t.val).join(":") : "");
 }
 
 function fmtTime(tp: string, tl: Timeline | null, precision?: number | null): string {

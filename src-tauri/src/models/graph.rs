@@ -15,14 +15,32 @@ pub enum EntityType {
     Event,
 }
 
-/// A reference to any entity in the world
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+/// A reference to any entity in the world.
+///
+/// Equality and hashing are based on (entity_type, id) only — `name` is a
+/// display-only cache and does not participate in identity comparison.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntityRef {
     #[serde(rename = "type")]
     pub entity_type: EntityType,
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+}
+
+impl PartialEq for EntityRef {
+    fn eq(&self, other: &Self) -> bool {
+        self.entity_type == other.entity_type && self.id == other.id
+    }
+}
+
+impl Eq for EntityRef {}
+
+impl std::hash::Hash for EntityRef {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.entity_type.hash(state);
+        self.id.hash(state);
+    }
 }
 
 /// A single directed edge in the unified relation graph.

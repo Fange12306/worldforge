@@ -19,6 +19,11 @@ const zh = {
   // Settings — general
   general: {
     title: "常规",
+    profile: "个人信息",
+    avatar: "头像",
+    avatarHint: "点击头像更换，建议正方形图片",
+    username: "用户名",
+    usernamePlaceholder: "输入用户名",
     language: "界面语言",
     languageDesc: "切换后所有界面文字和发给 AI 的系统提示词都会变为对应语言，世界文件内容不受影响。",
     comingSoon: "即将推出。",
@@ -273,6 +278,8 @@ const zh = {
     emptyWorlds: "没有找到已有世界",
     openWorld: "打开已有世界",
     settings: "设置",
+    localUser: "本地作者",
+    localProfile: "WorldForge 工作区",
     noStories: "还没有故事。创建一个故事来开始创作。",
     storyNamePlaceholder: "故事名...",
     newStory: "新建故事",
@@ -478,6 +485,11 @@ const en: typeof zh = {
 
   general: {
     title: "General",
+    profile: "Profile",
+    avatar: "Avatar",
+    avatarHint: "Click avatar to change, square image recommended",
+    username: "Username",
+    usernamePlaceholder: "Enter username",
     language: "Interface Language",
     languageDesc:
       "When switched, all interface text and the system prompt sent to the AI will change to the selected language. World file contents are unaffected.",
@@ -725,6 +737,8 @@ const en: typeof zh = {
     emptyWorlds: "No existing worlds found",
     openWorld: "Open Existing World",
     settings: "Settings",
+    localUser: "Local Writer",
+    localProfile: "WorldForge Workspace",
     noStories: "No stories yet. Create one to start.",
     storyNamePlaceholder: "Story name...",
     newStory: "New Story",

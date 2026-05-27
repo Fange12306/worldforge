@@ -175,3 +175,29 @@ pub fn load_language() -> Result<String, String> {
     let map = load_store();
     Ok(map.get("language").cloned().unwrap_or_default())
 }
+
+#[tauri::command]
+pub fn save_username(username: String) -> Result<(), String> {
+    let mut map = load_store();
+    map.insert("username".to_string(), username);
+    save_store(&map)
+}
+
+#[tauri::command]
+pub fn load_username() -> Result<String, String> {
+    let map = load_store();
+    Ok(map.get("username").cloned().unwrap_or_default())
+}
+
+#[tauri::command]
+pub fn save_avatar(avatar_data_url: String) -> Result<(), String> {
+    let mut map = load_store();
+    map.insert("avatar".to_string(), avatar_data_url);
+    save_store(&map)
+}
+
+#[tauri::command]
+pub fn load_avatar() -> Result<String, String> {
+    let map = load_store();
+    Ok(map.get("avatar").cloned().unwrap_or_default())
+}

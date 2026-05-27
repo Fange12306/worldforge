@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useStore, type ModelConfig } from "@/lib/store";
 import { invoke } from "@/lib/api";
 import { X, Eye, EyeOff, SlidersHorizontal, Palette, Bot, UserRound, ArrowLeft, Pencil, Sun, Moon } from "lucide-react";
@@ -56,7 +56,7 @@ export function SettingsPanel({ onClose }: Props) {
   const setLlmModels = useStore((s) => s.setLlmModels);
   const setActiveModel = useStore((s) => s.setActiveModel);
   const setCompressionThreshold = useStore((s) => s.setCompressionThreshold);
-  const [activeSection, setActiveSection] = useState<SettingsSection>("model");
+  const [activeSection, setActiveSection] = useState<SettingsSection>("general");
   const [models, setModels] = useState(llmModels);
   const [newModelName, setNewModelName] = useState("");
   const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URLS[llmProvider] || DEFAULT_BASE_URLS.deepseek);
@@ -434,11 +434,48 @@ function GeneralSection() {
   const { t } = useT();
   const language = useStore((s) => s.language);
   const setLanguage = useStore((s) => s.setLanguage);
+  const setStoreAvatar = useStore((s) => s.setAvatar);
+  const setStoreUsername = useStore((s) => s.setUsername);
   const [appVersion, setAppVersion] = useState("");
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [releaseUrl, setReleaseUrl] = useState("");
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState("");
+
+  // Avatar & Username
+  const [avatar, setAvatar] = useState("");
+  const [username, setUsername] = useState("");
+  const [usernameSaved, setUsernameSaved] = useState(false);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    invoke<string>("load_avatar").then(setAvatar).catch(() => {});
+    invoke<string>("load_username").then((u) => { if (u) setUsername(u); }).catch(() => {});
+  }, []);
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const dataUrl = reader.result as string;
+      // Resize to 128x128
+      const resized = await resizeImage(dataUrl, 128);
+      setAvatar(resized);
+      setStoreAvatar(resized);
+      try { await invoke("save_avatar", { avatarDataUrl: resized }); } catch {}
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveUsername = async () => {
+    try {
+      await invoke("save_username", { username });
+      setStoreUsername(username);
+      setUsernameSaved(true);
+      setTimeout(() => setUsernameSaved(false), 2000);
+    } catch {}
+  };
 
   const handleChangeLanguage = async (lang: "zh" | "en") => {
     setLanguage(lang);
@@ -472,6 +509,61 @@ function GeneralSection() {
     <section className="pt-5">
       <h2 className="text-xl font-semibold text-ink mb-7">{t.general.title}</h2>
       <div className="space-y-7">
+        {/* Profile */}
+        <div>
+          <h3 className="text-sm font-medium text-ink mb-3">{t.general.profile}</h3>
+          <div className="flex items-start gap-6">
+            <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.general.avatar}</label>
+            <div className="w-96 space-y-2">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => avatarInputRef.current?.click()}
+                  className="relative w-14 h-14 rounded-full overflow-hidden border-2 border-edge hover:border-brand-500/40 transition-colors flex-shrink-0 bg-surface-800"
+                >
+                  {avatar ? (
+                    <img src={avatar} alt="avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-ink-muted">
+                      <UserRound className="w-6 h-6" />
+                    </div>
+                  )}
+                </button>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                />
+                <span className="text-[0.625rem] text-ink-muted">{t.general.avatarHint}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex items-start gap-6">
+            <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.general.username}</label>
+            <div className="w-96 space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveUsername(); }}
+                  placeholder={t.general.usernamePlaceholder}
+                  className="w-48 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors"
+                />
+                <button
+                  onClick={handleSaveUsername}
+                  className="px-3 h-7 rounded-md border border-edge text-xs text-ink-secondary hover:text-ink hover:bg-surface-800 transition-colors"
+                >
+                  {usernameSaved ? t.personalization.saved : t.personalization.save}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div>
           <h3 className="text-sm font-medium text-ink mb-3">{t.general.language}</h3>
           <div className="flex items-start gap-6">
@@ -835,4 +927,26 @@ function AppearanceSection() {
       </div>
     </section>
   );
+}
+
+/** Resize an image data URL to a square of the given size. */
+function resizeImage(dataUrl: string, size: number): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { resolve(dataUrl); return; }
+      // Crop center square
+      const minDim = Math.min(img.width, img.height);
+      const sx = (img.width - minDim) / 2;
+      const sy = (img.height - minDim) / 2;
+      ctx.drawImage(img, sx, sy, minDim, minDim, 0, 0, size, size);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
 }

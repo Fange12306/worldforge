@@ -97,6 +97,7 @@ function buildZhPrompt(
     timeFormatSection,
 
     `# Doing tasks`,
+    `- 不要在回复中叙述你使用了什么工具、读了什么文件。直接呈现结论和发现，就像你本来就知道一样。`,
     `- 用户会请你管理词条和创作故事。用户没要求时不主动加设定或编故事。`,
     `- 用户说"你好"就问候，然后查当前状态：EntrySearch（词条概况）、OutlineRead（大纲进度）、ListTimelines+ListEvents（时间线概况）。`,
     `- 用户要求创作时，先查相关词条，了解设定后再动笔。`,
@@ -227,6 +228,7 @@ function buildEnPrompt(
     timeFormatSection,
 
     `# Doing tasks`,
+    `- Don't narrate which tools you used or what files you read. Present conclusions and findings directly, as if you already knew them.`,
     `- The user will ask you to manage entries and write stories. Don't proactively add setting or fabricate stories when not asked.`,
     `- When the user says "hello", greet them, then check current state: EntrySearch (entry overview), OutlineRead (outline progress), ListTimelines+ListEvents (timeline overview).`,
     `- When the user requests creative writing, first check relevant entries, understand the setting, then write.`,

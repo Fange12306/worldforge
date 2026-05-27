@@ -83,6 +83,10 @@ pub fn run() {
             api_key::load_custom_prompt,
             api_key::save_language,
             api_key::load_language,
+            api_key::save_username,
+            api_key::load_username,
+            api_key::save_avatar,
+            api_key::load_avatar,
             // LLM API proxy
             api_proxy::stream_chat,
             api_proxy::test_connection,

@@ -64,7 +64,7 @@ export function Sidebar() {
     return (
       <div className="flex flex-col h-full bg-surface-900 select-none">
         <div className="h-12 flex items-center gap-2.5 px-3 flex-shrink-0">
-          <WorldForgeLogo className="w-5 h-5 flex-shrink-0" />
+          <WorldForgeLogo className="w-8 h-8 flex-shrink-0" />
           <span className="font-semibold text-sm tracking-tight flex-1">WorldForge</span>
         </div>
 
@@ -192,13 +192,7 @@ export function Sidebar() {
         </div>
 
         <div className="p-2 flex-shrink-0">
-          <button
-            onClick={() => (window as any).__worldforge?.openSettings()}
-            className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-muted hover:text-ink hover:bg-surface-800 rounded-md transition-colors"
-          >
-            <Settings className="w-3.5 h-3.5" />
-            {t.sidebar.settings}
-          </button>
+          <UserProfileFooter />
         </div>
       </div>
     );
@@ -209,7 +203,7 @@ export function Sidebar() {
     <div className="flex flex-col h-full bg-surface-900 select-none">
       {/* World header */}
       <div className="h-12 flex items-center gap-2 px-3 flex-shrink-0">
-        <WorldForgeLogo className="w-4 h-4 flex-shrink-0" />
+        <WorldForgeLogo className="w-8 h-8 flex-shrink-0" />
         <span className="font-semibold text-sm tracking-tight truncate flex-1"
           onDoubleClick={() => setEditing({ type: "world", id: activeWorld.id, value: activeWorld.name })}
         >
@@ -320,13 +314,6 @@ export function Sidebar() {
           {t.sidebar.timeline}
         </button>
         <button
-          onClick={() => (window as any).__worldforge?.openSettings()}
-          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-muted hover:text-ink hover:bg-surface-800 rounded-md transition-colors"
-        >
-          <Settings className="w-3.5 h-3.5" />
-          {t.sidebar.settings}
-        </button>
-        <button
           data-confirm
           onClick={() => {
             if (!confirmDeleteWorld) {
@@ -355,8 +342,45 @@ export function Sidebar() {
         >
           {t.sidebar.closeWorld}
         </button>
+        <div className="pt-1.5 mt-1.5 border-t border-surface-700/60">
+          <UserProfileFooter />
+        </div>
       </div>
     </div>
+  );
+}
+
+function UserProfileFooter() {
+  const { t } = useT();
+  const avatar = useStore((s) => s.avatar);
+  const username = useStore((s) => s.username);
+  const setAvatar = useStore((s) => s.setAvatar);
+  const setUsername = useStore((s) => s.setUsername);
+
+  useEffect(() => {
+    invoke<string>("load_avatar").then(setAvatar).catch(() => {});
+    invoke<string>("load_username").then((u) => { if (u) setUsername(u); }).catch(() => {});
+  }, []);
+
+  return (
+    <button
+      onClick={() => (window as any).__worldforge?.openSettings()}
+      className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg text-left hover:bg-surface-800 transition-colors group"
+      title={t.sidebar.settings}
+    >
+      <span className="w-9 h-9 rounded-full bg-surface-800 border border-edge flex items-center justify-center flex-shrink-0 overflow-hidden">
+        {avatar ? (
+          <img src={avatar} alt="" className="w-full h-full object-cover" />
+        ) : (
+          <WorldForgeLogo className="w-14 h-14 max-w-none translate-y-0.5" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-xs font-medium text-ink truncate">{username || t.sidebar.localUser}</span>
+        <span className="block text-[0.625rem] text-ink-muted truncate">{t.sidebar.localProfile}</span>
+      </span>
+      <Settings className="w-3.5 h-3.5 text-ink-muted group-hover:text-ink transition-colors flex-shrink-0" />
+    </button>
   );
 }
 

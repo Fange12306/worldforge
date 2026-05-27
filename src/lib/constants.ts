@@ -1,7 +1,5 @@
 export const APP_NAME = "WorldForge";
-export const APP_VERSION = "0.1.0";
 
-/** Universal entry types — applicable to any world, any genre */
 /** Universal entry types — applicable to any world, any genre.
  *  ⚠️ "event" removed (Phase 5) — events are now standalone timeline entities. */
 export const ENTRY_TYPES = [

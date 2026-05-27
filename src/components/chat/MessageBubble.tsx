@@ -42,9 +42,9 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
 
   return (
     <div className={cn("flex gap-3 animate-fade-in", isUser && "flex-row-reverse")}>
-      <div className={cn("flex-shrink-0 w-7 h-7 flex items-center justify-center",
+      <div className={cn("flex-shrink-0 w-10 h-10 flex items-center justify-center",
         isUser && "rounded-lg bg-surface-700 text-ink-secondary")}>
-        {isUser ? <User className="w-3.5 h-3.5" /> : <WorldForgeLogo className="w-6 h-6" />}
+        {isUser ? <User className="w-5 h-5" /> : <WorldForgeLogo className="w-10 h-10" />}
       </div>
       <div className={cn("flex-1 min-w-0", isUser && "flex flex-col")}>
         {isUser ? (

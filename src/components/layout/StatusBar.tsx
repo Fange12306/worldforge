@@ -1,6 +1,8 @@
+import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
-import { APP_NAME, APP_VERSION } from "@/lib/constants";
+import { APP_NAME } from "@/lib/constants";
 import { invoke } from "@/lib/api";
+import { getVersion } from "@tauri-apps/api/app";
 import { FolderOpen } from "lucide-react";
 import { useT } from "@/lib/i18n";
 import type { Message } from "@/lib/store";
@@ -21,6 +23,8 @@ function countVisibleMessages(messages: Message[]): number {
 
 export function StatusBar() {
   const { t } = useT();
+  const [appVersion, setAppVersion] = useState("...");
+  useEffect(() => { getVersion().then(setAppVersion).catch(() => setAppVersion("?.?.?")); }, []);
   const worlds = useStore((s) => s.worlds);
   const activeWorldId = useStore((s) => s.activeWorldId);
   const activeConversationId = useStore((s) => s.activeConversationId);
@@ -67,7 +71,7 @@ export function StatusBar() {
             {activeWorld.name}
           </button>
         )}
-        <span>{APP_NAME} v{APP_VERSION}</span>
+        <span>{APP_NAME} v{appVersion}</span>
       </div>
     </footer>
   );

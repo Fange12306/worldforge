@@ -55,6 +55,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
   const turnTextRef = useRef("");
   const turnThinkingRef = useRef("");
   const turnToolCallsRef = useRef<ToolCall[]>([]);
+  const handleSendRef = useRef<() => Promise<void>>(async () => {});
 
   // Listen for permission requests
   useEffect(() => {
@@ -135,16 +136,12 @@ export function ChatInput({ storyId }: { storyId: string }) {
       } catch {}
 
       clearStreamText();
-      const el = textareaRef.current;
-      if (!el) return;
-      const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value")?.set;
-      nativeSetter?.call(el, retryContent);
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      setTimeout(() => el.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })), 50);
+      setConversationDraft(activeConversationId!, retryContent);
+      handleSendRef.current();
     };
     window.addEventListener("worldforge-retry", handler);
     return () => window.removeEventListener("worldforge-retry", handler);
-  }, [isStreaming, activeWorldId, storyId, activeConversationId, clearStreamText]);
+  }, [isStreaming, activeWorldId, storyId, activeConversationId, clearStreamText, setConversationDraft]);
 
   // Listen for command palette selections
   useEffect(() => {
@@ -437,6 +434,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
       clearStreamText();
     }
   };
+  handleSendRef.current = handleSend;
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }

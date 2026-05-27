@@ -4,7 +4,6 @@ import { invoke } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { Sun, Moon, Command, BookOpen } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
-import { WorldForgeLogo } from "@/components/brand/WorldForgeLogo";
 
 export function Header() {
   const { t } = useT();
@@ -61,8 +60,8 @@ export function Header() {
   return (
     <header className="h-12 flex items-center justify-between px-4 flex-shrink-0">
       <div className="flex items-center gap-2 min-w-0">
-        <span className="text-sm text-ink-secondary truncate">
-          {activeWorld ? (
+        {activeWorld && (
+          <span className="text-sm text-ink-secondary truncate">
             <>
               <span className="text-ink-muted">{activeWorld.name}</span>
               {activeStory && (
@@ -78,13 +77,8 @@ export function Header() {
                 </>
               )}
             </>
-          ) : (
-            <span className="inline-flex items-center gap-2">
-              <WorldForgeLogo className="w-4 h-4" />
-              <span>WorldForge</span>
-            </span>
-          )}
-        </span>
+          </span>
+        )}
 
         {/* Outline progress badge */}
         {activeStory && outlineLoaded && (

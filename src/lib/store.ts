@@ -114,6 +114,10 @@ type AppStore = {
   setFontSize: (s: "sm" | "md" | "lg") => void;
   language: "zh" | "en";
   setLanguage: (lang: "zh" | "en") => void;
+  avatar: string;
+  setAvatar: (dataUrl: string) => void;
+  username: string;
+  setUsername: (name: string) => void;
 
   // LLM settings
   llmProvider: string;
@@ -447,6 +451,10 @@ export const useStore = create<AppStore>((set, get) => ({
 
   language: "zh",
   setLanguage: (lang) => set({ language: lang }),
+  avatar: "",
+  setAvatar: (dataUrl) => set({ avatar: dataUrl }),
+  username: "",
+  setUsername: (name) => set({ username: name }),
 
   llmProvider: "",
   llmModels: [],

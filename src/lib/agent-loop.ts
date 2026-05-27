@@ -17,6 +17,40 @@ function t() {
   return getT(useStore.getState().language).agent;
 }
 
+// ── Helpers ──
+
+/** Build a map of event_id → readable name from edges/results that carry event IDs. */
+async function resolveEventNames(worldPath: string, items: Array<{start_event_id?: string | null; end_event_id?: string | null}>): Promise<Record<string, string>> {
+  const eventIds = new Set<string>();
+  for (const item of items) {
+    if (item.start_event_id) eventIds.add(item.start_event_id);
+    if (item.end_event_id) eventIds.add(item.end_event_id);
+  }
+  if (eventIds.size === 0) return {};
+  const map: Record<string, string> = {};
+  try {
+    const timelines = await invoke<Array<{id: string}>>("list_timelines", { worldPath });
+    for (const tl of timelines) {
+      try {
+        const events = await invoke<Array<{id: string; name?: string; summary?: string}>>("list_events", { worldPath, timelineId: tl.id });
+        for (const ev of events) {
+          if (eventIds.has(ev.id)) {
+            map[ev.id] = ev.name || ev.summary || ev.id.slice(0, 8);
+          }
+        }
+      } catch {}
+    }
+  } catch {}
+  return map;
+}
+
+function eventScopeSuffix(startId: string | null | undefined, endId: string | null | undefined, names: Record<string, string>): string {
+  const parts: string[] = [];
+  if (startId) parts.push(`since: ${names[startId] || startId.slice(0, 8)}`);
+  if (endId) parts.push(`until: ${names[endId] || endId.slice(0, 8)}`);
+  return parts.length > 0 ? ` (${parts.join(", ")})` : "";
+}
+
 // ── Types ──
 
 export type AgentMessage = {
@@ -714,10 +748,14 @@ async function executeTool(
           timelineId: input.timeline_id,
         });
         if (results.length === 0) return t().graphNoReachable;
+        // Resolve event names for start/end_event_id
+        const evNames = await resolveEventNames(worldPath, results);
         return results.map((r) => {
           const en = r.entity.name || r.entity.id.slice(0, 8);
           const vn = r.via_entity.name || r.via_entity.id.slice(0, 8);
-          return t().graphTraversalNode(r.entity.type, en, r.distance, r.via_entity.type, vn, r.via_description);
+          let line = t().graphTraversalNode(r.entity.type, en, r.distance, r.via_entity.type, vn, r.via_description);
+          line += eventScopeSuffix(r.start_event_id, r.end_event_id, evNames);
+          return line;
         }).join("\n");
       }
       const edges = await invoke<any[]>("query_relations", {
@@ -727,10 +765,13 @@ async function executeTool(
         timelineId: input.timeline_id,
       });
       if (edges.length === 0) return t().graphNoRelations;
+      const evNames = await resolveEventNames(worldPath, edges);
       return edges.map((e) => {
         const fn = e.from.name || e.from.id.slice(0, 8);
         const tn = e.to.name || e.to.id.slice(0, 8);
-        return `[${e.from.type}]${fn} --[${e.description}]--> [${e.to.type}]${tn}`;
+        let line = `[${e.from.type}]${fn} --[${e.description}]--> [${e.to.type}]${tn}`;
+        line += eventScopeSuffix(e.start_event_id, e.end_event_id, evNames);
+        return line;
       }).join("\n");
     }
     case "Relation": {

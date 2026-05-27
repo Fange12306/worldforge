@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@/lib/api";
 import { useT } from "@/lib/i18n";
+import type { TraversalResult } from "@/lib/types";
 import { ChevronDown, ChevronRight, Share2 } from "lucide-react";
 
 interface ImplicationProps {
@@ -17,7 +18,7 @@ interface ImplicationProps {
  */
 export function ImplicationTrace({ worldPath, entryId, entryName, onNavigate }: ImplicationProps) {
   const { t } = useT();
-  const [graphRelatives, setGraphRelatives] = useState<any[]>([]);
+  const [graphRelatives, setGraphRelatives] = useState<TraversalResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [graphExpanded, setGraphExpanded] = useState(true);
   const [allTls, setAllTls] = useState<any[]>([]);
@@ -56,7 +57,7 @@ export function ImplicationTrace({ worldPath, entryId, entryName, onNavigate }: 
     setLoading(true);
     const params: Record<string, unknown> = { worldPath, entityType: "entry", entityId: entryId, maxDepth: 1 };
     if (activeGraphTlId) params.timelineId = activeGraphTlId;
-    invoke<any[]>("traverse_graph", params)
+    invoke<TraversalResult[]>("traverse_graph", params)
       .then((results) => {
         if (!cancelled) { setGraphRelatives(Array.isArray(results) ? results : []); setLoading(false); }
       })
@@ -64,7 +65,7 @@ export function ImplicationTrace({ worldPath, entryId, entryName, onNavigate }: 
     return () => { cancelled = true; };
   }, [worldPath, entryId, activeGraphTlId]);
 
-  const graphEntries = useMemo(() => graphRelatives.filter((r: any) => r.entity.type === "entry"), [graphRelatives]);
+  const graphEntries = useMemo(() => graphRelatives.filter((r) => r.entity.type === "entry"), [graphRelatives]);
   if (graphEntries.length === 0) return null;
 
   return (
@@ -75,10 +76,10 @@ export function ImplicationTrace({ worldPath, entryId, entryName, onNavigate }: 
       >
         {graphExpanded ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
         <Share2 className="w-3 h-3 text-ink-muted" />
-        <span className="text-[11px] text-ink-muted font-medium">{t.entry.relationGraph}</span>
-        <span className="text-[10px] text-ink-muted/50">{t.entry.relationGraphCount(graphEntries.length)}</span>
+        <span className="text-[0.688rem] text-ink-muted font-medium">{t.entry.relationGraph}</span>
+        <span className="text-[0.625rem] text-ink-muted/50">{t.entry.relationGraphCount(graphEntries.length)}</span>
         {allTls.length > 1 && (
-          <select className="text-[10px] bg-surface-800 border border-surface-700 rounded px-1.5 py-0.5 ml-auto"
+          <select className="text-[0.625rem] bg-surface-800 border border-surface-700 rounded px-1.5 py-0.5 ml-auto"
             value={activeGraphTlId}
             onChange={e => { e.stopPropagation(); setActiveGraphTlId(e.target.value); }}
             onClick={e => e.stopPropagation()}>
@@ -90,13 +91,13 @@ export function ImplicationTrace({ worldPath, entryId, entryName, onNavigate }: 
         <div className="mt-1 space-y-1">
           {groupBy(graphEntries, "via_description").map(([relation, entities]) => (
             <div key={relation} className="pl-4">
-              <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-0.5">{relation}</p>
+              <p className="text-[0.625rem] text-ink-muted/50 uppercase tracking-wider mb-0.5">{relation}</p>
               <div className="flex flex-wrap gap-1">
-                {entities.map((r: any, i: number) => (
+                {entities.map((r, i) => (
                   <button
                     key={`${r.entity.id}-${i}`}
                     onClick={() => onNavigate?.("entry", r.entity.id)}
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-surface-800/50 text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[0.625rem] rounded bg-surface-800/50 text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
                   >
                     {r.entity.name || entryNames.get(r.entity.id) || r.entity.id.slice(0, 8)}
                   </button>

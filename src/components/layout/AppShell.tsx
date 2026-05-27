@@ -59,7 +59,15 @@ export function AppShell() {
   useEffect(() => {
     const handler = () => setRefreshKey((k) => k + 1);
     window.addEventListener("worldforge-data-changed", handler);
-    return () => window.removeEventListener("worldforge-data-changed", handler);
+    // Clear last session on quit so reopen always starts fresh
+    const unloadHandler = () => {
+      invoke("save_last_session", { worldPath: "", storyId: "", conversationId: "" }).catch(() => {});
+    };
+    window.addEventListener("beforeunload", unloadHandler);
+    return () => {
+      window.removeEventListener("worldforge-data-changed", handler);
+      window.removeEventListener("beforeunload", unloadHandler);
+    };
   }, []);
 
   useEffect(() => {
@@ -76,15 +84,17 @@ export function AppShell() {
     invoke<string>("load_language").then((lang) => {
       if (lang === "en" || lang === "zh") useStore.getState().setLanguage(lang);
     }).catch(() => {});
+    // Apply persisted font size
+    const stored = (() => { try { return localStorage.getItem("worldforge-font-size") as "sm" | "md" | "lg" | null; } catch { return null; } })();
+    if (stored) useStore.getState().setFontSize(stored);
   }, []);
 
-  // Restore last session on startup
+  // Restore last session on startup (no demo-world fallback)
   useEffect(() => {
     if (worlds.length > 0) return;
 
     const loadWorld = async (worldPath: string) => {
       const s = useStore.getState();
-      // Cross-platform: use both / and \ as path separators (Windows uses \).
       let name = worldPath.split(/[/\\]/).pop() || t.layout.unnamedWorld;
       try {
         const meta = await invoke<{ name: string }>("open_world", { path: worldPath });
@@ -96,7 +106,6 @@ export function AppShell() {
         const stories = await invoke<Array<{ id: string; title: string; status: string; conversations: Array<{ id: string; title: string }> }>>("load_stories", { worldPath });
         if (stories.length > 0) {
           const convId = s.hydrateStories(wid, stories);
-          // Load token counts + context state
           for (const st of stories) {
             for (const c of (st.conversations || [])) {
               try {
@@ -120,15 +129,12 @@ export function AppShell() {
               } catch {}
             }
           }
-          // Load messages for active conversation
           if (convId) {
             try {
               const msgs = await invoke<Array<{ type: string; content: string; thinking?: string; tool?: string; input?: unknown; output?: string }>>("load_session", { worldPath, sessionId: convId });
               type SM = { id: string; role: "user" | "assistant" | "system"; content: string; thinking?: string; toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }>; timestamp: number };
               const result: SM[] = [];
               let pending: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }> = [];
-              // Track the last assistant that consumed pending, so tool_results
-              // that arrive AFTER the assistant can still assign results.
               let lastAssistantIdx: number | null = null;
               for (const m of msgs) {
                 if (m.type === "user") { result.push({ id: `msg_${result.length}`, role: "user", content: m.content, timestamp: Date.now() }); pending = []; lastAssistantIdx = null; }
@@ -141,18 +147,12 @@ export function AppShell() {
                 else if (m.type === "tool_use") pending.push({ id: `tc_${pending.length}`, name: m.tool || "", input: (m.input as Record<string, unknown>) || {}, result: "" });
                 else if (m.type === "tool_result") {
                   const output = (m.output as string) || "";
-                  // Try to assign result to a pending tool call first
                   const last = pending[pending.length - 1];
-                  if (last) {
-                    last.result = output;
-                  } else if (lastAssistantIdx !== null) {
-                    // Pending was already consumed — look back at the last
-                    // assistant and fill the first empty-result tool call.
+                  if (last) { last.result = output; }
+                  else if (lastAssistantIdx !== null) {
                     const lastMsg = result[lastAssistantIdx];
                     if (lastMsg?.toolCalls) {
-                      for (const tc of lastMsg.toolCalls) {
-                        if (!tc.result) { tc.result = output; break; }
-                      }
+                      for (const tc of lastMsg.toolCalls) { if (!tc.result) { tc.result = output; break; } }
                     }
                   }
                   result.push({ id: `msg_${result.length}`, role: "system", content: `[工具结果: ${m.tool || "tool"}]\n${output}`, timestamp: Date.now() });
@@ -173,34 +173,23 @@ export function AppShell() {
       } catch {}
     };
 
-    // Try to restore last session, otherwise fall back to demo world
     invoke<{ world_path: string; story_id: string; conversation_id: string } | null>("load_last_session")
       .then((last) => {
-        if (last?.world_path) {
-          loadWorld(last.world_path);
-        } else {
-          // Fallback: demo world
-          invoke<string>("get_worlds_dir").then(async (worldsDir) => {
-            const path = `${worldsDir}/${t.layout.demoWorld}`;
-            await initWorld(path, t.layout.demoWorld).catch(() => {});
-            loadWorld(path);
-          }).catch(() => {});
-        }
+        if (last?.world_path) loadWorld(last.world_path);
       })
-      .catch(() => {
-        // Fallback on error
-        invoke<string>("get_worlds_dir").then(async (worldsDir) => {
-          const path = `${worldsDir}/${t.layout.demoWorld}`;
-          await initWorld(path, t.layout.demoWorld).catch(() => {});
-          loadWorld(path);
-        }).catch(() => {});
-      });
+      .catch(() => {});
   }, []);
 
   // Save last session on navigation changes
   const activeWorld = worlds.find((w) => w.id === activeWorldId);
   useEffect(() => {
-    if (!activeWorld || !activeConversationId) return;
+    if (!activeWorld || !activeConversationId) {
+      // Clear last session when world is closed
+      invoke("save_last_session", {
+        worldPath: "", storyId: "", conversationId: "",
+      }).catch(() => {});
+      return;
+    }
     const story = activeWorld.stories.find((s) =>
       s.conversations.some((c) => c.id === activeConversationId)
     );
@@ -298,9 +287,9 @@ function DetailView({ view, onBack, onUpdate, activeWorldId, activeConversationI
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex items-center gap-2 px-3 border-b border-surface-700 flex-shrink-0" style={{ height: 40, paddingLeft: !sidebarOpen ? 48 : 12 }}>
-        <button onClick={onBack} className="text-[11px] text-ink-muted hover:text-ink h-full flex items-center flex-shrink-0">{t.entry.backToChat}</button>
-        <span className="text-[10px] text-ink-muted/50">{label}</span>
-        <span className="text-[11px] text-ink-secondary truncate flex-1">{name}</span>
+        <button onClick={onBack} className="text-[0.688rem] text-ink-muted hover:text-ink h-full flex items-center flex-shrink-0">{t.entry.backToChat}</button>
+        <span className="text-[0.625rem] text-ink-muted/50">{label}</span>
+        <span className="text-[0.688rem] text-ink-secondary truncate flex-1">{name}</span>
       </div>
       <div className="flex-1 overflow-auto">
         {view.type === "entry" ? (
@@ -330,11 +319,12 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
   onNavigateToTimeline?: (eventId: string, timelineId: string) => void;
 }) {
   const { t } = useT();
+  const displayBody = content.startsWith("---") ? content.replace(/^---[\s\S]*?---\n?/, "") : content;
   const [editTitle, setEditTitle] = useState(title);
-  const [text, setText] = useState(content);
+  const [text, setText] = useState(displayBody);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [metaExpanded, setMetaExpanded] = useState(true);
-  useEffect(() => { setEditTitle(title); setText(content); }, [title, content]);
+  useEffect(() => { setEditTitle(title); setText(displayBody); }, [title, content]);
   // Load event summaries and timeline IDs for linked_events
   const [eventInfos, setEventInfos] = useState<Record<string, {summary: string; timelineId: string}>>({});
   const [entryNames, setEntryNames] = useState<Record<string, string>>({});
@@ -374,8 +364,6 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
     return () => document.removeEventListener("mousedown", h);
   }, [confirmDelete]);
   const proseClass = `prose prose-sm max-w-none ${theme === "dark" ? "prose-invert" : ""}`;
-  // Parse frontmatter vs body from content for display
-  const displayBody = content.startsWith("---") ? content.replace(/^---[\s\S]*?---\n?/, "") : content;
   // Parse frontmatter for time_period, involved_entries, and linked_events
   let fmTimePeriod: [number, number] | null = null;
   let fmInvolved: string[] = [];
@@ -402,7 +390,7 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
         <div className="flex items-center gap-2">
           <span className="text-xs text-ink-muted">Ch{chapterOrder}</span>
           <span className="text-xs text-ink-secondary font-medium truncate max-w-[200px]">{title}</span>
-          {chapterId && <span className="px-1.5 py-0.5 rounded bg-surface-800/50 text-ink-muted/50 font-mono text-[10px] select-all">{chapterId}</span>}
+          {chapterId && <span className="px-1.5 py-0.5 rounded bg-surface-800/50 text-ink-muted/50 font-mono text-[0.625rem] select-all">{chapterId}</span>}
         </div>
         <div className="flex items-center gap-1">
           {editing ? (
@@ -414,7 +402,7 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
             <button onClick={onEdit} className="p-1 rounded text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"><Edit3 className="w-3.5 h-3.5" /></button>
           )}
           {onDelete && (confirmDelete ? (
-            <button data-confirm onClick={() => { onDelete(); setConfirmDelete(false); }} className="text-[10px] text-error hover:bg-surface-700 px-1.5 py-0.5 rounded ml-1 transition-colors">{t.status.confirm}</button>
+            <button data-confirm onClick={() => { onDelete(); setConfirmDelete(false); }} className="text-[0.625rem] text-error hover:bg-surface-700 px-1.5 py-0.5 rounded ml-1 transition-colors">{t.status.confirm}</button>
           ) : (
             <button onClick={() => setConfirmDelete(true)} className="p-1 rounded text-ink-muted hover:text-error hover:bg-surface-800 transition-colors ml-1"><Trash2 className="w-3.5 h-3.5" /></button>
           ))}
@@ -438,24 +426,24 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
                 >
                   {metaExpanded ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
                   <Clock className="w-3 h-3 text-ink-muted" />
-                  <span className="text-[11px] text-ink-muted font-medium">{t.entry.chapterInfo}</span>
+                  <span className="text-[0.688rem] text-ink-muted font-medium">{t.entry.chapterInfo}</span>
                 </button>
                 {metaExpanded && (
                   <div className="mt-2 pl-4 space-y-2">
                     {fmTimePeriod && (
                       <div>
-                        <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-1">{t.entry.timePoint}</p>
-                        <span className="inline-flex items-center gap-1 px-2 py-1 text-[11px] rounded bg-surface-800 text-ink-secondary">
+                        <p className="text-[0.625rem] text-ink-muted/50 uppercase tracking-wider mb-1">{t.entry.timePoint}</p>
+                        <span className="inline-flex items-center gap-1 px-2 py-1 text-[0.688rem] rounded bg-surface-800 text-ink-secondary">
                           {fmTimePeriod[0]} → {fmTimePeriod[1]}
                         </span>
                       </div>
                     )}
                     {fmInvolved.length > 0 && (
                       <div>
-                        <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-1">{t.entry.involvedEntries}</p>
+                        <p className="text-[0.625rem] text-ink-muted/50 uppercase tracking-wider mb-1">{t.entry.involvedEntries}</p>
                         <div className="flex flex-wrap gap-1">
                           {fmInvolved.map((e) => (
-                            <button key={e} onClick={() => onNavigateEntry?.(e)} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-surface-800/50 text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors">
+                            <button key={e} onClick={() => onNavigateEntry?.(e)} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[0.625rem] rounded bg-surface-800/50 text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors">
                               {entryNames[e] || e.slice(0, 8)}
                             </button>
                           ))}
@@ -464,7 +452,7 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
                     )}
                     {fmLinkedEvents.length > 0 && (
                       <div>
-                        <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-1">{t.entry.linkedEvents}</p>
+                        <p className="text-[0.625rem] text-ink-muted/50 uppercase tracking-wider mb-1">{t.entry.linkedEvents}</p>
                         <div className="flex flex-col gap-1">
                           {fmLinkedEvents.map((le) => {
                             const parts = le.split(":");
@@ -472,7 +460,7 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
                             const info = eventInfos[eventId];
                             const summary = info?.summary;
                             return (
-                              <button key={le} onClick={() => { if (info) onNavigateToTimeline?.(eventId, info.timelineId); }} className="inline-flex items-start gap-1.5 px-2 py-1 text-[10px] rounded bg-amber-600/10 text-amber-500 hover:bg-amber-600/20 transition-colors text-left">
+                              <button key={le} onClick={() => { if (info) onNavigateToTimeline?.(eventId, info.timelineId); }} className="inline-flex items-start gap-1.5 px-2 py-1 text-[0.625rem] rounded bg-amber-600/10 text-amber-500 hover:bg-amber-600/20 transition-colors text-left">
                                 <span className="mt-0.5 flex-shrink-0">🕐</span>
                                 <span className="leading-snug">{summary || eventId}</span>
                               </button>
@@ -483,8 +471,8 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
                     )}
                     {fmLinkedEvents.length === 0 && (
                       <div>
-                        <p className="text-[10px] text-ink-muted/50 uppercase tracking-wider mb-1">{t.entry.linkedEvents}</p>
-                        <p className="text-[10px] text-amber-500/60 italic">{t.entry.noLinkedEvents}</p>
+                        <p className="text-[0.625rem] text-ink-muted/50 uppercase tracking-wider mb-1">{t.entry.linkedEvents}</p>
+                        <p className="text-[0.625rem] text-amber-500/60 italic">{t.entry.noLinkedEvents}</p>
                       </div>
                     )}
                   </div>

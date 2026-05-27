@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useStore, type ModelConfig } from "@/lib/store";
 import { invoke } from "@/lib/api";
-import { X, Eye, EyeOff, SlidersHorizontal, Palette, Bot, UserRound, ArrowLeft, Pencil } from "lucide-react";
+import { X, Eye, EyeOff, SlidersHorizontal, Palette, Bot, UserRound, ArrowLeft, Pencil, Sun, Moon } from "lucide-react";
 import { MemoryManager } from "./MemoryManager";
 import { useT } from "@/lib/i18n";
 
@@ -172,10 +172,7 @@ export function SettingsPanel({ onClose }: Props) {
               <GeneralSection />
             )}
             {activeSection === "appearance" && (
-              <section className="pt-5">
-                <h2 className="text-xl font-semibold text-ink mb-2">{t.appearance.title}</h2>
-                <p className="text-xs text-ink-muted">{t.appearance.comingSoon}</p>
-              </section>
+              <AppearanceSection />
             )}
             {activeSection === "personalization" && (
               <PersonalizationSection />
@@ -280,7 +277,7 @@ export function SettingsPanel({ onClose }: Props) {
                         </button>
                       </div>
                     </div>
-                    <p className="pl-[136px] text-[10px] text-ink-muted mt-1">Bing Web Search API v7，免费层每月 1000 次调用。不填则使用内置搜索。</p>
+                    <p className="pl-[136px] text-[0.625rem] text-ink-muted mt-1">Bing Web Search API v7，免费层每月 1000 次调用。不填则使用内置搜索。</p>
                   </div>
 
                   <div>
@@ -303,7 +300,7 @@ export function SettingsPanel({ onClose }: Props) {
                       <div className="flex items-start gap-6">
                         <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.availableModels}</label>
                         <div className="w-[680px] space-y-1.5">
-                          <div className="grid grid-cols-[minmax(0,1fr)_120px_104px_100px_68px_32px] gap-2 px-0.5 text-[10px] text-ink-muted">
+                          <div className="grid grid-cols-[minmax(0,1fr)_120px_104px_100px_68px_32px] gap-2 px-0.5 text-[0.625rem] text-ink-muted">
                             <span>{t.model.modelId}</span>
                             <span>{t.model.displayName}</span>
                             <span>{t.model.reasoningEffort}</span>
@@ -421,7 +418,7 @@ export function SettingsPanel({ onClose }: Props) {
                       {saved ? t.model.saved : t.model.save}
                     </button>
                   </div>
-                  <p className="pl-[136px] text-[10px] text-ink-muted">
+                  <p className="pl-[136px] text-[0.625rem] text-ink-muted">
                     {t.model.apiKeyStorageNote}
                   </p>
                 </div>
@@ -437,10 +434,38 @@ function GeneralSection() {
   const { t } = useT();
   const language = useStore((s) => s.language);
   const setLanguage = useStore((s) => s.setLanguage);
+  const [appVersion, setAppVersion] = useState("");
+  const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [releaseUrl, setReleaseUrl] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState("");
 
   const handleChangeLanguage = async (lang: "zh" | "en") => {
     setLanguage(lang);
     try { await invoke("save_language", { language: lang }); } catch {}
+  };
+
+  useEffect(() => {
+    invoke<string>("get_app_version").then(setAppVersion).catch(() => setAppVersion("0.0.0"));
+  }, []);
+
+  const handleCheckUpdate = async () => {
+    setChecking(true);
+    setCheckError("");
+    try {
+      const resp = await fetch("https://api.github.com/repos/fange12306/worldforge/releases/latest");
+      if (!resp.ok) {
+        if (resp.status === 403) throw new Error("rate_limit");
+        throw new Error("fetch_failed");
+      }
+      const data = await resp.json();
+      const tag = (data.tag_name || "").replace(/^v/, "");
+      setLatestVersion(tag);
+      setReleaseUrl(data.html_url || "https://github.com/fange12306/worldforge/releases");
+    } catch (e: any) {
+      setCheckError(e.message === "rate_limit" ? t.general.checkRateLimit : t.general.checkFailed);
+    }
+    setChecking(false);
   };
 
   return (
@@ -460,7 +485,52 @@ function GeneralSection() {
                 <option value="zh">中文</option>
                 <option value="en">English</option>
               </select>
-              <p className="text-[10px] text-ink-muted">{t.general.languageDesc}</p>
+              <p className="text-[0.625rem] text-ink-muted">{t.general.languageDesc}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Update Check */}
+        <div>
+          <h3 className="text-sm font-medium text-ink mb-3">{t.general.updates}</h3>
+          <div className="flex items-start gap-6">
+            <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.general.currentVersion}</label>
+            <div className="w-96 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-ink font-mono">v{appVersion || "..."}</span>
+                <button
+                  onClick={handleCheckUpdate}
+                  disabled={checking}
+                  className="px-3 h-7 rounded-md border border-edge text-xs text-ink-secondary hover:text-ink hover:bg-surface-800 transition-colors disabled:opacity-50"
+                >
+                  {checking ? t.general.checking : t.general.checkUpdate}
+                </button>
+              </div>
+              {latestVersion && (
+                <div className="flex items-center gap-2">
+                  {latestVersion === appVersion ? (
+                    <span className="text-xs text-success">{t.general.upToDate}</span>
+                  ) : (
+                    <>
+                      <span className="text-xs text-amber-500">{t.general.newVersionFound(latestVersion)}</span>
+                      <a
+                        href={releaseUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-brand-500 hover:text-brand-400 underline transition-colors"
+                      >
+                        {t.general.downloadOnGitHub}
+                      </a>
+                    </>
+                  )}
+                </div>
+              )}
+              {checkError && (
+                <p className="text-xs text-error">{checkError} <a href="https://github.com/fange12306/worldforge/releases" target="_blank" rel="noreferrer" className="underline">{t.general.releasesPage}</a></p>
+              )}
+              <p className="text-[0.625rem] text-ink-muted">
+                {t.general.releasesPage}: github.com/fange12306/worldforge/releases
+              </p>
             </div>
           </div>
         </div>
@@ -509,7 +579,7 @@ function PersonalizationSection() {
                 placeholder={loading ? t.personalization.loading : t.personalization.instructionsPlaceholder}
                 className="w-full h-40 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 py-1.5 outline-none focus:border-brand-500/30 transition-colors resize-y"
               />
-              <p className="text-[10px] text-ink-muted">
+              <p className="text-[0.625rem] text-ink-muted">
                 {t.personalization.instructionsHint}
               </p>
             </div>
@@ -636,7 +706,7 @@ function WorldGuidanceSection() {
                       className="w-full h-40 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 py-1.5 outline-none focus:border-brand-500/30 transition-colors resize-y"
                       placeholder={t.personalization.worldPlaceholder}
                     />
-                    <p className="text-[10px] text-ink-muted">
+                    <p className="text-[0.625rem] text-ink-muted">
                       {t.personalization.worldHint(w.name)}
                     </p>
                     <div className="flex items-center gap-2">
@@ -688,11 +758,81 @@ function CompressionThresholdSetting({ value, onChange }: { value: number; onCha
               {Math.round(value * 100)}%
             </span>
           </div>
-          <p className="text-[10px] text-ink-muted">
+          <p className="text-[0.625rem] text-ink-muted">
             {t.model.compressionThresholdDesc}
           </p>
         </div>
       </div>
     </div>
+  );
+}
+
+function AppearanceSection() {
+  const { t } = useT();
+  const theme = useStore((s) => s.theme);
+  const toggleTheme = useStore((s) => s.toggleTheme);
+  const fontSize = useStore((s) => s.fontSize);
+  const setFontSize = useStore((s) => s.setFontSize);
+
+  const fontSizeOptions: Array<{ key: "sm" | "md" | "lg"; label: string }> = [
+    { key: "sm", label: t.appearance.fontSizeSm },
+    { key: "md", label: t.appearance.fontSizeMd },
+    { key: "lg", label: t.appearance.fontSizeLg },
+  ];
+
+  return (
+    <section className="pt-5">
+      <h2 className="text-xl font-semibold text-ink mb-7">{t.appearance.title}</h2>
+      <div className="space-y-7">
+        {/* Theme */}
+        <div>
+          <h3 className="text-sm font-medium text-ink mb-3">{t.appearance.theme}</h3>
+          <div className="flex items-start gap-6">
+            <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.appearance.theme}</label>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => { if (theme !== "dark") toggleTheme(); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border transition-colors ${
+                  theme === "dark" ? "bg-surface-800 border-brand-500/30 text-ink" : "border-edge text-ink-muted hover:text-ink hover:bg-surface-800"
+                }`}
+              >
+                <Moon className="w-3.5 h-3.5" />{t.appearance.themeDark}
+              </button>
+              <button
+                onClick={() => { if (theme !== "light") toggleTheme(); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border transition-colors ${
+                  theme === "light" ? "bg-surface-800 border-brand-500/30 text-ink" : "border-edge text-ink-muted hover:text-ink hover:bg-surface-800"
+                }`}
+              >
+                <Sun className="w-3.5 h-3.5" />{t.appearance.themeLight}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Font Size */}
+        <div>
+          <h3 className="text-sm font-medium text-ink mb-3">{t.appearance.fontSize}</h3>
+          <div className="flex items-start gap-6">
+            <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.appearance.fontSize}</label>
+            <div className="flex gap-1.5">
+              {fontSizeOptions.map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setFontSize(opt.key)}
+                  className={`px-3 py-1.5 text-xs rounded-md border transition-colors ${
+                    fontSize === opt.key
+                      ? "bg-surface-800 border-brand-500/30 text-ink"
+                      : "border-edge text-ink-muted hover:text-ink hover:bg-surface-800"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }

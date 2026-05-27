@@ -114,7 +114,7 @@ export function EntryPanel({ onClose }: Props) {
       <div className="flex-1 min-h-0 overflow-hidden">
         {selectedId || showCreate ? (
           <div className="flex flex-col h-full">
-            <button onClick={() => { setSelectedId(null); setShowCreate(false); setEditing(false); }} className="text-[10px] text-ink-muted hover:text-ink px-3 py-1.5 border-b border-surface-700">{t.entry.backToList}</button>
+            <button onClick={() => { setSelectedId(null); setShowCreate(false); setEditing(false); }} className="text-[0.625rem] text-ink-muted hover:text-ink px-3 py-1.5 border-b border-surface-700">{t.entry.backToList}</button>
             <div className="flex-1 overflow-auto">
               {showCreate ? (
                 <CreateEntryForm name={newName} onNameChange={setNewName} type={newType} onTypeChange={setNewType} onCreate={handleCreate} onCancel={() => { setShowCreate(false); setNewName(""); }} />

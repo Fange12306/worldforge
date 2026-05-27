@@ -113,7 +113,7 @@ export function ChatWindow({ messages }: { storyId: string; messages: Message[] 
             return (
               <div key={msg.id} className="flex items-center gap-3 py-2">
                 <div className="flex-1 h-px bg-surface-700" />
-                <span className="text-[11px] text-ink-muted flex-shrink-0">之前的对话已被压缩</span>
+                <span className="text-[0.688rem] text-ink-muted flex-shrink-0">之前的对话已被压缩</span>
                 <div className="flex-1 h-px bg-surface-700" />
               </div>
             );

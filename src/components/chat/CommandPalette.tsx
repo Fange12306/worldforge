@@ -91,7 +91,7 @@ export function CommandPalette({ isOpen, onClose }: Props) {
               )}
             >
               <span className="text-sm flex-1">{cmd.name}</span>
-              <span className="text-[11px] text-ink-muted">{cmd.desc}</span>
+              <span className="text-[0.688rem] text-ink-muted">{cmd.desc}</span>
               {i === activeIdx && <ArrowRight className="w-3.5 h-3.5 text-ink-muted" />}
             </button>
           ))}

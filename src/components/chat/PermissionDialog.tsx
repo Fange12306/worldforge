@@ -21,14 +21,14 @@ export function InlinePermission({ toolName, details, isDangerous, onChoose, onD
           <div className="flex-1" />
           <div className="flex gap-1">
             {!isDangerous && (
-              <button onClick={() => onChoose("session")} className="px-3 py-1 text-[11px] rounded-lg bg-brand-600 text-white hover:bg-brand-500 transition-colors">
+              <button onClick={() => onChoose("session")} className="px-3 py-1 text-[0.688rem] rounded-lg bg-brand-600 text-white hover:bg-brand-500 transition-colors">
                 始终允许
               </button>
             )}
-            <button onClick={() => onChoose("once")} className="px-3 py-1 text-[11px] rounded-lg bg-surface-700 text-ink hover:bg-surface-600 transition-colors">
+            <button onClick={() => onChoose("once")} className="px-3 py-1 text-[0.688rem] rounded-lg bg-surface-700 text-ink hover:bg-surface-600 transition-colors">
               允许一次
             </button>
-            <button onClick={() => onChoose("deny")} className="px-2 py-1 text-[11px] text-ink-muted hover:text-ink transition-colors">
+            <button onClick={() => onChoose("deny")} className="px-2 py-1 text-[0.688rem] text-ink-muted hover:text-ink transition-colors">
               拒绝
             </button>
           </div>

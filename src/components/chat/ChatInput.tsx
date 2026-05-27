@@ -460,7 +460,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
         {newEntryForm && (
           <div className="mb-2 bg-surface-800 rounded-2xl px-4 py-3 space-y-2 animate-fade-in">
             <div className="flex items-center gap-2">
-              <span className="text-[11px] text-ink-muted">{t.chat.newEntry}</span>
+              <span className="text-[0.688rem] text-ink-muted">{t.chat.newEntry}</span>
               <button onClick={() => { setNewEntryForm(false); setNewEntryName(""); }} className="ml-auto p-0.5 rounded text-ink-muted hover:text-ink"><X className="w-3 h-3" /></button>
             </div>
             <input
@@ -476,7 +476,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
                 id="nf-type"
                 value={newEntryType}
                 onChange={(e) => setNewEntryType(e.target.value)}
-                className="flex-1 h-8 text-[11px] bg-surface-700 rounded-lg px-3 text-ink outline-none"
+                className="flex-1 h-8 text-[0.688rem] bg-surface-700 rounded-lg px-3 text-ink outline-none"
               >
                 {Object.entries(t.entryTypes).map(([k, v]) => (
                   <option key={k} value={k}>{v}</option>
@@ -499,7 +499,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
                   setNewEntryName("");
                 }}
                 disabled={!newEntryName.trim()}
-                className="px-4 h-8 text-[11px] rounded-lg bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-40 transition-colors flex-shrink-0"
+                className="px-4 h-8 text-[0.688rem] rounded-lg bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-40 transition-colors flex-shrink-0"
               >
                 {t.chat.newEntryCreate}
               </button>
@@ -510,13 +510,13 @@ export function ChatInput({ storyId }: { storyId: string }) {
         {(files.length > 0 || pendingUploads.length > 0 || uploadErrors.length > 0) && (
           <div className="flex flex-wrap gap-1 mb-2">
             {pendingUploads.map((name, i) => (
-              <span key={`pending-${i}`} className="flex items-center gap-1 px-2 py-0.5 text-[11px] bg-surface-700 text-ink-muted rounded-full">
+              <span key={`pending-${i}`} className="flex items-center gap-1 px-2 py-0.5 text-[0.688rem] bg-surface-700 text-ink-muted rounded-full">
                 <Loader2 className="w-3 h-3 animate-spin" />
                 {name}
               </span>
             ))}
             {files.map((f, i) => (
-              <span key={i} className="flex items-center gap-1 px-2 py-0.5 text-[11px] bg-surface-700 text-ink-secondary rounded-full">
+              <span key={i} className="flex items-center gap-1 px-2 py-0.5 text-[0.688rem] bg-surface-700 text-ink-secondary rounded-full">
                 <Paperclip className="w-3 h-3" />
                 {f.name}
                 <button onClick={() => setFiles((p) => p.filter((_, j) => j !== i))} className="ml-0.5 hover:text-error">
@@ -525,7 +525,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
               </span>
             ))}
             {uploadErrors.map((error, i) => (
-              <span key={`error-${i}`} className="flex items-center gap-1 px-2 py-0.5 text-[11px] bg-error/10 text-error rounded-full" title={error}>
+              <span key={`error-${i}`} className="flex items-center gap-1 px-2 py-0.5 text-[0.688rem] bg-error/10 text-error rounded-full" title={error}>
                 <X className="w-3 h-3" />
                 {error}
               </span>
@@ -554,7 +554,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
             <ContextRing />
             {llmModels.length >= 1 && (
               <select value={activeModel} onChange={(e) => setActiveModel(e.target.value)}
-                className="text-[11px] bg-transparent text-ink-muted py-0 appearance-none outline-none cursor-pointer truncate max-w-[220px]"
+                className="text-[0.688rem] bg-transparent text-ink-muted py-0 appearance-none outline-none cursor-pointer truncate max-w-[220px]"
               >
                 {llmModels.map((m) => <option key={m.name} value={m.name}>{m.alias || m.name}</option>)}
               </select>

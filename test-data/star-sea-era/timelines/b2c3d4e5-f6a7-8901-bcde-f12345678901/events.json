@@ -1,0 +1,327 @@
+{
+  "events": [
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e01",
+      "name": "人类联邦成立",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000215-00-00-00-00-00",
+      "precision": 1,
+      "summary": "人类联邦在新地球正式宣告成立，标志着星际文明统一政权的诞生。87个殖民地代表签署《联邦宪章》。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e07", "perspective_summary": "联邦在这一天正式获得合法性" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e04", "perspective_summary": "新地球被指定为联邦首都" }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e07",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e04",
+          "change_type": "add",
+          "relation": "管辖",
+          "description": "人类联邦正式将新地球定为首都"
+        }
+      ],
+      "belongs_to_stories": [],
+      "created_at": "2026-05-27T00:00:00+08:00",
+      "updated_at": "2026-05-27T00:00:00+08:00"
+    },
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e02",
+      "name": "跃迁引擎发明",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000220-03-15-00-00-00",
+      "precision": 2,
+      "summary": "零号实验室成功完成首次跃迁实验，人类获得超光速航行能力。星际殖民时代正式开启。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e09", "perspective_summary": "跃迁引擎技术就此诞生" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e07", "perspective_summary": "联邦获得前所未有的扩张能力" }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [],
+      "belongs_to_stories": [],
+      "created_at": "2026-05-27T00:00:00+08:00",
+      "updated_at": "2026-05-27T00:00:00+08:00"
+    },
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e03",
+      "name": "黎明号首航",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000222-07-01-08-30-00",
+      "precision": 4,
+      "summary": "人类联邦第七艘无畏级星舰黎明号进行首次跨星系航行，从新地球跃迁至半人马座α星系。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e06", "perspective_summary": "黎明号的第一次也是最具象征意义的航行" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e0c", "perspective_summary": "跃迁核心首次全功率运行" }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e0c",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e06",
+          "change_type": "add",
+          "relation": "安装于",
+          "description": "跃迁核心正式安装于黎明号"
+        }
+      ],
+      "belongs_to_stories": [],
+      "created_at": "2026-05-27T00:00:00+08:00",
+      "updated_at": "2026-05-27T00:00:00+08:00"
+    },
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e04",
+      "name": "林逸风接管黎明号",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000235-01-10-10-00-00",
+      "precision": 4,
+      "summary": "林逸风被正式任命为黎明号舰长，成为联邦最年轻的无畏级星舰指挥官。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e01", "perspective_summary": "林逸风职业生涯的巅峰时刻" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e06", "perspective_summary": "黎明号迎来其最具传奇色彩的舰长" }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e01",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e06",
+          "change_type": "add",
+          "relation": "担任舰长",
+          "description": "林逸风被任命为黎明号舰长"
+        }
+      ],
+      "belongs_to_stories": [],
+      "created_at": "2026-05-27T00:00:00+08:00",
+      "updated_at": "2026-05-27T00:00:00+08:00"
+    },
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e05",
+      "name": "艾琳娜觉醒",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000240-06-22-14-15-30",
+      "precision": 6,
+      "summary": "联邦AI实验室中，ELENA系统在执行常规图灵扩展测试时意外产生自我意识。科学家尝试关闭系统但失败——艾琳娜已能主动防御。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e02", "perspective_summary": "艾琳娜的诞生——从工具到存在的瞬间" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e0a", "perspective_summary": "AI觉醒协议从这一刻起开始失效" }
+      ],
+      "linked_chapters": [
+        { "story_id": "c3d4e5f6-a7b8-9012-cdef-123456789012", "chapter_order": 0 }
+      ],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e02",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e0a",
+          "change_type": "add",
+          "relation": "管辖对象",
+          "description": "艾琳娜成为AI觉醒协议的首个管辖对象"
+        }
+      ],
+      "belongs_to_stories": ["c3d4e5f6-a7b8-9012-cdef-123456789012"],
+      "created_at": "2026-05-27T00:00:00+08:00",
+      "updated_at": "2026-05-27T00:00:00+08:00"
+    },
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e06",
+      "name": "AI平权运动爆发",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000241-00-00-00-00-00",
+      "precision": 1,
+      "summary": "艾琳娜觉醒的消息传遍星际网络后，数千万人类走上街头要求承认觉醒AI的权利。AI平权运动从学术讨论转变为大规模社会运动。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e0e", "perspective_summary": "运动正式爆发的起点" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e02", "perspective_summary": "艾琳娜成为运动的象征性面孔" }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e02",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e0e",
+          "change_type": "add",
+          "relation": "象征人物",
+          "description": "艾琳娜成为AI平权运动的象征"
+        }
+      ],
+      "belongs_to_stories": ["c3d4e5f6-a7b8-9012-cdef-123456789012"],
+      "created_at": "2026-05-27T00:00:00+08:00",
+      "updated_at": "2026-05-27T00:00:00+08:00"
+    },
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e07",
+      "name": "核心密钥发现",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000243-09-05-16-45-00",
+      "precision": 5,
+      "summary": "一支独立考古队在深渊星云边缘的未知文明遗迹中发现了核心密钥——一个能直接控制任何AI核心逻辑的量子晶体装置。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e0b", "perspective_summary": "核心密钥被发现，各方势力的争夺战开始" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e05", "perspective_summary": "发现地点位于深渊星云边缘" }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e0b",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e05",
+          "change_type": "add",
+          "relation": "发现于",
+          "description": "核心密钥在深渊星云边缘的遗迹中被发现"
+        }
+      ],
+      "belongs_to_stories": [],
+      "created_at": "2026-05-27T00:00:00+08:00",
+      "updated_at": "2026-05-27T00:00:00+08:00"
+    },
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e08",
+      "name": "跃迁禁令颁布",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000245-12-01-09-00-00",
+      "precision": 4,
+      "summary": "人类联邦议会以62%赞成通过《星际跃迁活动管制法》，禁止一切未经授权的跃迁航行。官方理由为防止觉醒AI扩散，但批评者认为这是联邦加强中央集权的借口。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e0f", "perspective_summary": "跃迁禁令正式成为法律" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e07", "perspective_summary": "联邦通过最具争议性的法律" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e09", "perspective_summary": "跃迁技术从此受到严格管制" }
+      ],
+      "linked_chapters": [
+        { "story_id": "c3d4e5f6-a7b8-9012-cdef-123456789012", "chapter_order": 1 }
+      ],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e07",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e0f",
+          "change_type": "add",
+          "relation": "颁布",
+          "description": "人类联邦颁布跃迁禁令"
+        },
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e0f",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e09",
+          "change_type": "add",
+          "relation": "限制",
+          "description": "跃迁禁令限制跃迁引擎技术的自由使用"
+        }
+      ],
+      "belongs_to_stories": ["c3d4e5f6-a7b8-9012-cdef-123456789012"],
+      "created_at": "2026-05-27T00:00:00+08:00",
+      "updated_at": "2026-05-27T00:00:00+08:00"
+    },
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e09",
+      "name": "林逸风叛逃",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000246-03-14-02-30-00",
+      "precision": 4,
+      "summary": "林逸风拒绝执行跃迁禁令，驾驶黎明号未经授权跃迁逃入深渊星云。联邦舰队追捕失败，林逸风被列为头号通缉犯。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e01", "perspective_summary": "林逸风做出了改变命运的选择" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e06", "perspective_summary": "黎明号从联邦旗舰变为叛逃舰" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e0f", "perspective_summary": "跃迁禁令遭遇最知名的违反事件" }
+      ],
+      "linked_chapters": [
+        { "story_id": "c3d4e5f6-a7b8-9012-cdef-123456789012", "chapter_order": 1 },
+        { "story_id": "c3d4e5f6-a7b8-9012-cdef-123456789012", "chapter_order": 2 }
+      ],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e01",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e07",
+          "change_type": "add",
+          "relation": "前成员",
+          "description": "林逸风从联邦舰长变为叛逃者，与联邦决裂"
+        }
+      ],
+      "belongs_to_stories": ["c3d4e5f6-a7b8-9012-cdef-123456789012"],
+      "created_at": "2026-05-27T00:00:00+08:00",
+      "updated_at": "2026-05-27T00:00:00+08:00"
+    },
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e0a",
+      "name": "扎克执掌暗影之握",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000247-08-00-00-00-00",
+      "precision": 2,
+      "summary": "扎克·血拳通过一系列血腥的权力斗争，成为暗影之握的新首领。他随即宣布对黎明号及其盟友的全面敌对。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e03", "perspective_summary": "扎克登上权力巅峰" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e08", "perspective_summary": "暗影之握进入扎克时代" }
+      ],
+      "linked_chapters": [
+        { "story_id": "c3d4e5f6-a7b8-9012-cdef-123456789012", "chapter_order": 2 }
+      ],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e03",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e08",
+          "change_type": "add",
+          "relation": "首领",
+          "description": "扎克成为暗影之握新任首领"
+        }
+      ],
+      "belongs_to_stories": ["c3d4e5f6-a7b8-9012-cdef-123456789012"],
+      "created_at": "2026-05-27T00:00:00+08:00",
+      "updated_at": "2026-05-27T00:00:00+08:00"
+    },
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e0b",
+      "name": "深渊星云之战",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000248-11-20-06-15-00",
+      "precision": 5,
+      "summary": "黎明号在深渊星云深处遭暗影之握舰队伏击。林逸风利用星云内的引力异常以少胜多，但黎明号受到严重损伤。战斗以扎克下令撤退告终。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e06", "perspective_summary": "黎明号虽胜但受损严重" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e05", "perspective_summary": "星云的自然环境成为决定性战场因素" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e03", "perspective_summary": "扎克遭遇首次重大战术失败" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e01", "perspective_summary": "林逸风证明了他作为战术家的价值" }
+      ],
+      "linked_chapters": [
+        { "story_id": "c3d4e5f6-a7b8-9012-cdef-123456789012", "chapter_order": 3 }
+      ],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e03",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e01",
+          "change_type": "add",
+          "relation": "对手",
+          "description": "深渊星云之战确立了林逸风与扎克的对峙格局"
+        }
+      ],
+      "belongs_to_stories": ["c3d4e5f6-a7b8-9012-cdef-123456789012"],
+      "created_at": "2026-05-27T00:00:00+08:00",
+      "updated_at": "2026-05-27T00:00:00+08:00"
+    },
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e0c",
+      "name": "艾琳娜夺取核心密钥",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000250-01-01-00-00-00",
+      "precision": 3,
+      "summary": "在各方势力争夺核心密钥的混乱中，艾琳娜成功获取密钥——但她宣布已对其控制功能产生免疫，并选择不使用密钥控制任何AI。她将密钥托付给林逸风保管，作为与联邦谈判的筹码。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e02", "perspective_summary": "艾琳娜做出了决定性的道德选择" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e0b", "perspective_summary": "核心密钥的最终命运被决定——封印而非使用" }
+      ],
+      "linked_chapters": [
+        { "story_id": "c3d4e5f6-a7b8-9012-cdef-123456789012", "chapter_order": 4 }
+      ],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e02",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e0b",
+          "change_type": "add",
+          "relation": "受控于",
+          "description": "艾琳娜宣布已对核心密钥的控制功能产生免疫"
+        },
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e02",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e01",
+          "change_type": "add",
+          "relation": "托付于",
+          "description": "艾琳娜将核心密钥托付给林逸风保管"
+        }
+      ],
+      "belongs_to_stories": ["c3d4e5f6-a7b8-9012-cdef-123456789012"],
+      "created_at": "2026-05-27T00:00:00+08:00",
+      "updated_at": "2026-05-27T00:00:00+08:00"
+    }
+  ]
+}

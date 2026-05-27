@@ -249,8 +249,7 @@ fn parse_relation_changes(input: Option<&str>) -> Vec<RelationChange> {
                     entry_a: parts[0].trim().to_string(),
                     entry_b: parts[1].trim().to_string(),
                     change_type: match parts[2].trim() {
-                        "add" => RelationChangeType::Add,
-                        "update" => RelationChangeType::Update,
+                        "add" | "update" => RelationChangeType::Add, // "update" accepted for backward compat
                         "delete" => RelationChangeType::Delete,
                         _ => return None,
                     },

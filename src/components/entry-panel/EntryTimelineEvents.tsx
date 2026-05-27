@@ -168,11 +168,11 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, 
     <div className="mt-3 pt-3 border-t border-surface-700/50">
       <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 px-1 py-1 w-full text-left">
         {open ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
-        <span className="text-[10px] text-ink-muted/50">🕐</span>
-        <span className="text-[11px] text-ink-muted font-medium">{t.entry.timelineEvents}</span>
-        <span className="text-[10px] text-ink-muted/50">{events.length}{t.entry.events}</span>
+        <span className="text-[0.625rem] text-ink-muted/50">🕐</span>
+        <span className="text-[0.688rem] text-ink-muted font-medium">{t.entry.timelineEvents}</span>
+        <span className="text-[0.625rem] text-ink-muted/50">{events.length}{t.entry.events}</span>
         {allTls.length > 1 && (
-          <select className="text-[10px] bg-surface-800 border border-surface-700 rounded px-1.5 py-0.5 ml-auto"
+          <select className="text-[0.625rem] bg-surface-800 border border-surface-700 rounded px-1.5 py-0.5 ml-auto"
             value={activeTlId} onChange={e => setActiveTlId(e.target.value)}
             onClick={e => e.stopPropagation()}>
             {allTls.map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
@@ -180,7 +180,7 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, 
         )}
       </button>
       {open && events.length === 0 && (
-        <div className="ml-1 pl-5 py-1 text-[10px] text-ink-muted/50 italic">{t.entry.noTimelineEvents}</div>
+        <div className="ml-1 pl-5 py-1 text-[0.625rem] text-ink-muted/50 italic">{t.entry.noTimelineEvents}</div>
       )}
       {open && events.length > 0 && (
         <div className="mt-1 ml-1">
@@ -189,8 +189,8 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, 
             return (<div key={era.key}>
               <button onClick={() => toggleEra(era.key)} className="flex items-center gap-1.5 w-full text-left py-0.5 hover:bg-surface-800/20">
                 {eraOpen ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
-                <span className="text-[11px] font-medium text-ink-muted">{era.label}</span>
-                <span className="text-[10px] text-ink-muted/30">({era.children.reduce((s: number, y: any) => s + (y.children?.length || 0), 0)} 事件)</span>
+                <span className="text-[0.688rem] font-medium text-ink-muted">{era.label}</span>
+                <span className="text-[0.625rem] text-ink-muted/30">({era.children.reduce((s: number, y: any) => s + (y.children?.length || 0), 0)} 事件)</span>
               </button>
               {eraOpen && <div className="ml-4 border-l-2 border-surface-700/30 pl-3">
                 {era.children.map((year: any) => {
@@ -198,8 +198,8 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, 
                   return (<div key={year.key}>
                     <button onClick={() => toggleYear(year.key)} className="flex items-center gap-1.5 w-full text-left py-0.5 hover:bg-surface-800/20">
                       {yOpen ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
-                      <span className="text-[11px] text-ink-muted/70">{year.label}</span>
-                      <span className="text-[10px] text-ink-muted/30">({year.children?.length || 0}事件)</span>
+                      <span className="text-[0.688rem] text-ink-muted/70">{year.label}</span>
+                      <span className="text-[0.625rem] text-ink-muted/30">({year.children?.length || 0}事件)</span>
                     </button>
                     {yOpen && <div className="ml-4 border-l-2 border-amber-500/20 pl-3 space-y-3 pt-0.5">
                       {(year.children || []).map((n: any) => {
@@ -207,21 +207,21 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, 
                         return (<div key={n.key} className="flex items-start gap-2">
                           <div className="w-[5px] h-[5px] rounded-full bg-amber-500/40 mt-1.5 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <span className="text-[10px] font-mono text-ink-muted/50">{n.label}</span>
+                            <span className="text-[0.625rem] font-mono text-ink-muted/50">{n.label}</span>
                             {evs.map((ev: SimpleEvent) => {
                               const rcs = a(ev.relationship_changes).filter((r: any) => r.entry_a === entryId || r.entry_b === entryId);
                               const le = a(ev.linked_entries).find((l: any) => l.entry_id === entryId);
                               return (
                                 <div key={ev.id} className="mt-1 ml-2 pl-2 border-l border-surface-700/30">
                                   <button onClick={() => onNavigateToTimeline?.(ev.id, ev.timeline_id)}
-                                    className="text-[11px] text-left text-amber-500 hover:text-amber-400 transition-colors cursor-pointer leading-snug">
+                                    className="text-[0.688rem] text-left text-amber-500 hover:text-amber-400 transition-colors cursor-pointer leading-snug">
                                     {le?.perspective_summary || ev.summary || ""}
                                   </button>
                                   {rcs.length > 0 && (<div className="mt-0.5 flex flex-wrap gap-1">
                                     {rcs.map((r: any, j: number) => (
-                                      <button key={j} onClick={(e) => { e.stopPropagation(); onNavigateEntry?.(r.entry_a === entryId ? r.entry_b : r.entry_a); }} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] rounded-full cursor-pointer transition-colors ${
-                                        r.change_type === "add" ? "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20" : r.change_type === "delete" ? "bg-red-500/10 text-red-500 hover:bg-red-500/20 line-through" : "bg-amber-500/10 text-amber-500 hover:bg-amber-500/20"}`}>
-                                        {r.change_type === "add" ? "+" : r.change_type === "delete" ? "−" : "~"} {entryNames.get(r.entry_a === entryId ? r.entry_b : r.entry_a) || (r.entry_a === entryId ? r.entry_b : r.entry_a).slice(0, 8)}: {r.relation}
+                                      <button key={j} onClick={(e) => { e.stopPropagation(); onNavigateEntry?.(r.entry_a === entryId ? r.entry_b : r.entry_a); }} title={r.description || ""} className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[0.56rem] rounded-full cursor-pointer transition-colors ${
+                                        r.change_type === "add" ? "bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20" : "bg-red-500/10 text-red-500 hover:bg-red-500/20 line-through"}`}>
+                                        {r.change_type === "add" ? "+" : "−"} {entryNames.get(r.entry_a === entryId ? r.entry_b : r.entry_a) || (r.entry_a === entryId ? r.entry_b : r.entry_a).slice(0, 8)}: {r.relation}
                                       </button>
                                     ))}</div>)}
                                 </div>

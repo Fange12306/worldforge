@@ -54,7 +54,7 @@ export function StatusBar() {
   };
 
   return (
-    <footer className="h-7 flex items-center justify-between px-3 text-[11px] text-ink-muted flex-shrink-0 select-none">
+    <footer className="h-7 flex items-center justify-between px-3 text-[0.688rem] text-ink-muted flex-shrink-0 select-none">
       <div className="flex items-center gap-3">
         <span>{streamingHere ? t.chat.streaming : t.chat.ready}</span>
         {activeConv && <span>{msgCount} {t.chat.messages}</span>}

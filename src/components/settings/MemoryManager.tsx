@@ -126,13 +126,13 @@ export function MemoryManager() {
                       <span className="text-xs text-error flex-1">{t.memory.confirmDelete}</span>
                       <button
                         onClick={() => handleDelete(mem)}
-                        className="px-2 h-6 rounded text-[10px] text-error hover:bg-error-bg transition-colors"
+                        className="px-2 h-6 rounded text-[0.625rem] text-error hover:bg-error-bg transition-colors"
                       >
                         {t.memory.delete}
                       </button>
                       <button
                         onClick={() => setDeleting(null)}
-                        className="px-2 h-6 rounded text-[10px] text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
+                        className="px-2 h-6 rounded text-[0.625rem] text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
                       >
                         {t.memory.cancel}
                       </button>
@@ -145,7 +145,7 @@ export function MemoryManager() {
                       <span className="text-xs text-ink-secondary truncate flex-1 min-w-0">
                         {mem.description}
                       </span>
-                      <span className="text-[10px] text-ink-muted bg-surface-800 px-1.5 py-0.5 rounded flex-shrink-0 max-w-[100px] truncate">
+                      <span className="text-[0.625rem] text-ink-muted bg-surface-800 px-1.5 py-0.5 rounded flex-shrink-0 max-w-[100px] truncate">
                         {mem.worldName}
                       </span>
                       <button

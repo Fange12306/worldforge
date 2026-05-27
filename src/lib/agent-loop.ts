@@ -211,7 +211,7 @@ function getTools(): ToolDef[] {
   },
   {
     name: "Relation",
-    description: "Create, update, or remove a static relation between entities. Use for facts not tied to a specific event (e.g. '暗月匕首是暗月帝国的皇室圣物'). For event-driven relationship changes, use EventWrite.relationship_changes instead. Multiple edges between the same two entities are allowed — use different descriptions to distinguish them (e.g. both '养父女' and '师徒' between the same pair).",
+    description: "Create, update, or remove a static relation between entities. Use for facts not tied to a specific event (e.g. '暗月匕首是暗月帝国的皇室圣物'). For event-driven relationship changes, use EventWrite.relationship_changes instead. IMPORTANT: always provide reverse_description for asymmetric relations. Ask yourself: 'if A's relation to B is X, what is B's relation to A?' Examples: '父亲' → '子女', '女王' → '臣民', '位于' → '容纳', '起源于' → '起源地'. Symmetric relations like '战友', '结盟' don't need it. Multiple edges between the same two entities are allowed — use different descriptions to distinguish them.",
     input_schema: {
       type: "object",
       properties: {
@@ -221,6 +221,7 @@ function getTools(): ToolDef[] {
         to_type: { type: "string", description: ta.relationTargetType },
         to_id: { type: "string", description: "Target entity ID" },
         description: { type: "string", description: ta.relationDesc },
+        reverse_description: { type: "string", description: "反向关系描述。例如正向'父亲'→反向'子女'、正向'位于'→反向'容纳'。对称关系（如'战友'）可不填。" },
         timeline_id: { type: "string", description: ta.relationTimeline },
         delete: { type: "boolean", description: "Set to true to REMOVE this relation. Requires relation_id." },
       },
@@ -753,6 +754,7 @@ async function executeTool(
         if (input.to_type) params.toType = input.to_type;
         if (input.to_id) params.toId = input.to_id;
         if (input.description) params.description = input.description;
+        if (input.reverse_description !== undefined) params.reverseDescription = input.reverse_description;
         if (input.timeline_id !== undefined) params.timelineId = input.timeline_id;
         const graph = await invoke<any>("update_relation", params);
         return t().relationUpdated(JSON.stringify(graph, null, 2));
@@ -765,6 +767,7 @@ async function executeTool(
         toType: input.to_type as string,
         toId: input.to_id as string,
         description: input.description as string,
+        reverseDescription: input.reverse_description,
         timelineId: input.timeline_id,
       });
       return t().relationCreated(input.from_type as string, input.from_id as string, input.description as string, input.to_type as string, input.to_id as string);

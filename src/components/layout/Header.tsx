@@ -88,7 +88,7 @@ export function Header() {
 
         {/* Outline progress badge */}
         {activeStory && outlineLoaded && (
-          <span className="flex items-center gap-1 text-[10px] text-ink-muted bg-surface-900 border border-edge rounded-full px-2 py-0.5">
+          <span className="flex items-center gap-1 text-[0.625rem] text-ink-muted bg-surface-900 border border-edge rounded-full px-2 py-0.5">
             <BookOpen className="w-3 h-3" />
             {chapterCount > 0 ? t.entry.chapterCount(chapterDone, chapterCount) : t.entry.noOutline}
           </span>

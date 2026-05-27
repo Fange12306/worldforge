@@ -23,19 +23,17 @@ function segs(tp: string): number[] { return tp.split("-").map(s => parseInt(s, 
 function leafLabel(tp: string, tl: Timeline | null, precision?: number | null): string {
   const s = segs(tp); const u = getUnits(tl);
   const maxIdx = precision != null ? precision : u.length - 1;
+  // Tree already shows era + year — leaf label only covers month onward
   const mi = u.findIndex(x => x.key === "month");
   const di = u.findIndex(x => x.key === "day");
-  let r = "";
-  if (mi >= 0 && mi <= maxIdx) { const v = s[mi + 1] || 0; r += `${v}${u[mi].name}`; }
-  if (di >= 0 && di <= maxIdx) { const v = s[di + 1] || 0; r += `${v}${u[di].name}`; }
-  if (!r) return fmtTime(tp, tl, precision);
-  // Time part — only up to maxIdx
-  const tparts: string[] = [];
+  const parts: string[] = [];
+  if (mi >= 0 && mi <= maxIdx) { const v = s[mi + 1] || 0; if (v > 0) parts.push(`${v}${u[mi].name}`); }
+  if (di >= 0 && di <= maxIdx) { const v = s[di + 1] || 0; if (v > 0) parts.push(`${v}${u[di].name}`); }
+  // Time portion
   for (let i = Math.max(di, mi) + 1; i < u.length && i <= maxIdx; i++) {
-    tparts.push(String(s[i + 1] || 0).padStart(u[i].digits, "0"));
+    parts.push(String(s[i + 1] || 0).padStart(u[i].digits, "0"));
   }
-  if (tparts.length > 0 && !tparts.every(t => !t || parseInt(t, 10) === 0)) r += tparts.join(":");
-  return r;
+  return parts.join("");
 }
 
 function fmtTime(tp: string, tl: Timeline | null, precision?: number | null): string {
@@ -129,30 +127,30 @@ function Popover({ ev, tl, anchor, onClose, onNavE, onNavO, entryNames, chapterT
       style={{ left: p.l, top: p.t, transform: "translateX(-50%)", minWidth: 300, maxWidth: 380 }}>
       <div className="absolute left-1/2 -top-[7px] w-3.5 h-3.5 bg-surface-900 border-l border-t border-surface-600 transform rotate-45 -translate-x-1/2" />
       <div className="p-4 space-y-2.5 overflow-y-auto" style={{ maxHeight: p.maxH }}>
-        <p className="text-[13px] text-ink-secondary leading-relaxed">{ev.summary || ""}</p>
+        <p className="text-[0.8125rem] text-ink-secondary leading-relaxed">{ev.summary || ""}</p>
         <div className="flex items-center gap-2">
-          <div className="text-[11px] text-ink-muted font-mono">{fmtTime(ev.time_point, tl, ev.precision)}</div>
-          <span className="px-1.5 py-0.5 rounded bg-surface-800/50 text-ink-muted/50 font-mono text-[10px] select-all">{ev.id}</span>
+          <div className="text-[0.688rem] text-ink-muted font-mono">{fmtTime(ev.time_point, tl, ev.precision)}</div>
+          <span className="px-1.5 py-0.5 rounded bg-surface-800/50 text-ink-muted/50 font-mono text-[0.625rem] select-all">{ev.id}</span>
         </div>
-        {les.length > 0 && (<div><p className="text-[10px] tracking-wider text-ink-muted/40 mb-1">{t.entry.linkedEntries(les.length)}</p>
+        {les.length > 0 && (<div><p className="text-[0.625rem] tracking-wider text-ink-muted/40 mb-1">{t.entry.linkedEntries(les.length)}</p>
           <div className="flex flex-col gap-0.5">{les.map((le: any) => (
-            <button key={le.entry_id} onClick={() => { onClose(); onNavE?.(le.entry_id); }} className="text-[11px] text-left text-amber-500 hover:text-amber-400 py-0.5 break-all">{entryNames.get(le.entry_id) || le.entry_id.slice(0, 8)}{le.perspective_summary ? ` — ${le.perspective_summary}` : ""}</button>
+            <button key={le.entry_id} onClick={() => { onClose(); onNavE?.(le.entry_id); }} className="text-[0.688rem] text-left text-amber-500 hover:text-amber-400 py-0.5 break-all">{entryNames.get(le.entry_id) || le.entry_id.slice(0, 8)}{le.perspective_summary ? ` — ${le.perspective_summary}` : ""}</button>
           ))}</div></div>)}
-        {lcs.length > 0 && (<div><p className="text-[10px] tracking-wider text-ink-muted/40 mb-1">{t.entry.linkedChapters(lcs.length)}</p>
+        {lcs.length > 0 && (<div><p className="text-[0.625rem] tracking-wider text-ink-muted/40 mb-1">{t.entry.linkedChapters(lcs.length)}</p>
           <div className="flex flex-col gap-0.5">{lcs.map((ch: any) => {
             const chTitle = chapterTitles.get(`${ch.story_id}:${ch.chapter_order}`);
             return (
-            <button key={`${ch.story_id}-${ch.chapter_order}`} onClick={() => { onClose(); onNavO?.(ch.story_id, ch.chapter_order); }} className="text-[11px] text-left text-amber-500 hover:text-amber-400 py-0.5">
+            <button key={`${ch.story_id}-${ch.chapter_order}`} onClick={() => { onClose(); onNavO?.(ch.story_id, ch.chapter_order); }} className="text-[0.688rem] text-left text-amber-500 hover:text-amber-400 py-0.5">
               {t.entry.chapterLabel(ch.chapter_order, chTitle || "")}
             </button>
             );
           })}</div></div>)}
-        {rcs.length > 0 && (<div><p className="text-[10px] tracking-wider text-ink-muted/40 mb-1">{t.entry.relationChanges}</p>
+        {rcs.length > 0 && (<div><p className="text-[0.625rem] tracking-wider text-ink-muted/40 mb-1">{t.entry.relationChanges}</p>
           <div className="flex flex-col gap-0.5">{rcs.map((rc: any, i: number) => (
-            <span key={i} className={`text-[10px] ${rc.change_type === "add" ? "text-emerald-500" : rc.change_type === "delete" ? "text-red-500 line-through" : "text-amber-500"}`}>
+            <span key={i} className={`text-[0.625rem] ${rc.change_type === "add" ? "text-emerald-500" : rc.change_type === "delete" ? "text-red-500 line-through" : "text-amber-500"}`}>
               {rc.change_type === "add" ? "+" : rc.change_type === "delete" ? "−" : "~"} {entryNames.get(rc.entry_a) || rc.entry_a.slice(0, 8)}↔{entryNames.get(rc.entry_b) || rc.entry_b.slice(0, 8)}: {rc.relation}</span>
           ))}</div></div>)}
-        {bts.length > 0 && <p className="text-[10px] text-ink-muted/40">{t.entry.storyLabel}: {bts.map((sid: string) => storyNames.get(sid) || sid.slice(0, 8)).join(", ")}</p>}
+        {bts.length > 0 && <p className="text-[0.625rem] text-ink-muted/40">{t.entry.storyLabel}: {bts.map((sid: string) => storyNames.get(sid) || sid.slice(0, 8)).join(", ")}</p>}
       </div>
     </div>, document.body);
 }
@@ -177,16 +175,16 @@ function TreeNodeRow({ node, tl, openNodes, toggleNode, openEventId, setOpenEven
         <div className={`rounded-full flex-shrink-0 -ml-[4px] ${node.depth <= 1 ? "w-[5px] h-[5px] bg-surface-500/40" : "w-[6px] h-[6px] bg-amber-500/60"}`} />
         <button onClick={() => hasCh && toggleNode(node.key)}
           className={`text-xs whitespace-nowrap ${hasCh ? "cursor-pointer hover:text-ink" : "cursor-default"} ${node.depth <= 1 ? "font-medium text-ink-muted" : "text-ink-muted/70"}`}>
-          {hasCh && <span className="text-[10px] mr-1 text-ink-muted/40">{open ? "▾" : "▸"}</span>}
+          {hasCh && <span className="text-[0.625rem] mr-1 text-ink-muted/40">{open ? "▾" : "▸"}</span>}
           {node.label}
-          {hasCh && <span className="text-[10px] text-ink-muted/30 ml-1">{t.entry.eventCount(countAll(node))}</span>}
+          {hasCh && <span className="text-[0.625rem] text-ink-muted/30 ml-1">{t.entry.eventCount(countAll(node))}</span>}
         </button>
       </div>
       {hasEv && (
         <div className="flex-1 flex items-center gap-2 py-1 pr-4">
           {node.events.map(ev => (
             <button key={ev.id} ref={el => { if (el) anchorRefs.current.set(ev.id, el); }}
-              className={`flex-shrink-0 px-2.5 py-1 rounded border text-[11px] text-left max-w-[200px] transition-colors ${openEventId === ev.id ? "border-amber-500/80 bg-amber-500/10" : "border-surface-600/30 bg-surface-800/30 hover:border-surface-500"}`}
+              className={`flex-shrink-0 px-2.5 py-1 rounded border text-[0.688rem] text-left max-w-[200px] transition-colors ${openEventId === ev.id ? "border-amber-500/80 bg-amber-500/10" : "border-surface-600/30 bg-surface-800/30 hover:border-surface-500"}`}
               onClick={e => { e.stopPropagation(); setOpenEventId(openEventId === ev.id ? null : ev.id); }}
               title={ev.summary || ""}>
               <span className="line-clamp-2 text-ink-secondary leading-snug">{ev.summary || ""}</span>
@@ -332,13 +330,13 @@ export function TimelinePanel({ worldPath, onClose, sidebarOpen, rightOpen, init
   return (
     <div className="flex flex-col flex-1 min-h-0">
       <div className="flex items-center gap-3 px-3 border-b border-surface-700 flex-shrink-0" style={{ height: 40, paddingLeft: pl, paddingRight: pr }}>
-        <button onClick={onClose} className="text-[11px] text-ink-muted hover:text-ink flex-shrink-0">{t.entry.backToChat}</button>
-        <span className="text-[10px] text-ink-muted/50">{t.sidebar.timeline}</span><span className="text-[11px] text-ink-secondary truncate">{tl?.name || ""}</span>
-        {timelines.length > 1 && (<select className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5" value={activeId} onChange={e => setActiveId(e.target.value)}>{timelines.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>)}
+        <button onClick={onClose} className="text-[0.688rem] text-ink-muted hover:text-ink flex-shrink-0">{t.entry.backToChat}</button>
+        <span className="text-[0.625rem] text-ink-muted/50">{t.sidebar.timeline}</span><span className="text-[0.688rem] text-ink-secondary truncate">{tl?.name || ""}</span>
+        {timelines.length > 1 && (<select className="text-[0.688rem] bg-surface-800 border border-surface-700 rounded px-2 py-0.5" value={activeId} onChange={e => setActiveId(e.target.value)}>{timelines.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select>)}
         <div className="flex-1" />
-        <input className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-20 text-ink placeholder:text-ink-muted/30" placeholder={t.labels.entry} value={fEntry} onChange={e => setFEntry(e.target.value)} />
-        <input className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-20 text-ink placeholder:text-ink-muted/30" placeholder={t.entry.storyLabel} value={fStory} onChange={e => setFStory(e.target.value)} />
-        <input className="text-[11px] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-24 text-ink placeholder:text-ink-muted/30" placeholder={t.entry.chapterFilterPlaceholder} value={fChap} onChange={e => setFChap(e.target.value)} />
+        <input className="text-[0.688rem] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-20 text-ink placeholder:text-ink-muted/30" placeholder={t.labels.entry} value={fEntry} onChange={e => setFEntry(e.target.value)} />
+        <input className="text-[0.688rem] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-20 text-ink placeholder:text-ink-muted/30" placeholder={t.entry.storyLabel} value={fStory} onChange={e => setFStory(e.target.value)} />
+        <input className="text-[0.688rem] bg-surface-800 border border-surface-700 rounded px-2 py-0.5 w-24 text-ink placeholder:text-ink-muted/30" placeholder={t.entry.chapterFilterPlaceholder} value={fChap} onChange={e => setFChap(e.target.value)} />
       </div>
       <div ref={scrollRef} className="flex-1 overflow-auto" style={{ paddingRight: pr }}>
         {tree.length === 0 ? (

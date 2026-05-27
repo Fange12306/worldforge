@@ -29,7 +29,7 @@ function ringColor(pct: number): string {
 
 function BreakdownRow({ label, tokens, pct, indent }: { label: string; tokens: number; pct: number; indent?: boolean }) {
   return (
-    <div className={`flex items-center justify-between text-[11px] ${indent ? "pl-4" : ""}`}>
+    <div className={`flex items-center justify-between text-[0.688rem] ${indent ? "pl-4" : ""}`}>
       <span className="text-ink-muted">{label}</span>
       <span className="text-ink-secondary tabular-nums">
         {fmtTokens(tokens)} <span className="text-ink-muted">({pct.toFixed(1)}%)</span>
@@ -126,7 +126,7 @@ export function ContextRing() {
         <div className="absolute bottom-full right-0 mb-2 w-64 bg-surface-850 border border-edge rounded-xl shadow-xl z-50 p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-ink">{t.model.contextWindow}</span>
-            <span className="text-[11px] tabular-nums" style={{ color: ringColor(pct) }}>
+            <span className="text-[0.688rem] tabular-nums" style={{ color: ringColor(pct) }}>
               {fmtTokens(contextUsed)} / {fmtTokens(contextWindowSize)} ({pct.toFixed(0)}%)
             </span>
           </div>
@@ -143,12 +143,12 @@ export function ContextRing() {
               <BreakdownRow label="Free space" tokens={freeSpace} pct={(freeSpace / contextWindowSize) * 100} />
             </>
           ) : (
-            <p className="text-[11px] text-ink-muted">{t.chat.contextEmpty}</p>
+            <p className="text-[0.688rem] text-ink-muted">{t.chat.contextEmpty}</p>
           )}
           {compressedSummary && (
             <>
               <div className="h-px bg-edge" />
-              <p className="text-[10px] text-ink-muted">{t.chat.compression.banner}</p>
+              <p className="text-[0.625rem] text-ink-muted">{t.chat.compression.banner}</p>
             </>
           )}
           <div className="h-px bg-edge" />
@@ -225,7 +225,7 @@ export function ContextRing() {
               }
             }}
             disabled={isCompressing || !activeConv || !llmProvider || !canCompress}
-            className="w-full py-1.5 text-[11px] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded transition-colors disabled:opacity-50"
+            className="w-full py-1.5 text-[0.688rem] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded transition-colors disabled:opacity-50"
           >
             {isCompressing ? t.chat.compressing : canCompress ? t.chat.compressNow : "暂不可压缩"}
           </button>

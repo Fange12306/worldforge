@@ -110,6 +110,8 @@ type AppStore = {
   toggleSidebar: () => void;
   theme: "dark" | "light";
   toggleTheme: () => void;
+  fontSize: "sm" | "md" | "lg";
+  setFontSize: (s: "sm" | "md" | "lg") => void;
   language: "zh" | "en";
   setLanguage: (lang: "zh" | "en") => void;
 
@@ -431,6 +433,17 @@ export const useStore = create<AppStore>((set, get) => ({
       document.documentElement.classList.toggle("light", next === "light");
       return { theme: next };
     }),
+
+  fontSize: (() => {
+    if (typeof window === "undefined") return "md";
+    return (localStorage.getItem("worldforge-font-size") as "sm" | "md" | "lg") || "md";
+  })(),
+  setFontSize: (s) => {
+    localStorage.setItem("worldforge-font-size", s);
+    const sizes = { sm: "14px", md: "16px", lg: "18px" };
+    document.documentElement.style.fontSize = sizes[s];
+    set({ fontSize: s });
+  },
 
   language: "zh",
   setLanguage: (lang) => set({ language: lang }),

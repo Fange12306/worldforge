@@ -35,6 +35,7 @@ pub fn run() {
             world_init::list_worlds,
             world_init::save_world_prompt,
             world_init::load_world_prompt,
+            world_init::get_app_version,
             // Entry CRUD
             entry_crud::read_entry,
             entry_crud::create_entry,

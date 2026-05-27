@@ -116,7 +116,7 @@ export type LinkedChapter = {
 export type RelationChange = {
   entry_a: string;
   entry_b: string;
-  change_type: "add" | "update" | "delete";
+  change_type: "add" | "delete";
   relation: string;
   description?: string;
 };
@@ -157,9 +157,21 @@ export type EntityRef = {
 };
 
 export type RelationEdge = {
-  id: string;           // UUID — immutable identity
+  id: string;
   from: EntityRef;
   to: EntityRef;
   description: string;
-  active_period?: [number, number] | null;
+  reverse_description?: string | null;
+  timeline_id?: string | null;
+  start_event_id?: string | null;
+  end_event_id?: string | null;
+};
+
+export type TraversalResult = {
+  entity: EntityRef;
+  distance: number;
+  via_description: string;
+  via_entity: EntityRef;
+  start_event_id?: string | null;
+  end_event_id?: string | null;
 };

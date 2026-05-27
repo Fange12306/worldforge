@@ -45,19 +45,19 @@ export function RightSidebar({ onSelectEntry, onSelectOutlineChapter, onSelectFi
       <div className="h-12 flex items-center gap-0.5 px-3 border-b border-surface-700">
         <button
           onClick={() => setTab("entries")}
-          className={`flex-1 h-8 flex items-center justify-center gap-1 rounded-lg text-[11px] transition-colors ${tab === "entries" ? "bg-surface-700 text-ink" : "text-ink-muted hover:text-ink"}`}
+          className={`flex-1 h-8 flex items-center justify-center gap-1 rounded-lg text-[0.688rem] transition-colors ${tab === "entries" ? "bg-surface-700 text-ink" : "text-ink-muted hover:text-ink"}`}
         >
           <BookOpen className="w-3 h-3" /> {t.labels.entry}
         </button>
         <button
           onClick={() => setTab("outline")}
-          className={`flex-1 h-8 flex items-center justify-center gap-1 rounded-lg text-[11px] transition-colors ${tab === "outline" ? "bg-surface-700 text-ink" : "text-ink-muted hover:text-ink"}`}
+          className={`flex-1 h-8 flex items-center justify-center gap-1 rounded-lg text-[0.688rem] transition-colors ${tab === "outline" ? "bg-surface-700 text-ink" : "text-ink-muted hover:text-ink"}`}
         >
           <FileText className="w-3 h-3" /> {t.entry.outline}
         </button>
         <button
           onClick={() => setTab("resources")}
-          className={`flex-1 h-8 flex items-center justify-center gap-1 rounded-lg text-[11px] transition-colors ${tab === "resources" ? "bg-surface-700 text-ink" : "text-ink-muted hover:text-ink"}`}
+          className={`flex-1 h-8 flex items-center justify-center gap-1 rounded-lg text-[0.688rem] transition-colors ${tab === "resources" ? "bg-surface-700 text-ink" : "text-ink-muted hover:text-ink"}`}
         >
           <FolderOpen className="w-3 h-3" /> {t.entry.resources}
         </button>
@@ -103,19 +103,19 @@ function EntriesTab({ entries, onSelect, onRefresh, worldPath }: { entries: Entr
   return (
     <div className="p-2">
       {worldPath && !showNew && (
-        <button onClick={() => setShowNew(true)} className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[11px] text-ink-muted hover:text-ink hover:bg-surface-800 rounded-lg transition-colors mb-2">
+        <button onClick={() => setShowNew(true)} className="w-full flex items-center gap-1.5 px-2 py-1.5 text-[0.688rem] text-ink-muted hover:text-ink hover:bg-surface-800 rounded-lg transition-colors mb-2">
           <Plus className="w-3 h-3" /> {t.entry.newEntry}
         </button>
       )}
       {showNew && (
         <div className="px-2 pb-2 space-y-1.5">
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }} placeholder={t.entry.name} autoFocus className="w-full h-7 text-[11px] bg-surface-800 rounded px-2 text-ink outline-none" />
-          <select value={newType} onChange={(e) => setNewType(e.target.value)} className="w-full h-7 text-[11px] bg-surface-800 rounded px-2 text-ink outline-none">
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }} placeholder={t.entry.name} autoFocus className="w-full h-7 text-[0.688rem] bg-surface-800 rounded px-2 text-ink outline-none" />
+          <select value={newType} onChange={(e) => setNewType(e.target.value)} className="w-full h-7 text-[0.688rem] bg-surface-800 rounded px-2 text-ink outline-none">
             {Object.entries(t.entryTypes).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
           <div className="flex gap-1">
-            <button onClick={handleCreate} disabled={!newName.trim()} className="flex-1 h-7 text-[11px] rounded bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-40 transition-colors">{t.status.confirm}</button>
-            <button onClick={() => { setShowNew(false); setNewName(""); }} className="flex-1 h-7 text-[11px] rounded bg-surface-700 text-ink-muted hover:text-ink transition-colors">{t.status.cancel}</button>
+            <button onClick={handleCreate} disabled={!newName.trim()} className="flex-1 h-7 text-[0.688rem] rounded bg-brand-600 text-white hover:bg-brand-500 disabled:opacity-40 transition-colors">{t.status.confirm}</button>
+            <button onClick={() => { setShowNew(false); setNewName(""); }} className="flex-1 h-7 text-[0.688rem] rounded bg-surface-700 text-ink-muted hover:text-ink transition-colors">{t.status.cancel}</button>
           </div>
         </div>
       )}
@@ -125,21 +125,21 @@ function EntriesTab({ entries, onSelect, onRefresh, worldPath }: { entries: Entr
           <div key={type} className="mb-1">
             <button
               onClick={() => setCollapsed(prev => { const next = new Set(prev); if (next.has(type)) next.delete(type); else next.add(type); return next; })}
-              className="w-full flex items-center gap-1 px-2 py-0.5 text-[10px] text-ink-muted uppercase tracking-wider hover:text-ink transition-colors"
+              className="w-full flex items-center gap-1 px-2 py-0.5 text-[0.625rem] text-ink-muted uppercase tracking-wider hover:text-ink transition-colors"
             >
               {isCollapsed ? <ChevronRight className="w-3 h-3 flex-shrink-0" /> : <ChevronDown className="w-3 h-3 flex-shrink-0" />}
               <span>{t.entryTypes[type as keyof typeof t.entryTypes] || type}</span>
               <span className="text-ink-muted/50 ml-auto">{items.length}</span>
             </button>
             {!isCollapsed && items.map((e) => (
-              <button key={e.id} onClick={() => onSelect(e)} className="w-full text-left px-2 pl-6 py-1 text-[11px] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded transition-colors truncate">
+              <button key={e.id} onClick={() => onSelect(e)} className="w-full text-left px-2 pl-6 py-1 text-[0.688rem] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded transition-colors truncate">
                 {e.name}
               </button>
             ))}
           </div>
         );
       })}
-      {entries.length === 0 && <p className="text-[11px] text-ink-muted text-center py-4">{t.entry.empty}</p>}
+      {entries.length === 0 && <p className="text-[0.688rem] text-ink-muted text-center py-4">{t.entry.empty}</p>}
     </div>
   );
 }
@@ -159,14 +159,14 @@ function OutlineTab({ worldPath, storyId, refreshKey, onClick }: { worldPath: st
     <div className="p-2">
       {chapters.length > 0 ? (
         chapters.map((ch) => (
-            <button key={ch.id} onClick={() => onClick(ch)} className="w-full text-left text-[11px] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded px-2 py-1 transition-colors">
+            <button key={ch.id} onClick={() => onClick(ch)} className="w-full text-left text-[0.688rem] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded px-2 py-1 transition-colors">
             <span className={statusColor(ch.status)}>{statusIcon(ch.status)}</span>{" "}
             <span>Ch{ch.order} {ch.title}</span>
             {ch.word_count > 0 && <span className="text-ink-muted ml-1">({ch.word_count}{t.common.words})</span>}
           </button>
         ))
       ) : (
-        <p className="text-[11px] text-ink-muted text-center py-4">{t.entry.noOutline}</p>
+        <p className="text-[0.688rem] text-ink-muted text-center py-4">{t.entry.noOutline}</p>
       )}
     </div>
   );
@@ -203,7 +203,7 @@ function ResourcesTab({ worldPath, conversationId, onSelectFile, onSelectMemory 
       {/* Uploaded files */}
       <button
         onClick={() => setShowFiles(!showFiles)}
-        className="w-full flex items-center gap-1 px-2 py-1.5 text-[11px] text-ink-muted hover:text-ink hover:bg-surface-800 rounded-lg transition-colors"
+        className="w-full flex items-center gap-1 px-2 py-1.5 text-[0.688rem] text-ink-muted hover:text-ink hover:bg-surface-800 rounded-lg transition-colors"
       >
         {showFiles ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         <span className="font-medium">{t.chat.files}</span>
@@ -215,14 +215,14 @@ function ResourcesTab({ worldPath, conversationId, onSelectFile, onSelectMemory 
               <button
                 key={f}
                 onClick={() => onSelectFile?.(f)}
-                className="w-full text-left flex items-center gap-1.5 px-2 py-1 text-[11px] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded transition-colors"
+                className="w-full text-left flex items-center gap-1.5 px-2 py-1 text-[0.688rem] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded transition-colors"
               >
                 <FileText className="w-3 h-3 text-ink-muted/50 flex-shrink-0" />
                 <span className="truncate">{f}</span>
               </button>
             ))
           ) : (
-            <p className="text-[10px] text-ink-muted px-2 py-1">{t.chat.noFiles}</p>
+            <p className="text-[0.625rem] text-ink-muted px-2 py-1">{t.chat.noFiles}</p>
           )}
         </div>
       )}
@@ -230,7 +230,7 @@ function ResourcesTab({ worldPath, conversationId, onSelectFile, onSelectMemory 
       {/* Memories */}
       <button
         onClick={() => setShowMemories(!showMemories)}
-        className="w-full flex items-center gap-1 px-2 py-1.5 text-[11px] text-ink-muted hover:text-ink hover:bg-surface-800 rounded-lg transition-colors"
+        className="w-full flex items-center gap-1 px-2 py-1.5 text-[0.688rem] text-ink-muted hover:text-ink hover:bg-surface-800 rounded-lg transition-colors"
       >
         {showMemories ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
         <span className="font-medium">{t.chat.worldMemory}</span>
@@ -242,13 +242,13 @@ function ResourcesTab({ worldPath, conversationId, onSelectFile, onSelectMemory 
               <button
                 key={m.path}
                 onClick={() => onSelectMemory?.(m.path)}
-                className="w-full text-left px-2 py-1 text-[11px] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded transition-colors truncate"
+                className="w-full text-left px-2 py-1 text-[0.688rem] text-ink-secondary hover:text-ink hover:bg-surface-800 rounded transition-colors truncate"
               >
                 {m.name}
               </button>
             ))
           ) : (
-            <p className="text-[10px] text-ink-muted px-2 py-1">{t.chat.noMemory}</p>
+            <p className="text-[0.625rem] text-ink-muted px-2 py-1">{t.chat.noMemory}</p>
           )}
         </div>
       )}

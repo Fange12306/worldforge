@@ -102,7 +102,6 @@ pub struct RelationChange {
 #[serde(rename_all = "snake_case")]
 pub enum RelationChangeType {
     Add,
-    Update,
     Delete,
 }
 

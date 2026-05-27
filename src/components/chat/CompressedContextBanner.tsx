@@ -26,10 +26,10 @@ export function CompressedContextBanner({ summary }: Props) {
       </button>
       {expanded && (
         <div className="mt-1 px-3 py-2 rounded-lg border border-edge/30 bg-surface-950/50">
-          <p className="text-[10px] text-ink-muted mb-1.5 font-medium">
+          <p className="text-[0.625rem] text-ink-muted mb-1.5 font-medium">
             {t.chat.compression.summaryLabel}
           </p>
-          <pre className="text-[11px] text-ink-secondary whitespace-pre-wrap font-sans leading-relaxed">
+          <pre className="text-[0.688rem] text-ink-secondary whitespace-pre-wrap font-sans leading-relaxed">
             {summary}
           </pre>
         </div>

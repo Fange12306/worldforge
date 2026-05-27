@@ -93,7 +93,7 @@ export function ConsistencyReport() {
           <span className="text-xs font-medium text-ink">
             一致性报告
           </span>
-          <span className="text-[10px] text-ink-muted">
+          <span className="text-[0.625rem] text-ink-muted">
             {hardCount > 0 && <span className="text-error">{hardCount}硬</span>}
             {hardCount > 0 && softCount > 0 && <span> </span>}
             {softCount > 0 && <span className="text-warning">{softCount}软</span>}
@@ -118,7 +118,7 @@ export function ConsistencyReport() {
       {/* Violation cards */}
       {expanded && (
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          <p className="text-[10px] text-ink-muted/50 px-1">
+          <p className="text-[0.625rem] text-ink-muted/50 px-1">
             关键字预匹配结果，请确认内容是否一致
           </p>
           {visible.map((v, i) => {
@@ -141,7 +141,7 @@ export function ConsistencyReport() {
                       <AlertTriangle className="w-3.5 h-3.5 text-warning flex-shrink-0 mt-0.5" />
                     )}
                     <span className={cn(
-                      "text-[10px] font-semibold uppercase tracking-wider",
+                      "text-[0.625rem] font-semibold uppercase tracking-wider",
                       isHard ? "text-error" : "text-warning"
                     )}>
                       {isHard ? "硬约束" : "软约束"}
@@ -162,14 +162,14 @@ export function ConsistencyReport() {
 
                 {/* Passage excerpt */}
                 <div className="bg-surface-950/50 rounded-lg px-2 py-1.5">
-                  <p className="text-[11px] text-ink-muted font-mono leading-relaxed">
+                  <p className="text-[0.688rem] text-ink-muted font-mono leading-relaxed">
                     {v.passage}
                   </p>
                 </div>
 
                 {/* Suggestion */}
                 {v.suggestion && (
-                  <p className="text-[11px] text-ink-secondary leading-relaxed">
+                  <p className="text-[0.688rem] text-ink-secondary leading-relaxed">
                     {v.suggestion}
                   </p>
                 )}

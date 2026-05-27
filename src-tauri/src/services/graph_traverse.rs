@@ -63,12 +63,16 @@ impl GraphIndex {
             node_map.entry(to_key.clone())
                 .or_insert_with(|| edge.to.clone());
 
+            let fwd_desc = edge.description.clone();
+            let rev_desc = edge.reverse_description.clone()
+                .unwrap_or_else(|| edge.description.clone());
+
             adjacency.entry(from_key.clone())
                 .or_default()
-                .push((to_key.clone(), edge.description.clone(), se.clone(), ee.clone()));
+                .push((to_key.clone(), fwd_desc, se.clone(), ee.clone()));
             adjacency.entry(to_key)
                 .or_default()
-                .push((from_key, edge.description.clone(), se, ee));
+                .push((from_key, rev_desc, se, ee));
         }
 
         Self { adjacency, node_map }

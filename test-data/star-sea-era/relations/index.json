@@ -1,0 +1,169 @@
+{
+  "edges": [
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e01",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e01", "name": "林逸风" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e06", "name": "黎明号" },
+      "description": "曾是舰长，叛逃后仍指挥",
+      "reverse_description": "由林逸风指挥",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e02",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e01", "name": "林逸风" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e02", "name": "艾琳娜" },
+      "description": "结成联盟，互相信任",
+      "reverse_description": "信任林逸风",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e03",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e01", "name": "林逸风" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e07", "name": "人类联邦" },
+      "description": "曾是忠诚成员，后决裂叛逃",
+      "reverse_description": "通缉林逸风",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "start_event_id": "f0010203-0405-0607-0809-0a0b0c0d0e09",
+      "end_event_id": null
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e04",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e01", "name": "林逸风" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e03", "name": "扎克·血拳" },
+      "description": "互为对手，争夺深渊星云控制权",
+      "reverse_description": "视林逸风为最大威胁",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "start_event_id": "f0010203-0405-0607-0809-0a0b0c0d0e0b"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e05",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e02", "name": "艾琳娜" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e0b", "name": "核心密钥" },
+      "description": "能被核心密钥控制，但已产生免疫",
+      "reverse_description": "可以控制艾琳娜（部分失效）",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e06",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e02", "name": "艾琳娜" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e0e", "name": "AI平权运动" },
+      "description": "作为AI平权运动的象征和核心人物",
+      "reverse_description": "围绕艾琳娜展开",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e07",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e03", "name": "扎克·血拳" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e08", "name": "暗影之握" },
+      "description": "首领，掌控整个海盗联盟",
+      "reverse_description": "由扎克领导",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "start_event_id": "f0010203-0405-0607-0809-0a0b0c0d0e0a"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e08",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e04", "name": "新地球" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e07", "name": "人类联邦" },
+      "description": "作为人类联邦的首都",
+      "reverse_description": "首府设在新地球",
+      "timeline_id": null
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e09",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e05", "name": "深渊星云" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e08", "name": "暗影之握" },
+      "description": "被暗影之握控制，是海盗的大本营",
+      "reverse_description": "以深渊星云为基地",
+      "timeline_id": null
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e0a",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e06", "name": "黎明号" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e0c", "name": "跃迁核心" },
+      "description": "由跃迁核心提供动力",
+      "reverse_description": "为黎明号提供跃迁能量",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e0b",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e07", "name": "人类联邦" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e08", "name": "暗影之握" },
+      "description": "敌对，长期武装对抗",
+      "reverse_description": "对抗人类联邦",
+      "timeline_id": null
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e0c",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e09", "name": "跃迁引擎技术" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e0f", "name": "跃迁禁令" },
+      "description": "受跃迁禁令限制",
+      "reverse_description": "限制跃迁引擎的自由使用",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "start_event_id": "f0010203-0405-0607-0809-0a0b0c0d0e08"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e0d",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e0a", "name": "AI觉醒协议" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e0e", "name": "AI平权运动" },
+      "description": "协议触发了AI平权运动的反弹",
+      "reverse_description": "旨在推翻AI觉醒协议",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e0e",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e0d", "name": "星际殖民时代" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e09", "name": "跃迁引擎技术" },
+      "description": "星际殖民时代由跃迁引擎技术定义",
+      "reverse_description": "是星际殖民时代的核心技术",
+      "timeline_id": null
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e0f",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e01", "name": "林逸风" },
+      "to": { "type": "event", "id": "f0010203-0405-0607-0809-0a0b0c0d0e09", "name": "林逸风叛逃" },
+      "description": "参与并主导了此事件",
+      "reverse_description": "林逸风是关键人物",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e10",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e02", "name": "艾琳娜" },
+      "to": { "type": "event", "id": "f0010203-0405-0607-0809-0a0b0c0d0e05", "name": "艾琳娜觉醒" },
+      "description": "此事件中诞生了觉醒意识",
+      "reverse_description": "艾琳娜在此事件中觉醒",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e11",
+      "from": { "type": "event", "id": "f0010203-0405-0607-0809-0a0b0c0d0e08", "name": "跃迁禁令颁布" },
+      "to": { "type": "event", "id": "f0010203-0405-0607-0809-0a0b0c0d0e09", "name": "林逸风叛逃" },
+      "description": "跃迁禁令直接导致了林逸风的叛逃",
+      "reverse_description": "林逸风叛逃是跃迁禁令的直接后果",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e12",
+      "from": { "type": "event", "id": "f0010203-0405-0607-0809-0a0b0c0d0e05", "name": "艾琳娜觉醒" },
+      "to": { "type": "event", "id": "f0010203-0405-0607-0809-0a0b0c0d0e06", "name": "AI平权运动爆发" },
+      "description": "艾琳娜觉醒直接引发了AI平权运动",
+      "reverse_description": "AI平权运动由艾琳娜觉醒事件触发",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e13",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e01", "name": "林逸风" },
+      "to": { "type": "outline", "id": "c3d4e5f6-a7b8-9012-cdef-123456789012", "name": "星海黎明" },
+      "description": "作为主角出现在故事中（第1-4章）",
+      "reverse_description": "林逸风是本故事的主角",
+      "timeline_id": null
+    },
+    {
+      "id": "fe010203-0405-0607-0809-0a0b0c0d0e14",
+      "from": { "type": "event", "id": "f0010203-0405-0607-0809-0a0b0c0d0e0b", "name": "深渊星云之战" },
+      "to": { "type": "outline", "id": "c3d4e5f6-a7b8-9012-cdef-123456789012", "name": "星海黎明" },
+      "description": "在故事第三章中被详细描写",
+      "reverse_description": "第三章的核心事件",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901"
+    }
+  ]
+}

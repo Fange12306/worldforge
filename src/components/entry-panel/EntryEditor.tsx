@@ -41,7 +41,7 @@ export function EntryEditor({ entry, editing, worldPath, onEdit, onCancel, onSav
       <div className="h-10 flex items-center justify-between px-3 flex-shrink-0">
         <div className="flex items-center gap-2 text-xs text-ink-muted">
           <span className="px-1.5 py-0.5 rounded bg-surface-800">{ENTRY_TYPE_LABELS[entry.type] || entry.type}</span>
-          <span className="px-1.5 py-0.5 rounded bg-surface-800/50 text-ink-muted/50 font-mono text-[10px] select-all">{entry.id}</span>
+          <span className="px-1.5 py-0.5 rounded bg-surface-800/50 text-ink-muted/50 font-mono text-[0.625rem] select-all">{entry.id}</span>
         </div>
         <div className="flex items-center gap-1">
           {editing ? (
@@ -53,7 +53,7 @@ export function EntryEditor({ entry, editing, worldPath, onEdit, onCancel, onSav
             <button onClick={onEdit} className="p-1 rounded text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"><Edit3 className="w-3.5 h-3.5" /></button>
           )}
           {onDelete && (confirmDelete ? (
-            <button data-confirm onClick={() => { onDelete(); setConfirmDelete(false); }} className="text-[10px] text-error hover:bg-surface-700 px-1.5 py-0.5 rounded ml-1 transition-colors">{t.entry.confirmDelete}</button>
+            <button data-confirm onClick={() => { onDelete(); setConfirmDelete(false); }} className="text-[0.625rem] text-error hover:bg-surface-700 px-1.5 py-0.5 rounded ml-1 transition-colors">{t.entry.confirmDelete}</button>
           ) : (
             <button onClick={() => setConfirmDelete(true)} className="p-1 rounded text-ink-muted hover:text-error hover:bg-surface-800 transition-colors ml-1"><Trash2 className="w-3.5 h-3.5" /></button>
           ))}
@@ -71,7 +71,7 @@ export function EntryEditor({ entry, editing, worldPath, onEdit, onCancel, onSav
             <h2 className="text-lg font-semibold mb-4">{entry.name}</h2>
             {entry.tags?.length > 0 && (
               <div className="flex gap-1 mb-3">
-                {entry.tags.map((t: string) => <span key={t} className="px-1.5 py-0.5 text-[10px] rounded bg-surface-800 text-ink-muted">{t}</span>)}
+                {entry.tags.map((t: string) => <span key={t} className="px-1.5 py-0.5 text-[0.625rem] rounded bg-surface-800 text-ink-muted">{t}</span>)}
               </div>
             )}
             <div className="text-sm text-ink-secondary">

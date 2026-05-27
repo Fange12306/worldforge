@@ -32,7 +32,7 @@ export function EntryList({ entries, selectedId, onSelect, onDelete }: Props) {
           if (items.length === 0) return null;
           return (
             <div key={type}>
-              <div className="text-[10px] font-semibold text-ink-muted uppercase tracking-wider px-2 pb-1">
+              <div className="text-[0.625rem] font-semibold text-ink-muted uppercase tracking-wider px-2 pb-1">
                 {ENTRY_TYPE_LABELS[type]}
               </div>
               {items.map((entry) => (

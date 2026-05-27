@@ -54,11 +54,11 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
             </div>
             {!globalStreaming && message.content && (
               <div className="flex items-center gap-2 mt-1.5 self-end">
-                <button onClick={handleCopy} className="text-[10px] text-ink-muted/50 hover:text-ink-muted transition-colors">
+                <button onClick={handleCopy} className="text-[0.625rem] text-ink-muted/50 hover:text-ink-muted transition-colors">
                   {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 </button>
                 {isLastUser && (
-                  <button onClick={handleRetry} className="text-[10px] text-ink-muted/50 hover:text-ink-muted transition-colors">
+                  <button onClick={handleRetry} className="text-[0.625rem] text-ink-muted/50 hover:text-ink-muted transition-colors">
                     <RefreshCw className={cn("w-3 h-3", retrying && "animate-spin")} />
                   </button>
                 )}
@@ -84,7 +84,7 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
               </div>
             )}
             {!globalStreaming && isAssistant && message.content && (
-              <button onClick={handleCopy} className="text-[10px] text-ink-muted/50 hover:text-ink-muted transition-colors mt-1.5">
+              <button onClick={handleCopy} className="text-[0.625rem] text-ink-muted/50 hover:text-ink-muted transition-colors mt-1.5">
                 {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
               </button>
             )}
@@ -103,7 +103,7 @@ function UserContent({ content }: { content: string }) {
       {cleaned && <p className="text-sm whitespace-pre-wrap break-words text-ink">{cleaned}</p>}
       {files.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-1">
-          {files.map((f, i) => <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] bg-surface-700/50 text-ink-secondary rounded-full"><FileText className="w-3 h-3" /> {f}</span>)}
+          {files.map((f, i) => <span key={i} className="inline-flex items-center gap-1 px-2 py-0.5 text-[0.688rem] bg-surface-700/50 text-ink-secondary rounded-full"><FileText className="w-3 h-3" /> {f}</span>)}
         </div>
       )}
     </div>
@@ -113,10 +113,10 @@ function UserContent({ content }: { content: string }) {
 function ThinkingBlock({ text, expanded, active, onToggle }: { text: string; expanded: boolean; active?: boolean; onToggle: () => void }) {
   return (
     <div>
-      <button onClick={onToggle} className="text-[11px] text-ink-muted hover:text-ink-secondary transition-colors">
+      <button onClick={onToggle} className="text-[0.688rem] text-ink-muted hover:text-ink-secondary transition-colors">
         <span className={cn("inline-block w-1.5 h-1.5 rounded-full bg-current mr-1", active ? "pulse-dot" : "")} />Thinking
       </button>
-      {expanded && <p className="text-[11px] text-ink-muted whitespace-pre-wrap font-sans leading-relaxed pl-2 mt-0.5">{text}</p>}
+      {expanded && <p className="text-[0.688rem] text-ink-muted whitespace-pre-wrap font-sans leading-relaxed pl-2 mt-0.5">{text}</p>}
     </div>
   );
 }
@@ -127,7 +127,7 @@ function ToolCallsSummary({ calls, expanded, active, onToggle }: { calls: NonNul
 
   return (
     <div>
-      <button onClick={onToggle} className="text-[11px] text-ink-muted hover:text-ink-secondary transition-colors text-left">
+      <button onClick={onToggle} className="text-[0.688rem] text-ink-muted hover:text-ink-secondary transition-colors text-left">
         <span className={cn("inline-block w-1.5 h-1.5 rounded-full bg-current mr-1 align-middle", active ? "pulse-dot" : "")} />
         {uniqueTypes.size === 1
           ? `${calls.length} ${calls[0].name}`
@@ -142,7 +142,7 @@ function ToolCallsSummary({ calls, expanded, active, onToggle }: { calls: NonNul
               ? c.result.slice(0, 100).replace(/\n/g, " ").trim()
               : "";
             return (
-              <div key={i} className="text-[11px] text-ink-muted/70 flex gap-1.5 items-start">
+              <div key={i} className="text-[0.688rem] text-ink-muted/70 flex gap-1.5 items-start">
                 <span className="flex-shrink-0 font-medium text-ink-muted/50">{c.name}</span>
                 {hint && <span className="truncate">{String(hint)}</span>}
                 {resultPreview && <span className="text-ink-muted/40 hidden sm:inline">→ {resultPreview}</span>}

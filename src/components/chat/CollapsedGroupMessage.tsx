@@ -43,7 +43,7 @@ export function CollapsedGroupMessage({ group }: { group: CollapsedGroup }) {
       <div className="flex-1 min-w-0">
         <button
           onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-1.5 text-[11px] text-ink-muted hover:text-ink-secondary transition-colors group"
+          className="flex items-center gap-1.5 text-[0.688rem] text-ink-muted hover:text-ink-secondary transition-colors group"
         >
           {expanded ? (
             <ChevronDown className="w-3 h-3" />
@@ -67,7 +67,7 @@ export function CollapsedGroupMessage({ group }: { group: CollapsedGroup }) {
         {expanded && (
           <div className="mt-1.5 space-y-0.5 pl-5">
             {details.map((d, i) => (
-              <div key={i} className="text-[11px] text-ink-muted flex items-start gap-1.5">
+              <div key={i} className="text-[0.688rem] text-ink-muted flex items-start gap-1.5">
                 <span className={cn(
                   "flex-shrink-0 mt-0.5 w-1 h-1 rounded-full",
                   d.name === "EntrySearch" || d.name === "GrepEntries"

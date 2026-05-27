@@ -221,7 +221,7 @@ pub fn delete_world(path: String) -> Result<(), String> {
         .map_err(|e| format!("删除世界失败: {}", e))
 }
 
-/// Open world folder in the system file manager (Finder on macOS)
+/// Open world folder in the system file manager (Finder / Explorer / xdg-open)
 #[tauri::command]
 pub fn reveal_world_folder(path: String) -> Result<(), String> {
     let root = expand_tilde(&path);
@@ -244,4 +244,9 @@ pub fn reveal_world_folder(path: String) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("无法打开文件夹: {}", e))?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
 }

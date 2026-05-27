@@ -177,13 +177,14 @@ pub fn add_relation(
     to_type: String,
     to_id: String,
     description: String,
+    reverse_description: Option<String>,
     timeline_id: Option<String>,
 ) -> Result<RelationGraph, String> {
-    let from = EntityRef { name: None, 
+    let from = EntityRef { name: None,
         entity_type: parse_entity_type(&from_type)?,
         id: from_id,
     };
-    let to = EntityRef { name: None, 
+    let to = EntityRef { name: None,
         entity_type: parse_entity_type(&to_type)?,
         id: to_id,
     };
@@ -192,6 +193,7 @@ pub fn add_relation(
         from,
         to,
         description,
+        reverse_description,
         timeline_id,
         start_event_id: None,
         end_event_id: None,
@@ -226,6 +228,7 @@ pub fn update_relation(
     to_type: Option<String>,
     to_id: Option<String>,
     description: Option<String>,
+    reverse_description: Option<String>,
     timeline_id: Option<String>,
 ) -> Result<RelationGraph, String> {
     graph_storage::with_graph(&world_path, |g| {
@@ -253,6 +256,9 @@ pub fn update_relation(
 
         if let Some(desc) = description {
             edge.description = desc;
+        }
+        if reverse_description.is_some() {
+            edge.reverse_description = reverse_description;
         }
         if timeline_id.is_some() {
             edge.timeline_id = timeline_id;

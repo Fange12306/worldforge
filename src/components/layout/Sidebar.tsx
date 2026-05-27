@@ -43,6 +43,7 @@ export function Sidebar() {
   const [creatingStory, setCreatingStory] = useState(false);
   const [creatingWorld, setCreatingWorld] = useState(false);
   const [openingWorld, setOpeningWorld] = useState(false);
+  const [scanningWorlds, setScanningWorlds] = useState(false);
   const [newWorldName, setNewWorldName] = useState("");
   const [worldList, setWorldList] = useState<{ name: string; path: string; description: string }[]>([]);
   const [confirmDeleteWorld, setConfirmDeleteWorld] = useState(false);
@@ -106,7 +107,8 @@ export function Sidebar() {
             )}
             {openingWorld ? (
               <div className="space-y-1">
-                {worldList.length === 0 && <p className="text-[11px] text-ink-muted text-center py-2">{t.sidebar.scanning}</p>}
+                {scanningWorlds && <p className="text-[0.688rem] text-ink-muted text-center py-2">{t.sidebar.scanning}</p>}
+                {!scanningWorlds && worldList.length === 0 && <p className="text-[0.688rem] text-ink-muted text-center py-2">{t.sidebar.emptyWorlds}</p>}
                 {worldList.map((w) => (
                   <button key={w.path} onClick={async () => {
                     const wid = openWorld(w.name, w.path);
@@ -168,17 +170,19 @@ export function Sidebar() {
                     <span>{w.name}</span>
                   </button>
                 ))}
-                <button onClick={() => setOpeningWorld(false)} className="w-full text-center text-[11px] text-ink-muted hover:text-ink py-1">{t.common.cancel}</button>
+                <button onClick={() => setOpeningWorld(false)} className="w-full text-center text-[0.688rem] text-ink-muted hover:text-ink py-1">{t.common.cancel}</button>
               </div>
             ) : (
               <button onClick={async () => {
                 setOpeningWorld(true);
+                setScanningWorlds(true);
                 setWorldList([]);
                 try {
                   const worldsDir = await invoke<string>("get_worlds_dir");
                   const list = await invoke<{ name: string; path: string; description: string }[]>("list_worlds", { rootDir: worldsDir });
                   setWorldList(list);
                 } catch { setWorldList([]); }
+                setScanningWorlds(false);
               }} className="w-full flex items-center gap-2 px-3 py-2 text-sm text-ink-secondary border border-edge rounded-lg hover:bg-surface-800 transition-colors">
                 <FolderOpen className="w-4 h-4" />
                 {t.sidebar.openWorld}
@@ -297,7 +301,7 @@ export function Sidebar() {
               if (e.key === "Escape") setCreatingStory(false);
             }}
             onBlur={() => setCreatingStory(false)}
-            className="w-full h-7 text-[11px] bg-surface-800 rounded px-2 text-ink outline-none"
+            className="w-full h-7 text-[0.688rem] bg-surface-800 rounded px-2 text-ink outline-none"
           />
         ) : (
           <button
@@ -441,7 +445,7 @@ function StoryGroup({
             <Plus className="w-3 h-3" />
           </button>
           {confirmDelete ? (
-            <button data-confirm onClick={(e) => { e.stopPropagation(); onDeleteStory(); setConfirmDelete(false); }} className="text-[10px] text-error hover:bg-surface-700 px-1 py-0.5 rounded">{t.status.confirm}</button>
+            <button data-confirm onClick={(e) => { e.stopPropagation(); onDeleteStory(); setConfirmDelete(false); }} className="text-[0.625rem] text-error hover:bg-surface-700 px-1 py-0.5 rounded">{t.status.confirm}</button>
           ) : (
             <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }} className="p-0.5 rounded hover:bg-surface-700 text-ink-muted hover:text-error" title={t.sidebar.deleteStory}>
               <Trash2 className="w-3 h-3" />
@@ -471,11 +475,11 @@ function StoryGroup({
               ) : (
                 <MessageSquare className="w-3 h-3 text-ink-muted flex-shrink-0" />
               )}
-              <span className="text-[11px] truncate flex-1"
+              <span className="text-[0.688rem] truncate flex-1"
                 onDoubleClick={(e) => { e.stopPropagation(); setEditing({ type: "conv", id: conv.id, value: conv.title }); }}
               >
                 {editing?.type === "conv" && editing.id === conv.id ? (
-                  <input value={editing.value} autoFocus className="bg-surface-800 text-ink text-[11px] outline-none w-full px-1"
+                  <input value={editing.value} autoFocus className="bg-surface-800 text-ink text-[0.688rem] outline-none w-full px-1"
                     onChange={(e) => setEditing({ ...editing, value: e.target.value })}
                     onKeyDown={(e) => { if (e.key === "Enter") { onRenameConversation(conv.id, editing.value); setEditing(null); } if (e.key === "Escape") setEditing(null); }}
                     onBlur={() => { onRenameConversation(conv.id, editing.value); setEditing(null); }}
@@ -483,7 +487,7 @@ function StoryGroup({
                 ) : conv.title}
               </span>
               {confirmDeleteConv === conv.id ? (
-                <button data-confirm onClick={(e) => { e.stopPropagation(); onDeleteConversation(conv.id); setConfirmDeleteConv(null); }} className="text-[10px] text-error hover:bg-surface-700 px-1 py-0.5 rounded transition-all">
+                <button data-confirm onClick={(e) => { e.stopPropagation(); onDeleteConversation(conv.id); setConfirmDeleteConv(null); }} className="text-[0.625rem] text-error hover:bg-surface-700 px-1 py-0.5 rounded transition-all">
                   {t.status.confirm}
                 </button>
               ) : (
@@ -500,7 +504,7 @@ function StoryGroup({
             </div>
           ))}
           {story.conversations.length === 0 && (
-            <p className="text-[10px] text-ink-muted px-2 py-1">{t.sidebar.noConversations}</p>
+            <p className="text-[0.625rem] text-ink-muted px-2 py-1">{t.sidebar.noConversations}</p>
           )}
         </div>
       )}

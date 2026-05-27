@@ -39,6 +39,8 @@ pub struct RelationEdge {
     #[serde(default)]
     pub description: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reverse_description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeline_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start_event_id: Option<String>,

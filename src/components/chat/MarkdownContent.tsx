@@ -42,7 +42,7 @@ export const MarkdownContent = memo(function MarkdownContent({
             <li className="text-ink-secondary">{children}</li>
           ),
           blockquote: ({ children }) => (
-            <blockquote className="border-l-2 border-surface-600 pl-3 my-1.5 text-[13px] text-ink-muted not-italic">
+            <blockquote className="border-l-2 border-surface-600 pl-3 my-1.5 text-[0.8125rem] text-ink-muted not-italic">
               {children}
             </blockquote>
           ),

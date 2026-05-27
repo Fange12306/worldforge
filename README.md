@@ -31,9 +31,9 @@
 
 ## Quick Start
 
-### Download (macOS)
+### Download (Windows + macOS)
 
-Download the latest `.dmg` from [Releases](https://github.com/fange12306/worldforge/releases). Currently supports macOS (Apple Silicon). Windows and Intel Mac builds coming soon.
+Download the latest `.dmg` and `.msi` from [Releases](https://github.com/fange12306/worldforge/releases). Currently supports macOS (Apple Silicon) and Windows.
 
 ### Build from Source
 

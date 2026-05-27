@@ -319,7 +319,7 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
   onNavigateToTimeline?: (eventId: string, timelineId: string) => void;
 }) {
   const { t } = useT();
-  const displayBody = content.startsWith("---") ? content.replace(/^---[\s\S]*?---\n?/, "") : content;
+  const displayBody = content.startsWith("---") ? content.replace(/^---[\s\S]*?---\r?\n?/, "") : content;
   const [editTitle, setEditTitle] = useState(title);
   const [text, setText] = useState(displayBody);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -369,7 +369,7 @@ function OutlineDetail({ chapterOrder, chapterId, title, content, editing, onEdi
   let fmInvolved: string[] = [];
   let fmLinkedEvents: string[] = [];
   if (content.startsWith("---")) {
-    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (fmMatch) {
       const fm = fmMatch[1];
       const tpMatch = fm.match(/time_period:\s*"?(\d+)\s*,\s*(\d+)"?/);

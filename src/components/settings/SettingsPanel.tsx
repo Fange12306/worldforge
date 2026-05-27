@@ -638,7 +638,7 @@ function GeneralSection() {
               </div>
               <div>
                 <h4 className="text-sm font-semibold text-ink">WorldForge</h4>
-                <p className="text-[0.688rem] text-ink-muted font-mono">v{appVersion || "0.6.0"}</p>
+                <p className="text-[0.688rem] text-ink-muted font-mono">v{appVersion || "..."}</p>
               </div>
             </div>
             <p className="text-xs text-ink-secondary leading-relaxed mb-4">

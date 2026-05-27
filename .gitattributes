@@ -1,0 +1,2 @@
+# Lock Markdown files to LF — app writes LF, avoid CRLF mismatch
+*.md text eol=lf

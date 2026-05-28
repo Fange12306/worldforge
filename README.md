@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.0-blue?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.6.5-blue?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/tauri-v2-blue?style=flat-square&logo=tauri" alt="tauri" />
   <img src="https://img.shields.io/badge/react-18-61DAFB?style=flat-square&logo=react" alt="react" />
   <img src="https://img.shields.io/badge/rust-orange?style=flat-square&logo=rust" alt="rust" />

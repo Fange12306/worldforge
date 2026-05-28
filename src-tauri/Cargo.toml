@@ -1,6 +1,6 @@
 [package]
 name = "worldforge"
-version = "0.6.4"
+version = "0.6.5"
 description = "AI-powered worldbuilding and storytelling assistant"
 authors = ["WorldForge"]
 edition = "2021"

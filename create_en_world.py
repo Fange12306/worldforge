@@ -36,7 +36,7 @@ for name in ["fed_founded", "warp_invented", "dawnbreaker_maiden", "lin_captain"
     ev[name] = str(uuid.uuid4())
 
 # Relation edge IDs
-re_ids = [str(uuid.uuid4()) for _ in range(21)]
+re_ids = [str(uuid.uuid4()) for _ in range(20)]
 # Chapter IDs
 ch_ids = [str(uuid.uuid4()) for _ in range(5)]
 
@@ -509,9 +509,6 @@ relations = {
         {"id": re_ids[19], "from": {"type": "event", "id": ev['abyss_battle'], "name": "Battle of the Abyss Nebula"},
          "to": {"type": "outline", "id": s_id, "name": "Star Sea Dawn"},
          "description": "Depicted in detail in Chapter 3", "reverse_description": "Central event of Chapter 3", "timeline_id": t_id},
-        {"id": re_ids[20], "from": {"type": "outline", "id": s_id, "name": "Star Sea Dawn"},
-         "to": {"type": "story", "id": s_id, "name": "Star Sea Dawn"},
-         "description": "Outlines the narrative structure of this story", "reverse_description": "Story outlined by this structure", "timeline_id": None},
     ]
 }
 with open(os.path.join(BASE, "relations/index.json"), "w", encoding="utf-8") as f:

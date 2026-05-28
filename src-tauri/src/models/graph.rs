@@ -5,7 +5,9 @@
 
 use serde::{Deserialize, Serialize};
 
-/// The four entity types that can participate in relations
+/// The entity types that can participate in relations.
+/// `Other` is a catch-all for unknown types (e.g. "story" from older scripts)
+/// so a single bad edge doesn't break the entire graph load.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum EntityType {
@@ -13,6 +15,8 @@ pub enum EntityType {
     Outline,
     Timeline,
     Event,
+    #[serde(other)]
+    Other,
 }
 
 /// A reference to any entity in the world.

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useStore } from "@/lib/store";
-import { ENTRY_TYPES, ENTRY_TYPE_LABELS } from "@/lib/constants";
+import { ENTRY_TYPES } from "@/lib/constants";
 import { invoke } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import { EntryList } from "./EntryList";
@@ -175,7 +175,7 @@ function CreateEntryForm({
             className="w-full h-9 rounded-lg bg-surface-900 border border-edge text-sm text-ink px-3 outline-none focus:border-brand-500/30 transition-colors"
           >
             {ENTRY_TYPES.map((type) => (
-              <option key={type} value={type}>{ENTRY_TYPE_LABELS[type]}</option>
+              <option key={type} value={type}>{t.entryTypes[type]}</option>
             ))}
           </select>
         </div>

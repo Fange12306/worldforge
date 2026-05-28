@@ -13,13 +13,3 @@ export const ENTRY_TYPES = [
 ] as const;
 
 export type EntryType = (typeof ENTRY_TYPES)[number];
-
-export const ENTRY_TYPE_LABELS: Record<EntryType, string> = {
-  character: "人物",
-  location: "地点",
-  organization: "组织",
-  system: "体系",
-  artifact: "物品",
-  era: "纪元",
-  concept: "概念",
-};

@@ -40,6 +40,7 @@ fn entity_key(entity_type: &EntityType, id: &str) -> String {
             EntityType::Outline => "outline",
             EntityType::Timeline => "timeline",
             EntityType::Event => "event",
+            EntityType::Other => "other",
         },
         id
     )

@@ -132,6 +132,19 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
+                // Fullscreen: exit fullscreen then hide after animation
+                if window.is_fullscreen().unwrap_or(false) {
+                    let _ = window.set_fullscreen(false);
+                    let w = window.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(800));
+                        #[cfg(target_os = "macos")]
+                        let _ = w.app_handle().hide();
+                        #[cfg(not(target_os = "macos"))]
+                        let _ = w.hide();
+                    });
+                    return;
+                }
                 // macOS: hide the whole app so system can restore it via Dock
                 #[cfg(target_os = "macos")]
                 let _ = window.app_handle().hide();

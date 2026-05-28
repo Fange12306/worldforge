@@ -733,9 +733,8 @@ for ch in chapters:
     lines.append(f'summary: "{ch["summary"]}"')
     lines.append(f"has_body: {str(ch['has_body']).lower()}")
     lines.append(f"word_count: {ch['word_count']}")
-    lines.append(f"linked_events:")
-    for evt in ch['linked_events']:
-        lines.append(f'  - "{evt}"')
+    evt_strs = ", ".join(f'"{e}"' for e in ch['linked_events'])
+    lines.append(f"linked_events: [{evt_strs}]")
     lines.append("---")
     lines.append("")
     lines.append(body)

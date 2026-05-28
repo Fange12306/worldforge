@@ -144,6 +144,9 @@ What makes your characters tick? Define personality traits, speech patterns, mot
 ### 3. Smart Chapter Writing
 Write chapter bodies with an AI that actually knows your world. It pulls in the relevant characters (with their personalities), the scene's timeline context, and your preferred writing style — then writes prose that stays consistent with previous chapters. Want Hemingway prose today and wuxia tomorrow? Style templates make it a one-click switch.
 
+### 4. Living World Engine (Long-term Vision)
+An AI-driven text RPG where the world *runs itself*. Multiple agents — each character driven by their personality profile — make decisions, form alliances, start wars, and reshape the world in real time. Every agent action updates entries and relations automatically, so the world stays consistent no matter what happens. You can write stories set in it, run a TTRPG campaign where the world reacts to your players, or just watch — like opening a book where the characters keep living after you close it.
+
 ---
 
 ## Further Reading

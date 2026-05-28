@@ -131,6 +131,21 @@ No database. All data lives as human-readable files, interoperable with Obsidian
 
 ---
 
+## Roadmap
+
+Here's what we're building next:
+
+### 1. Entry State Timeline
+A personal history tracker for each entry. Every character, organization, or artifact changes over time — a captain becomes a colonel, a city falls into ruin, an artifact gains new power. State tracking lets you record these changes along the timeline, so you can see *who was what, when*.
+
+### 2. Character Personality Profiles
+What makes your characters tick? Define personality traits, speech patterns, motivations, and flaws for each character. The AI uses these profiles to keep characters in-character — decisive characters act fast, cynical ones talk sharp, the gentle giant never suddenly picks a fight.
+
+### 3. Smart Chapter Writing
+Write chapter bodies with an AI that actually knows your world. It pulls in the relevant characters (with their personalities), the scene's timeline context, and your preferred writing style — then writes prose that stays consistent with previous chapters. Want Hemingway prose today and wuxia tomorrow? Style templates make it a one-click switch.
+
+---
+
 ## Further Reading
 
 - [Design Doc](DESIGN.md) — Architecture decisions, phase planning, data persistence

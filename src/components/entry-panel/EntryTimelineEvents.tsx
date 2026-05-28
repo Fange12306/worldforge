@@ -7,6 +7,13 @@ import { useState, useEffect, useMemo } from "react";
 import { invoke } from "@/lib/api";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { useT } from "@/lib/i18n";
+import {
+  type TU,
+  segs,
+  formatEraLabel,
+  formatYearLabel,
+  formatLeafLabel,
+} from "@/lib/time-format";
 
 const a = (x: any) => x || [];
 
@@ -15,39 +22,10 @@ interface SimpleEvent { id: string; timeline_id: string; time_point: string; pre
   linked_entries: { entry_id: string; perspective_summary?: string }[];
   relationship_changes: { entry_a: string; entry_b: string; change_type: string; relation: string }[];
 }
-interface TU { key: string; name: string; digits: number; }
-
-// ── Time formatters ──
-function segs(tp: string): number[] { return tp.split("-").map(s => parseInt(s, 10) || 0); }
-
-function leafLabel(tp: string, u: TU[], precision?: number | null): string {
-  const s = segs(tp);
-  const maxIdx = precision != null ? precision : u.length - 1;
-  const mi = u.findIndex(x => x.key === "month");
-  const di = u.findIndex(x => x.key === "day");
-  let r = "";
-  if (mi >= 0 && mi <= maxIdx) { const v = s[mi + 1] || 0; r += `${v}${u[mi].name}`; }
-  if (di >= 0 && di <= maxIdx) { const v = s[di + 1] || 0; r += `${v}${u[di].name}`; }
-  if (!r) {
-    const yi = u.findIndex(x => x.key === "year");
-    const startI = yi >= 0 ? yi + 1 : 0;
-    const p: string[] = [];
-    for (let i = startI; i < u.length && i <= maxIdx; i++) {
-      const v = s[i + 1] || 0;
-      if (v > 0) p.push(`${v}${u[i].name}`);
-    }
-    return p.length > 0 ? p.join("") : (yi >= 0 ? `${s[yi+1]||0}${u[yi].name}` : tp);
-  }
-  const startIdx = Math.max(di, mi) + 1;
-  const tparts: string[] = [];
-  for (let i = startIdx; i < u.length && i <= maxIdx; i++) tparts.push(String(s[i + 1] || 0).padStart(u[i].digits, "0"));
-  if (tparts.length > 0 && !tparts.every(t => !t || parseInt(t, 10) === 0)) r += tparts.join(":");
-  return r;
-}
 
 // ── Tree ──
 type Node = { key: string; depth: number; label: string; evs: SimpleEvent[] };
-function buildTree(events: SimpleEvent[], u: TU[]): { key: string; depth: number; label: string; children: Node[] }[] {
+function buildTree(events: SimpleEvent[], u: TU[], lang: "zh" | "en"): { key: string; depth: number; label: string; children: Node[] }[] {
   const ei = u.findIndex(x => x.key === "era");
   const yi = u.findIndex(x => x.key === "year");
   const root: any[] = [];
@@ -63,23 +41,23 @@ function buildTree(events: SimpleEvent[], u: TU[]): { key: string; depth: number
     if (ei >= 0) {
       const v = s[ei + 1] || 0; const k = `e:${v}`;
       let n = cur.find((x: any) => x.key === k);
-      if (!n) { n = { key: k, depth: 0, label: `${v}${u[ei].name}`, children: [] }; cur.push(n); }
+      if (!n) { n = { key: k, depth: 0, label: formatEraLabel(v, lang), children: [] }; cur.push(n); }
       cur = n.children;
     }
     if (yi >= 0) {
       const v = s[yi + 1] || 0; const k = `${(cur as any)?.key || ""}/y:${v}`;
       let n = cur.find((x: any) => x.key === k);
-      if (!n) { n = { key: k, depth: 1, label: `${v}${u[yi].name}`, children: [] }; cur.push(n); }
+      if (!n) { n = { key: k, depth: 1, label: formatYearLabel(v, lang), children: [] }; cur.push(n); }
       cur = n.children;
     }
-    cur.push({ key: tp, depth: 2, label: leafLabel(tp, u, evs[0]?.precision), evs });
+    cur.push({ key: tp, depth: 2, label: formatLeafLabel(tp, u, evs[0]?.precision, lang), evs });
   }
   return root;
 }
 
 // ── Component ──
 export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, onNavigateEntry, initialActiveTlId }: Props) {
-  const { t } = useT();
+  const { t, language } = useT();
   const [allTls, setAllTls] = useState<any[]>([]);
   const [activeTlId, setActiveTlId] = useState("");
   const [allEvents, setAllEvents] = useState<SimpleEvent[]>([]);
@@ -141,7 +119,7 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, 
     [allEvents, activeTlId]
   );
 
-  const tree = useMemo(() => (units.length > 0 && events) ? buildTree(events, units) : [], [events, units]);
+  const tree = useMemo(() => (units.length > 0 && events) ? buildTree(events, units, language) : [], [events, units, language]);
 
   const [expandTick, setExpandTick] = useState(0);
   useEffect(() => { setExpandTick(t => t + 1); }, [activeTlId]);
@@ -190,7 +168,7 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, 
               <button onClick={() => toggleEra(era.key)} className="flex items-center gap-1.5 w-full text-left py-0.5 hover:bg-surface-800/20">
                 {eraOpen ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
                 <span className="text-[0.688rem] font-medium text-ink-muted">{era.label}</span>
-                <span className="text-[0.625rem] text-ink-muted/30">({era.children.reduce((s: number, y: any) => s + (y.children?.length || 0), 0)} 事件)</span>
+                <span className="text-[0.625rem] text-ink-muted/30">({era.children.reduce((s: number, y: any) => s + (y.children?.length || 0), 0)}{t.entry.events})</span>
               </button>
               {eraOpen && <div className="ml-4 border-l-2 border-surface-700/30 pl-3">
                 {era.children.map((year: any) => {
@@ -199,7 +177,7 @@ export function EntryTimelineEvents({ worldPath, entryId, onNavigateToTimeline, 
                     <button onClick={() => toggleYear(year.key)} className="flex items-center gap-1.5 w-full text-left py-0.5 hover:bg-surface-800/20">
                       {yOpen ? <ChevronDown className="w-3 h-3 text-ink-muted" /> : <ChevronRight className="w-3 h-3 text-ink-muted" />}
                       <span className="text-[0.688rem] text-ink-muted/70">{year.label}</span>
-                      <span className="text-[0.625rem] text-ink-muted/30">({year.children?.length || 0}事件)</span>
+                      <span className="text-[0.625rem] text-ink-muted/30">({year.children?.length || 0}{t.entry.events})</span>
                     </button>
                     {yOpen && <div className="ml-4 border-l-2 border-amber-500/20 pl-3 space-y-3 pt-0.5">
                       {(year.children || []).map((n: any) => {

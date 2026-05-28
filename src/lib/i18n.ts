@@ -91,6 +91,10 @@ const zh = {
     advanced: "高级",
     compressionThreshold: "压缩阈值",
     compressionThresholdDesc: "当上下文用量超过此百分比时，自动用 LLM 摘要替换更早的对话轮次。",
+    searchTitle: "搜索",
+    searchApiKeyLabel: "Bing Search API Key",
+    searchApiKeyPlaceholder: "免费层 1000次/月，portal.azure.com 创建 Bing Search 资源获取",
+    searchApiKeyHint: "Bing Web Search API v7，免费层每月 1000 次调用。不填则使用内置搜索。",
   },
 
   // Settings — personalization
@@ -560,6 +564,10 @@ const en: typeof zh = {
     advanced: "Advanced",
     compressionThreshold: "Compression Threshold",
     compressionThresholdDesc: "Automatically replace earlier turns with an LLM summary when context usage exceeds this percentage.",
+    searchTitle: "Search",
+    searchApiKeyLabel: "Bing Search API Key",
+    searchApiKeyPlaceholder: "Free tier 1000 calls/month. Create a Bing Search resource at portal.azure.com",
+    searchApiKeyHint: "Bing Web Search API v7, free tier 1000 calls per month. Leave empty to use built-in search.",
   },
 
   personalization: {

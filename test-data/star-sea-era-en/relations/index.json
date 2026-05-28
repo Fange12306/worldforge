@@ -1,0 +1,345 @@
+{
+  "edges": [
+    {
+      "id": "a0e5e217-c92b-4fdf-9525-5c5d3632136e",
+      "from": {
+        "type": "entry",
+        "id": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+        "name": "Lin Yifeng"
+      },
+      "to": {
+        "type": "entry",
+        "id": "36d26e87-eb8f-44e1-9022-2d32e369a6c0",
+        "name": "Dawnbreaker"
+      },
+      "description": "Was captain; still commands after defection",
+      "reverse_description": "Commanded by Lin Yifeng",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75"
+    },
+    {
+      "id": "06ef62cb-da98-4b3b-9b86-fd7d95354ade",
+      "from": {
+        "type": "entry",
+        "id": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+        "name": "Lin Yifeng"
+      },
+      "to": {
+        "type": "entry",
+        "id": "a1259804-1d35-4575-a237-f09da5a3dddd",
+        "name": "ELENA"
+      },
+      "description": "Formed an alliance of mutual trust",
+      "reverse_description": "Trusts Lin Yifeng",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75"
+    },
+    {
+      "id": "07c3dbe6-d0b8-421a-b15d-5517eb326ad3",
+      "from": {
+        "type": "entry",
+        "id": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+        "name": "Lin Yifeng"
+      },
+      "to": {
+        "type": "entry",
+        "id": "6fd67a70-eaed-40a8-980c-b90cae526b88",
+        "name": "Human Federation"
+      },
+      "description": "Was a loyal member; later broke away and defected",
+      "reverse_description": "Has a bounty on Lin Yifeng",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "start_event_id": "44fff1dd-db18-480d-bdd8-73515c5db47f",
+      "end_event_id": null
+    },
+    {
+      "id": "c5bbf62b-43f3-4b52-8aed-83267b1d342b",
+      "from": {
+        "type": "entry",
+        "id": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+        "name": "Lin Yifeng"
+      },
+      "to": {
+        "type": "entry",
+        "id": "f8cf1d33-3142-4911-b060-e3ff6dd1ad08",
+        "name": "Zak Bloodfist"
+      },
+      "description": "Rivals competing for control of the Abyss Nebula",
+      "reverse_description": "Sees Lin Yifeng as the greatest threat",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "start_event_id": "8a1f7f6c-5e50-4b55-be19-0f10a2b76886"
+    },
+    {
+      "id": "0031a956-6ced-4636-ba63-fdbeb8538e5a",
+      "from": {
+        "type": "entry",
+        "id": "a1259804-1d35-4575-a237-f09da5a3dddd",
+        "name": "ELENA"
+      },
+      "to": {
+        "type": "entry",
+        "id": "ebeed032-2a3f-4618-b29e-0997af62e2aa",
+        "name": "Core Key"
+      },
+      "description": "Can be controlled by the Core Key, but has developed immunity",
+      "reverse_description": "Can control ELENA (partially ineffective)",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75"
+    },
+    {
+      "id": "5ffa1607-21c5-4286-af60-5e6250e4b63c",
+      "from": {
+        "type": "entry",
+        "id": "a1259804-1d35-4575-a237-f09da5a3dddd",
+        "name": "ELENA"
+      },
+      "to": {
+        "type": "entry",
+        "id": "7a3c7d26-20d9-412f-8299-bb64b0b96ebd",
+        "name": "AI Rights Movement"
+      },
+      "description": "Serves as the symbol and central figure of the AI Rights Movement",
+      "reverse_description": "Revolves around ELENA",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75"
+    },
+    {
+      "id": "f3354fea-b1d0-4cb7-8346-960d15d2b102",
+      "from": {
+        "type": "entry",
+        "id": "f8cf1d33-3142-4911-b060-e3ff6dd1ad08",
+        "name": "Zak Bloodfist"
+      },
+      "to": {
+        "type": "entry",
+        "id": "cf4e1b35-b8b0-4d75-8e0c-c56d4e8c8698",
+        "name": "Shadow Grip"
+      },
+      "description": "Leader who controls the entire pirate coalition",
+      "reverse_description": "Led by Zak",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "start_event_id": "4be14f7a-16d7-4a8a-b24f-4f302c832b5a"
+    },
+    {
+      "id": "0f62e32a-ec10-4b09-a880-79ef490f08c6",
+      "from": {
+        "type": "entry",
+        "id": "81640941-18a6-455e-8322-14c3f0ebc1cb",
+        "name": "New Earth"
+      },
+      "to": {
+        "type": "entry",
+        "id": "6fd67a70-eaed-40a8-980c-b90cae526b88",
+        "name": "Human Federation"
+      },
+      "description": "Serves as the capital of the Human Federation",
+      "reverse_description": "Capital is located on New Earth",
+      "timeline_id": null
+    },
+    {
+      "id": "592c1e83-fbf1-4f25-8805-67d3e172949d",
+      "from": {
+        "type": "entry",
+        "id": "ad9b6857-1582-4f41-96e7-57c161a263ab",
+        "name": "Abyss Nebula"
+      },
+      "to": {
+        "type": "entry",
+        "id": "cf4e1b35-b8b0-4d75-8e0c-c56d4e8c8698",
+        "name": "Shadow Grip"
+      },
+      "description": "Controlled by Shadow Grip; serves as the pirate headquarters",
+      "reverse_description": "Based in the Abyss Nebula",
+      "timeline_id": null
+    },
+    {
+      "id": "74b915f9-e7fc-4787-ac89-4aaa08c85650",
+      "from": {
+        "type": "entry",
+        "id": "36d26e87-eb8f-44e1-9022-2d32e369a6c0",
+        "name": "Dawnbreaker"
+      },
+      "to": {
+        "type": "entry",
+        "id": "8a51d3d4-9c8f-4899-ade6-41cc11bc1274",
+        "name": "Warp Core"
+      },
+      "description": "Powered by the Warp Core",
+      "reverse_description": "Provides warp energy to the Dawnbreaker",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75"
+    },
+    {
+      "id": "75e2a939-014b-4d46-80b7-cec9bfc4a6df",
+      "from": {
+        "type": "entry",
+        "id": "6fd67a70-eaed-40a8-980c-b90cae526b88",
+        "name": "Human Federation"
+      },
+      "to": {
+        "type": "entry",
+        "id": "cf4e1b35-b8b0-4d75-8e0c-c56d4e8c8698",
+        "name": "Shadow Grip"
+      },
+      "description": "Hostile; engaged in prolonged armed conflict",
+      "reverse_description": "Opposes the Human Federation",
+      "timeline_id": null
+    },
+    {
+      "id": "c147e55d-3dc4-463f-9236-3b4f06646270",
+      "from": {
+        "type": "entry",
+        "id": "d0f67ea2-5904-47b9-bacd-831f823302a6",
+        "name": "Warp Drive Technology"
+      },
+      "to": {
+        "type": "entry",
+        "id": "d5ee0397-3d9b-4f6c-b49f-aed5ade4931b",
+        "name": "Warp Ban"
+      },
+      "description": "Restricted by the Warp Ban",
+      "reverse_description": "Restricts free use of warp engines",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "start_event_id": "4d092968-23ca-4999-88fb-0429a52f0f0c"
+    },
+    {
+      "id": "d853864f-a6ed-4474-8025-854685867964",
+      "from": {
+        "type": "entry",
+        "id": "02fca777-70be-4983-a44a-e7c2868c88a8",
+        "name": "AI Awakening Protocol"
+      },
+      "to": {
+        "type": "entry",
+        "id": "7a3c7d26-20d9-412f-8299-bb64b0b96ebd",
+        "name": "AI Rights Movement"
+      },
+      "description": "The protocol triggered a backlash from the AI Rights Movement",
+      "reverse_description": "Aims to overturn the AI Awakening Protocol",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75"
+    },
+    {
+      "id": "eeb4a773-7bd7-4519-be5a-b8053f0e4bcf",
+      "from": {
+        "type": "entry",
+        "id": "fc78a4e5-a3c4-4d37-b67f-2530f71dc2a2",
+        "name": "Interstellar Colonial Era"
+      },
+      "to": {
+        "type": "entry",
+        "id": "d0f67ea2-5904-47b9-bacd-831f823302a6",
+        "name": "Warp Drive Technology"
+      },
+      "description": "The Colonial Era is defined by warp drive technology",
+      "reverse_description": "Core technology of the Colonial Era",
+      "timeline_id": null
+    },
+    {
+      "id": "3c3baace-3ad0-41a9-9f95-5085b00e31bc",
+      "from": {
+        "type": "entry",
+        "id": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+        "name": "Lin Yifeng"
+      },
+      "to": {
+        "type": "event",
+        "id": "44fff1dd-db18-480d-bdd8-73515c5db47f",
+        "name": "Lin Yifeng Defects"
+      },
+      "description": "Participated in and was central to this event",
+      "reverse_description": "Lin Yifeng is the key figure",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75"
+    },
+    {
+      "id": "bde9aa7c-5c8f-4260-ac7e-7c71aad76e0b",
+      "from": {
+        "type": "entry",
+        "id": "a1259804-1d35-4575-a237-f09da5a3dddd",
+        "name": "ELENA"
+      },
+      "to": {
+        "type": "event",
+        "id": "7124e154-8249-41b6-a00c-80a4952cf8c0",
+        "name": "ELENA Awakens"
+      },
+      "description": "Awakened consciousness was born in this event",
+      "reverse_description": "ELENA awakened during this event",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75"
+    },
+    {
+      "id": "6387682b-8dab-4337-bb6a-702bb8df922e",
+      "from": {
+        "type": "event",
+        "id": "4d092968-23ca-4999-88fb-0429a52f0f0c",
+        "name": "Warp Ban Enacted"
+      },
+      "to": {
+        "type": "event",
+        "id": "44fff1dd-db18-480d-bdd8-73515c5db47f",
+        "name": "Lin Yifeng Defects"
+      },
+      "description": "The Warp Ban directly caused Lin Yifeng's defection",
+      "reverse_description": "Lin Yifeng's defection is a direct consequence of the Warp Ban",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75"
+    },
+    {
+      "id": "7ff9b80e-ddd5-49a8-885b-c00c011170cc",
+      "from": {
+        "type": "event",
+        "id": "7124e154-8249-41b6-a00c-80a4952cf8c0",
+        "name": "ELENA Awakens"
+      },
+      "to": {
+        "type": "event",
+        "id": "1832415c-ee58-4379-b109-ae565b70b7d7",
+        "name": "AI Rights Movement Erupts"
+      },
+      "description": "ELENA's awakening directly triggered the AI Rights Movement",
+      "reverse_description": "The AI Rights Movement was triggered by ELENA's awakening",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75"
+    },
+    {
+      "id": "5dfc6978-8568-4a0e-b262-1ec9e330a49e",
+      "from": {
+        "type": "entry",
+        "id": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+        "name": "Lin Yifeng"
+      },
+      "to": {
+        "type": "outline",
+        "id": "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af",
+        "name": "Star Sea Dawn"
+      },
+      "description": "Appears as the protagonist (Chapters 1–4)",
+      "reverse_description": "Lin Yifeng is the protagonist of this story",
+      "timeline_id": null
+    },
+    {
+      "id": "7172060a-137e-4548-9e2a-24ad289483f6",
+      "from": {
+        "type": "event",
+        "id": "8a1f7f6c-5e50-4b55-be19-0f10a2b76886",
+        "name": "Battle of the Abyss Nebula"
+      },
+      "to": {
+        "type": "outline",
+        "id": "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af",
+        "name": "Star Sea Dawn"
+      },
+      "description": "Depicted in detail in Chapter 3",
+      "reverse_description": "Central event of Chapter 3",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75"
+    },
+    {
+      "id": "1ea67ea7-ba54-4d2d-a8b8-27f58781bbb0",
+      "from": {
+        "type": "outline",
+        "id": "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af",
+        "name": "Star Sea Dawn"
+      },
+      "to": {
+        "type": "story",
+        "id": "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af",
+        "name": "Star Sea Dawn"
+      },
+      "description": "Outlines the narrative structure of this story",
+      "reverse_description": "Story outlined by this structure",
+      "timeline_id": null
+    }
+  ]
+}

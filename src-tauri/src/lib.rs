@@ -2,6 +2,7 @@ mod commands;
 mod models;
 mod services;
 mod utils;
+mod tray_icon_data;
 
 use commands::api_key;
 use commands::api_proxy;
@@ -18,9 +19,11 @@ use commands::timeline;
 use commands::web_search;
 use commands::world_init;
 
+#[cfg(target_os = "macos")]
+use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::Manager;
+use tauri::{Manager, RunEvent};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -128,9 +131,26 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // Hide instead of close — tray icon handles actual quit
-                let _ = window.hide();
                 api.prevent_close();
+                // Fullscreen: exit fullscreen then hide after animation
+                if window.is_fullscreen().unwrap_or(false) {
+                    let _ = window.set_fullscreen(false);
+                    let w = window.clone();
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(800));
+                        #[cfg(target_os = "macos")]
+                        let _ = w.app_handle().hide();
+                        #[cfg(not(target_os = "macos"))]
+                        let _ = w.hide();
+                    });
+                    return;
+                }
+                // macOS: hide the whole app so system can restore it via Dock
+                #[cfg(target_os = "macos")]
+                let _ = window.app_handle().hide();
+                // Other platforms: just hide the window
+                #[cfg(not(target_os = "macos"))]
+                let _ = window.hide();
             }
         })
         .setup(|app| {
@@ -141,9 +161,22 @@ pub fn run() {
                 .item(&quit_item)
                 .build()?;
 
-            let _tray = TrayIconBuilder::new()
-                .icon(app.default_window_icon().unwrap().clone())
-                .menu(&menu)
+            #[cfg(target_os = "macos")]
+            let tray_icon = Image::new(
+                tray_icon_data::TRAY_ICON_RGBA,
+                tray_icon_data::TRAY_ICON_WIDTH,
+                tray_icon_data::TRAY_ICON_HEIGHT,
+            );
+            #[cfg(not(target_os = "macos"))]
+            let tray_icon = app.default_window_icon().unwrap().clone();
+            let mut tray_builder = TrayIconBuilder::new()
+                .icon(tray_icon)
+                .menu(&menu);
+            #[cfg(target_os = "macos")]
+            {
+                tray_builder = tray_builder.icon_as_template(true);
+            }
+            let _tray = tray_builder
                 .tooltip("WorldForge")
                 .on_menu_event(|app, event| {
                     match event.id().as_ref() {
@@ -151,6 +184,8 @@ pub fn run() {
                             app.exit(0);
                         }
                         "show" => {
+                            #[cfg(target_os = "macos")]
+                            let _ = app.show();
                             if let Some(window) = app.get_webview_window("main") {
                                 let _ = window.show();
                                 let _ = window.set_focus();
@@ -170,6 +205,8 @@ pub fn run() {
                             if window.is_visible().unwrap_or(false) {
                                 let _ = window.hide();
                             } else {
+                                #[cfg(target_os = "macos")]
+                                let _ = tray.app_handle().show();
                                 let _ = window.show();
                                 let _ = window.set_focus();
                             }
@@ -180,6 +217,16 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            #[cfg(target_os = "macos")]
+            if let RunEvent::Reopen { .. } = &event {
+                let _ = app_handle.show();
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
+        });
 }

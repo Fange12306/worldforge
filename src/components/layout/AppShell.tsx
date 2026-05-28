@@ -223,17 +223,15 @@ export function AppShell() {
         </ErrorBoundary>
         <StatusBar />
       </div>
-      {rightOpen && (
-        <div className="h-full w-60 flex-shrink-0 rounded-2xl bg-surface-900 overflow-hidden">
-          <RightSidebar onCloseSidebar={() => setRightOpen(false)} refreshKey={refreshKey}
-            onSelectOutlineChapter={async (chapter: ChapterInfo) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (!w) return; const story = w.stories.find((s) => s.conversations.some((c) => c.id === activeConversationId)); if (!story) return; const content = await invoke<string>("read_chapter", { worldPath: w.path, storyId: story.id, chapterId: chapter.id }); setCenterView({ type: "outline", chapterOrder: chapter.order, chapterId: chapter.id, title: chapter.title || `第${chapter.order}章`, content, editing: false }); } catch {} }}
-            onSelectEntry={async (e) => { try { const w = worlds.find((x) => x.id === activeWorldId); const full = w ? await invoke<Entry>("read_entry", { worldPath: w.path, entryId: e.id }) : e; setCenterView({ type: "entry", entry: full, editing: false }); } catch { setCenterView({ type: "entry", entry: e, editing: false }); } }}
-            onSelectFile={async (fileName) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (w) { const content = await invoke<string>("read_file", { worldPath: w.path, filePath: `uploads/${activeConversationId}/${fileName}` }); setCenterView({ type: "file", fileName, content }); } } catch {} }}
-            onSelectMemory={async (fileName) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (w) { const content = await invoke<string>("read_memory", { worldPath: w.path, fileName }); setCenterView({ type: "memory", fileName, content }); } } catch {} }}
-            onClose={() => setRightOpen(false)}
-          />
-        </div>
-      )}
+      <div className={`h-full flex-shrink-0 rounded-2xl bg-surface-900 overflow-hidden transition-all ${rightOpen ? "w-60" : "w-0"}`}>
+        <RightSidebar onCloseSidebar={() => setRightOpen(false)} refreshKey={refreshKey}
+          onSelectOutlineChapter={async (chapter: ChapterInfo) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (!w) return; const story = w.stories.find((s) => s.conversations.some((c) => c.id === activeConversationId)); if (!story) return; const content = await invoke<string>("read_chapter", { worldPath: w.path, storyId: story.id, chapterId: chapter.id }); setCenterView({ type: "outline", chapterOrder: chapter.order, chapterId: chapter.id, title: chapter.title || `第${chapter.order}章`, content, editing: false }); } catch {} }}
+          onSelectEntry={async (e) => { try { const w = worlds.find((x) => x.id === activeWorldId); const full = w ? await invoke<Entry>("read_entry", { worldPath: w.path, entryId: e.id }) : e; setCenterView({ type: "entry", entry: full, editing: false }); } catch { setCenterView({ type: "entry", entry: e, editing: false }); } }}
+          onSelectFile={async (fileName) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (w) { const content = await invoke<string>("read_file", { worldPath: w.path, filePath: `uploads/${activeConversationId}/${fileName}` }); setCenterView({ type: "file", fileName, content }); } } catch {} }}
+          onSelectMemory={async (fileName) => { try { const w = worlds.find((x) => x.id === activeWorldId); if (w) { const content = await invoke<string>("read_memory", { worldPath: w.path, fileName }); setCenterView({ type: "memory", fileName, content }); } } catch {} }}
+          onClose={() => setRightOpen(false)}
+        />
+      </div>
       {!sidebarOpen && <button onClick={() => useStore.getState().toggleSidebar()} className="absolute left-[20px] top-[52px] z-10 w-7 h-7 flex items-center justify-center rounded-lg text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"><PanelLeftOpen className="w-4 h-4" /></button>}
       {!rightOpen && <button onClick={() => setRightOpen(true)} className="absolute right-4 top-[52px] z-10 w-7 h-7 flex items-center justify-center rounded-lg text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"><PanelRightOpen className="w-4 h-4" /></button>}
       <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} />

@@ -1,0 +1,23 @@
+{
+  "id": "b746dc30-eafb-41ad-8c3b-f4b8ba9927a8",
+  "name": "Star Sea Era (Test)",
+  "description": "A medium-scale sci-fi test world covering AI awakening, interstellar politics, and warp technology. Used for testing all WorldForge data models (entries, timelines, events, relation graphs, outlines) and their interconnections.",
+  "world_prompt": "This is a hard sci-fi setting. Humanity has entered the interstellar colonial era, with the warp drive as core technology. AI awakening has triggered profound social upheaval — the AI rights movement rises, while the Human Federation attempts to control the situation through a warp ban. The tone is cool and sharp, blending cyberpunk with space opera elements.",
+  "default_timeline": "b5ff183d-4335-44e1-9418-79039c842e75",
+  "created_at": "2026-05-28T00:00:00+08:00",
+  "language": "en-US",
+  "calendar": {
+    "epochs": [
+      {
+        "name": "Pre-War Era",
+        "offset": -100
+      },
+      {
+        "name": "New Era",
+        "offset": 0
+      }
+    ],
+    "era": "New Era",
+    "description": "The founding of the Human Federation marks Year 0 of the New Era; before that was the Pre-War Era"
+  }
+}

@@ -8,57 +8,20 @@ import { createPortal } from "react-dom";
 import { invoke } from "../../lib/api";
 import { useT } from "../../lib/i18n";
 import type { WorldEvent, Timeline } from "../../lib/types";
+import {
+  type TU,
+  segs,
+  formatEraLabel,
+  formatYearLabel,
+  formatLeafLabel,
+  formatFullTime,
+} from "../../lib/time-format";
 
 // ── Safe access ──
 const a = (x: any) => x || [];
 
-// ── Time helpers ──
-interface TU { key: string; name: string; digits: number; }
 function getUnits(tl: Timeline | null): TU[] {
   return tl?.time_format?.units?.map((u: any) => ({ key: u.key, name: u.name, digits: u.digits })) || [];
-}
-function segs(tp: string): number[] { return tp.split("-").map(s => parseInt(s, 10) || 0); }
-
-/** Leaf label truncated to precision: 3月15日08:30:00 or 3月15日 (no parens, time colons) */
-function leafLabel(tp: string, tl: Timeline | null, precision?: number | null): string {
-  const s = segs(tp); const u = getUnits(tl);
-  const maxIdx = precision != null ? precision : u.length - 1;
-  const mi = u.findIndex(x => x.key === "month");
-  const di = u.findIndex(x => x.key === "day");
-  const dateParts: string[] = [];
-  const timeParts: { val: string; name: string }[] = [];
-  if (mi >= 0 && mi <= maxIdx) { const v = s[mi + 1] || 0; if (v > 0) dateParts.push(`${v}${u[mi].name}`); }
-  if (di >= 0 && di <= maxIdx) { const v = s[di + 1] || 0; if (v > 0) dateParts.push(`${v}${u[di].name}`); }
-  // Time portion — single unit gets its name suffix, multiple get colons
-  for (let i = Math.max(di, mi) + 1; i < u.length && i <= maxIdx; i++) {
-    timeParts.push({ val: String(s[i + 1] || 0).padStart(u[i].digits, "0"), name: u[i].name });
-  }
-  if (timeParts.length === 1) {
-    return dateParts.join("") + timeParts[0].val + timeParts[0].name;
-  }
-  return dateParts.join("") + (timeParts.length > 1 ? timeParts.map(t => t.val).join(":") : "");
-}
-
-function fmtTime(tp: string, tl: Timeline | null, precision?: number | null): string {
-  const s = segs(tp); const u = getUnits(tl);
-  const maxIdx = precision != null ? precision : u.length - 1;
-  const parts: string[] = [];
-  for (let i = 0; i < u.length; i++) {
-    if (i > maxIdx) break;
-    const v = s[i + 1] || 0;
-    if (i <= maxIdx && v > 0) parts.push(`${v}${u[i].name}`);
-  }
-  if (parts.length >= 3) {
-    const last3 = parts.slice(-3);
-    const labs = last3.map(p => p.replace(/[0-9]/g, ""));
-    if (labs.every(l => l === "时" || l === "分" || l === "秒")) {
-      const nums = last3.map(p => p.replace(/[^0-9]/g, ""));
-      const dates = parts.slice(0, -3);
-      if (!nums.every(n => n === "00" || n === "0")) return dates.join("") + nums.join(":");
-      return dates.join("");
-    }
-  }
-  return parts.join("");
 }
 
 // ── Tree ──
@@ -67,7 +30,7 @@ type TreeNode = {
   events: WorldEvent[]; children: TreeNode[];
 };
 
-function buildTree(events: WorldEvent[], tl: Timeline | null): TreeNode[] {
+function buildTree(events: WorldEvent[], tl: Timeline | null, lang: "zh" | "en"): TreeNode[] {
   const u = getUnits(tl);
   const eraI = u.findIndex(x => x.key === "era");
   const yearI = u.findIndex(x => x.key === "year");
@@ -78,17 +41,17 @@ function buildTree(events: WorldEvent[], tl: Timeline | null): TreeNode[] {
     if (eraI >= 0) {
       const v = s[eraI + 1] || 0; const k = `e:${v}`;
       let n = cur.find(x => x.key === k);
-      if (!n) { n = { key: k, depth: 0, label: `${v}${u[eraI].name}`, events: [], children: [] }; cur.push(n); }
+      if (!n) { n = { key: k, depth: 0, label: formatEraLabel(v, lang), events: [], children: [] }; cur.push(n); }
       cur = n.children;
     }
     if (yearI >= 0) {
       const v = s[yearI + 1] || 0; const k = `${cur === root ? "" : (root[0]?.key || "")}/y:${v}`;
       let n = cur.find(x => x.key === k);
-      if (!n) { n = { key: k, depth: 1, label: `${v}${u[yearI].name}`, events: [], children: [] }; cur.push(n); }
+      if (!n) { n = { key: k, depth: 1, label: formatYearLabel(v, lang), events: [], children: [] }; cur.push(n); }
       cur = n.children;
     }
     // Leaf: events hang directly under year with precision-truncated label
-    cur.push({ key: `leaf:${ev.id}`, depth: 2, label: leafLabel(ev.time_point, tl, ev.precision), events: [ev], children: [] });
+    cur.push({ key: `leaf:${ev.id}`, depth: 2, label: formatLeafLabel(ev.time_point, u, ev.precision, lang), events: [ev], children: [] });
   }
   return root;
 }
@@ -111,7 +74,7 @@ function Popover({ ev, tl, anchor, onClose, onNavE, onNavO, entryNames, chapterT
   chapterTitles: Map<string, string>;
   storyNames: Map<string, string>;
 }) {
-  const { t } = useT();
+  const { t, language } = useT();
   const ref = useRef<HTMLDivElement>(null);
   const r = anchor.getBoundingClientRect();
   const availH = window.innerHeight - r.bottom - 56;
@@ -132,7 +95,7 @@ function Popover({ ev, tl, anchor, onClose, onNavE, onNavO, entryNames, chapterT
       <div className="p-4 space-y-2.5 overflow-y-auto" style={{ maxHeight: p.maxH }}>
         <p className="text-[0.8125rem] text-ink-secondary leading-relaxed">{ev.summary || ""}</p>
         <div className="flex items-center gap-2">
-          <div className="text-[0.688rem] text-ink-muted font-mono">{fmtTime(ev.time_point, tl, ev.precision)}</div>
+          <div className="text-[0.688rem] text-ink-muted font-mono">{formatFullTime(ev.time_point, getUnits(tl), ev.precision, language)}</div>
           <span className="px-1.5 py-0.5 rounded bg-surface-800/50 text-ink-muted/50 font-mono text-[0.625rem] select-all">{ev.id}</span>
         </div>
         {les.length > 0 && (<div><p className="text-[0.625rem] tracking-wider text-ink-muted/40 mb-1">{t.entry.linkedEntries(les.length)}</p>
@@ -211,7 +174,7 @@ type Props = {
 };
 
 export function TimelinePanel({ worldPath, onClose, sidebarOpen, rightOpen, initialEventId, initialTimelineId, onNavigateEntry, onNavigateOutline }: Props) {
-  const { t } = useT();
+  const { t, language } = useT();
   const [timelines, setTimelines] = useState<Timeline[]>([]);
   const [activeId, setActiveId] = useState("");
   const [events, setEvents] = useState<WorldEvent[]>([]);
@@ -293,7 +256,7 @@ export function TimelinePanel({ worldPath, onClose, sidebarOpen, rightOpen, init
   }, [worldPath, activeId, fEntry, fStory, fChap]);
 
   const tl = timelines.find(t => t.id === activeId) || null;
-  const tree = useMemo(() => buildTree(events, tl), [events, tl]);
+  const tree = useMemo(() => buildTree(events, tl, language), [events, tl, language]);
 
   // Always keep all nodes expanded by default
   useEffect(() => { setOpenNodes(new Set(collectAllKeys(tree))); }, [tree]);

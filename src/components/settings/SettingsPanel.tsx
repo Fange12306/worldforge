@@ -259,15 +259,15 @@ export function SettingsPanel({ onClose }: Props) {
                   </div>
 
                   <div className="pt-4">
-                    <h3 className="text-sm font-medium text-ink mb-3">搜索</h3>
+                    <h3 className="text-sm font-medium text-ink mb-3">{t.model.searchTitle}</h3>
                     <div className="flex items-start gap-6 min-h-9">
-                      <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">Bing Search API Key</label>
+                      <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.searchApiKeyLabel}</label>
                       <div className="relative w-96">
                         <input
                           type={showBingKey ? "text" : "password"}
                           value={bingApiKey}
                           onChange={(e) => setBingApiKey(e.target.value)}
-                          placeholder="免费层 1000次/月，portal.azure.com 创建 Bing Search 资源获取"
+                          placeholder={t.model.searchApiKeyPlaceholder}
                           className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 pr-9 outline-none focus:border-brand-500/30 transition-colors font-mono"
                         />
                         <button
@@ -278,7 +278,7 @@ export function SettingsPanel({ onClose }: Props) {
                         </button>
                       </div>
                     </div>
-                    <p className="pl-[136px] text-[0.625rem] text-ink-muted mt-1">Bing Web Search API v7，免费层每月 1000 次调用。不填则使用内置搜索。</p>
+                    <p className="pl-[136px] text-[0.625rem] text-ink-muted mt-1">{t.model.searchApiKeyHint}</p>
                   </div>
 
                   <div>

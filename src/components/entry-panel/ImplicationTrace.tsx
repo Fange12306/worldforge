@@ -61,7 +61,7 @@ export function ImplicationTrace({ worldPath, entryId, entryName, onNavigate }: 
       .then((results) => {
         if (!cancelled) { setGraphRelatives(Array.isArray(results) ? results : []); setLoading(false); }
       })
-      .catch(() => { if (!cancelled) { setGraphRelatives([]); setLoading(false); } });
+      .catch((e) => { console.error("[ImplicationTrace] traverse_graph failed", e); if (!cancelled) { setGraphRelatives([]); setLoading(false); } });
     return () => { cancelled = true; };
   }, [worldPath, entryId, activeGraphTlId]);
 

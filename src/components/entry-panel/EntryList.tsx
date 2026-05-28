@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { ENTRY_TYPE_LABELS, type EntryType, ENTRY_TYPES } from "@/lib/constants";
+import { type EntryType, ENTRY_TYPES } from "@/lib/constants";
+import { useT } from "@/lib/i18n";
 import type { Entry } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -13,6 +14,7 @@ type Props = {
 };
 
 export function EntryList({ entries, selectedId, onSelect, onDelete }: Props) {
+  const { t } = useT();
   const grouped = useMemo(() => {
     const map = new Map<EntryType, Entry[]>();
     for (const t of ENTRY_TYPES) map.set(t, []);
@@ -33,7 +35,7 @@ export function EntryList({ entries, selectedId, onSelect, onDelete }: Props) {
           return (
             <div key={type}>
               <div className="text-[0.625rem] font-semibold text-ink-muted uppercase tracking-wider px-2 pb-1">
-                {ENTRY_TYPE_LABELS[type]}
+                {t.entryTypes[type]}
               </div>
               {items.map((entry) => (
                 <div

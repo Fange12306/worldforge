@@ -31,6 +31,7 @@ fn resolve_names(world_path: &str, refs: &mut [&mut EntityRef]) {
             EntityType::Timeline => { timeline_ids.insert(r.id.clone()); }
             EntityType::Event => { event_ids.insert(r.id.clone()); }
             EntityType::Outline => { outline_ids.insert(r.id.clone()); }
+            EntityType::Other => { /* skip name resolution for unknown types */ }
         }
     }
 
@@ -311,12 +312,19 @@ pub fn traverse_graph(
 ) -> Result<Vec<crate::services::graph_traverse::TraversalResult>, String> {
     let et = parse_entity_type(&entity_type)?;
     let graph = graph_storage::load_graph(&world_path)?;
+    eprintln!("[traverse_graph] world={world_path}, entity_type={entity_type}, entity_id={entity_id}, max_depth={max_depth}, timeline_id={timeline_id:?}");
+    eprintln!("[traverse_graph] loaded {} edges from relations/index.json", graph.edges.len());
     // Filter edges by timeline scope before building the index
     let filtered: Vec<&RelationEdge> = graph.edges.iter()
         .filter(|e| RelationGraph::match_timeline_static(e, timeline_id.as_deref()))
         .collect();
+    eprintln!("[traverse_graph] after timeline filter: {} edges", filtered.len());
     let index = GraphIndex::build(&filtered);
     let mut results = index.bfs(&et, &entity_id, max_depth);
+    eprintln!("[traverse_graph] BFS returned {} results", results.len());
+    for r in &results {
+        eprintln!("[traverse_graph]   result: type={:?} id={} name={:?} dist={} via={}", r.entity.entity_type, r.entity.id, r.entity.name, r.distance, r.via_description);
+    }
     // Enrich with display names
     let mut refs: Vec<&mut EntityRef> = Vec::new();
     let mut event_ids: HashSet<String> = HashSet::new();

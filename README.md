@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.6.0-blue?style=flat-square" alt="version" />
+  <img src="https://img.shields.io/badge/version-0.6.5-blue?style=flat-square" alt="version" />
   <img src="https://img.shields.io/badge/tauri-v2-blue?style=flat-square&logo=tauri" alt="tauri" />
   <img src="https://img.shields.io/badge/react-18-61DAFB?style=flat-square&logo=react" alt="react" />
   <img src="https://img.shields.io/badge/rust-orange?style=flat-square&logo=rust" alt="rust" />
@@ -128,6 +128,24 @@ No database. All data lives as human-readable files, interoperable with Obsidian
 | Graph | BFS adjacency list (Rust) |
 | LLM | Anthropic / OpenAI / DeepSeek |
 | Storage | File system (.md / .json / .jsonl) |
+
+---
+
+## Roadmap
+
+Here's what we're building next:
+
+### 1. Entry State Timeline
+A personal history tracker for each entry. Every character, organization, or artifact changes over time — a captain becomes a colonel, a city falls into ruin, an artifact gains new power. State tracking lets you record these changes along the timeline, so you can see *who was what, when*.
+
+### 2. Character Personality Profiles
+What makes your characters tick? Define personality traits, speech patterns, motivations, and flaws for each character. The AI uses these profiles to keep characters in-character — decisive characters act fast, cynical ones talk sharp, the gentle giant never suddenly picks a fight.
+
+### 3. Smart Chapter Writing
+Write chapter bodies with an AI that actually knows your world. It pulls in the relevant characters (with their personalities), the scene's timeline context, and your preferred writing style — then writes prose that stays consistent with previous chapters. Want Hemingway prose today and wuxia tomorrow? Style templates make it a one-click switch.
+
+### 4. Living World Engine (Long-term Vision)
+An AI-driven text RPG where the world *runs itself*. Multiple agents — each character driven by their personality profile — make decisions, form alliances, start wars, and reshape the world in real time. Every agent action updates entries and relations automatically, so the world stays consistent no matter what happens. You can write stories set in it, run a TTRPG campaign where the world reacts to your players, or just watch — like opening a book where the characters keep living after you close it.
 
 ---
 

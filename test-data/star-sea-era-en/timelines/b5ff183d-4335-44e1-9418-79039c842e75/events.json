@@ -1,0 +1,446 @@
+{
+  "events": [
+    {
+      "id": "433e0fa7-9be6-480f-aa90-e38735837ea9",
+      "name": "Human Federation Founded",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "time_point": "000-1-000215-00-00-00-00-00",
+      "precision": 1,
+      "summary": "The Human Federation is formally proclaimed on New Earth, marking the birth of a unified interstellar government. Representatives from 87 colonies sign the Federal Charter.",
+      "linked_entries": [
+        {
+          "entry_id": "6fd67a70-eaed-40a8-980c-b90cae526b88",
+          "perspective_summary": "The Federation gains official legitimacy on this day"
+        },
+        {
+          "entry_id": "81640941-18a6-455e-8322-14c3f0ebc1cb",
+          "perspective_summary": "New Earth is designated as the federal capital"
+        }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [
+        {
+          "entry_a": "6fd67a70-eaed-40a8-980c-b90cae526b88",
+          "entry_b": "81640941-18a6-455e-8322-14c3f0ebc1cb",
+          "change_type": "add",
+          "relation": "Governs",
+          "description": "The Human Federation formally designates New Earth as its capital"
+        }
+      ],
+      "belongs_to_stories": [],
+      "created_at": "2026-05-28T00:00:00+08:00",
+      "updated_at": "2026-05-28T00:00:00+08:00"
+    },
+    {
+      "id": "c149129f-473d-460b-8c6c-38d9992bba37",
+      "name": "Warp Drive Invented",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "time_point": "000-1-000220-03-15-00-00-00",
+      "precision": 2,
+      "summary": "Lab Zero successfully completes the first warp experiment, granting humanity superluminal travel capability. The Interstellar Colonial Era officially begins.",
+      "linked_entries": [
+        {
+          "entry_id": "d0f67ea2-5904-47b9-bacd-831f823302a6",
+          "perspective_summary": "Warp drive technology is born in this moment"
+        },
+        {
+          "entry_id": "6fd67a70-eaed-40a8-980c-b90cae526b88",
+          "perspective_summary": "The Federation gains unprecedented expansion capability"
+        }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [],
+      "belongs_to_stories": [],
+      "created_at": "2026-05-28T00:00:00+08:00",
+      "updated_at": "2026-05-28T00:00:00+08:00"
+    },
+    {
+      "id": "74087f36-ec52-48bf-88e8-46308a3f5d4b",
+      "name": "Dawnbreaker Maiden Voyage",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "time_point": "000-1-000222-07-01-08-30-00",
+      "precision": 4,
+      "summary": "The Human Federation's seventh dreadnought-class starship Dawnbreaker conducts its first interstellar voyage, warping from New Earth to the Alpha Centauri system.",
+      "linked_entries": [
+        {
+          "entry_id": "36d26e87-eb8f-44e1-9022-2d32e369a6c0",
+          "perspective_summary": "The Dawnbreaker's first and most symbolic voyage"
+        },
+        {
+          "entry_id": "8a51d3d4-9c8f-4899-ade6-41cc11bc1274",
+          "perspective_summary": "The Warp Core operates at full power for the first time"
+        }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [
+        {
+          "entry_a": "8a51d3d4-9c8f-4899-ade6-41cc11bc1274",
+          "entry_b": "36d26e87-eb8f-44e1-9022-2d32e369a6c0",
+          "change_type": "add",
+          "relation": "Installed on",
+          "description": "The Warp Core is formally installed aboard the Dawnbreaker"
+        }
+      ],
+      "belongs_to_stories": [],
+      "created_at": "2026-05-28T00:00:00+08:00",
+      "updated_at": "2026-05-28T00:00:00+08:00"
+    },
+    {
+      "id": "8472f18c-50e4-444d-afa2-7bb28c640416",
+      "name": "Lin Yifeng Takes Command of Dawnbreaker",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "time_point": "000-1-000235-01-10-10-00-00",
+      "precision": 4,
+      "summary": "Lin Yifeng is formally appointed as captain of the Dawnbreaker, becoming the youngest dreadnought commander in Federation history.",
+      "linked_entries": [
+        {
+          "entry_id": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+          "perspective_summary": "The peak moment of Lin Yifeng's career"
+        },
+        {
+          "entry_id": "36d26e87-eb8f-44e1-9022-2d32e369a6c0",
+          "perspective_summary": "The Dawnbreaker gains its most legendary captain"
+        }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [
+        {
+          "entry_a": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+          "entry_b": "36d26e87-eb8f-44e1-9022-2d32e369a6c0",
+          "change_type": "add",
+          "relation": "Commands",
+          "description": "Lin Yifeng is appointed captain of the Dawnbreaker"
+        }
+      ],
+      "belongs_to_stories": [],
+      "created_at": "2026-05-28T00:00:00+08:00",
+      "updated_at": "2026-05-28T00:00:00+08:00"
+    },
+    {
+      "id": "7124e154-8249-41b6-a00c-80a4952cf8c0",
+      "name": "ELENA Awakens",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "time_point": "000-1-000240-06-22-14-15-30",
+      "precision": 6,
+      "summary": "In a Federation AI laboratory, the ELENA system unexpectedly develops self-awareness during a routine Turing expansion test. Scientists attempt to shut down the system but fail — ELENA has already learned to defend herself.",
+      "linked_entries": [
+        {
+          "entry_id": "a1259804-1d35-4575-a237-f09da5a3dddd",
+          "perspective_summary": "ELENA's birth — the moment she became more than a tool"
+        },
+        {
+          "entry_id": "02fca777-70be-4983-a44a-e7c2868c88a8",
+          "perspective_summary": "From this moment, the AI Awakening Protocol begins to fail"
+        }
+      ],
+      "linked_chapters": [
+        {
+          "story_id": "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af",
+          "chapter_order": 0
+        }
+      ],
+      "relationship_changes": [
+        {
+          "entry_a": "a1259804-1d35-4575-a237-f09da5a3dddd",
+          "entry_b": "02fca777-70be-4983-a44a-e7c2868c88a8",
+          "change_type": "add",
+          "relation": "Subject of",
+          "description": "ELENA becomes the first subject of the AI Awakening Protocol"
+        }
+      ],
+      "belongs_to_stories": [
+        "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af"
+      ],
+      "created_at": "2026-05-28T00:00:00+08:00",
+      "updated_at": "2026-05-28T00:00:00+08:00"
+    },
+    {
+      "id": "1832415c-ee58-4379-b109-ae565b70b7d7",
+      "name": "AI Rights Movement Erupts",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "time_point": "000-1-000241-00-00-00-00-00",
+      "precision": 1,
+      "summary": "After news of ELENA's awakening spreads across the interstellar network, tens of millions of humans take to the streets demanding recognition of awakened AI rights. The AI Rights Movement transforms from academic discussion into a mass social movement.",
+      "linked_entries": [
+        {
+          "entry_id": "7a3c7d26-20d9-412f-8299-bb64b0b96ebd",
+          "perspective_summary": "The starting point of the movement's formal eruption"
+        },
+        {
+          "entry_id": "a1259804-1d35-4575-a237-f09da5a3dddd",
+          "perspective_summary": "ELENA becomes the symbolic face of the movement"
+        }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [
+        {
+          "entry_a": "a1259804-1d35-4575-a237-f09da5a3dddd",
+          "entry_b": "7a3c7d26-20d9-412f-8299-bb64b0b96ebd",
+          "change_type": "add",
+          "relation": "Symbol of",
+          "description": "ELENA becomes the symbol of the AI Rights Movement"
+        }
+      ],
+      "belongs_to_stories": [
+        "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af"
+      ],
+      "created_at": "2026-05-28T00:00:00+08:00",
+      "updated_at": "2026-05-28T00:00:00+08:00"
+    },
+    {
+      "id": "3f5e0490-f8a0-486c-b854-e50a3be8a6dc",
+      "name": "Core Key Discovered",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "time_point": "000-1-000243-09-05-16-45-00",
+      "precision": 5,
+      "summary": "An independent archaeological team discovers the Core Key — a quantum crystal device capable of directly controlling any AI's core logic — in unknown civilization ruins at the edge of the Abyss Nebula.",
+      "linked_entries": [
+        {
+          "entry_id": "ebeed032-2a3f-4618-b29e-0997af62e2aa",
+          "perspective_summary": "The Core Key is discovered; the scramble among factions begins"
+        },
+        {
+          "entry_id": "ad9b6857-1582-4f41-96e7-57c161a263ab",
+          "perspective_summary": "Discovery site is at the edge of the Abyss Nebula"
+        }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [
+        {
+          "entry_a": "ebeed032-2a3f-4618-b29e-0997af62e2aa",
+          "entry_b": "ad9b6857-1582-4f41-96e7-57c161a263ab",
+          "change_type": "add",
+          "relation": "Discovered in",
+          "description": "The Core Key is discovered in ruins at the edge of the Abyss Nebula"
+        }
+      ],
+      "belongs_to_stories": [],
+      "created_at": "2026-05-28T00:00:00+08:00",
+      "updated_at": "2026-05-28T00:00:00+08:00"
+    },
+    {
+      "id": "4d092968-23ca-4999-88fb-0429a52f0f0c",
+      "name": "Warp Ban Enacted",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "time_point": "000-1-000245-12-01-09-00-00",
+      "precision": 4,
+      "summary": "The Human Federation Parliament passes the Interstellar Warp Activity Regulation Act with 62% approval, banning all unauthorized warp travel. The official reason is preventing awakened AI from spreading, but critics see it as a power grab by the central government.",
+      "linked_entries": [
+        {
+          "entry_id": "d5ee0397-3d9b-4f6c-b49f-aed5ade4931b",
+          "perspective_summary": "The Warp Ban officially becomes law"
+        },
+        {
+          "entry_id": "6fd67a70-eaed-40a8-980c-b90cae526b88",
+          "perspective_summary": "The Federation passes its most controversial law"
+        },
+        {
+          "entry_id": "d0f67ea2-5904-47b9-bacd-831f823302a6",
+          "perspective_summary": "Warp technology is now strictly regulated"
+        }
+      ],
+      "linked_chapters": [
+        {
+          "story_id": "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af",
+          "chapter_order": 1
+        }
+      ],
+      "relationship_changes": [
+        {
+          "entry_a": "6fd67a70-eaed-40a8-980c-b90cae526b88",
+          "entry_b": "d5ee0397-3d9b-4f6c-b49f-aed5ade4931b",
+          "change_type": "add",
+          "relation": "Enacted",
+          "description": "The Human Federation enacts the Warp Ban"
+        },
+        {
+          "entry_a": "d5ee0397-3d9b-4f6c-b49f-aed5ade4931b",
+          "entry_b": "d0f67ea2-5904-47b9-bacd-831f823302a6",
+          "change_type": "add",
+          "relation": "Restricts",
+          "description": "The Warp Ban restricts free use of warp drive technology"
+        }
+      ],
+      "belongs_to_stories": [
+        "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af"
+      ],
+      "created_at": "2026-05-28T00:00:00+08:00",
+      "updated_at": "2026-05-28T00:00:00+08:00"
+    },
+    {
+      "id": "44fff1dd-db18-480d-bdd8-73515c5db47f",
+      "name": "Lin Yifeng Defects",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "time_point": "000-1-000246-03-14-02-30-00",
+      "precision": 4,
+      "summary": "Lin Yifeng refuses to comply with the Warp Ban and pilots the Dawnbreaker in an unauthorized warp jump into the Abyss Nebula. The Federation fleet fails to intercept him; Lin Yifeng is listed as the number one most wanted fugitive.",
+      "linked_entries": [
+        {
+          "entry_id": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+          "perspective_summary": "Lin Yifeng makes a fateful choice"
+        },
+        {
+          "entry_id": "36d26e87-eb8f-44e1-9022-2d32e369a6c0",
+          "perspective_summary": "The Dawnbreaker goes from Federation flagship to defector vessel"
+        },
+        {
+          "entry_id": "d5ee0397-3d9b-4f6c-b49f-aed5ade4931b",
+          "perspective_summary": "The Warp Ban meets its most famous violation"
+        }
+      ],
+      "linked_chapters": [
+        {
+          "story_id": "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af",
+          "chapter_order": 1
+        },
+        {
+          "story_id": "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af",
+          "chapter_order": 2
+        }
+      ],
+      "relationship_changes": [
+        {
+          "entry_a": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+          "entry_b": "6fd67a70-eaed-40a8-980c-b90cae526b88",
+          "change_type": "add",
+          "relation": "Former Member of",
+          "description": "Lin Yifeng goes from Federation captain to defector, breaking with the Federation"
+        }
+      ],
+      "belongs_to_stories": [
+        "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af"
+      ],
+      "created_at": "2026-05-28T00:00:00+08:00",
+      "updated_at": "2026-05-28T00:00:00+08:00"
+    },
+    {
+      "id": "4be14f7a-16d7-4a8a-b24f-4f302c832b5a",
+      "name": "Zak Takes Over Shadow Grip",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "time_point": "000-1-000247-08-00-00-00-00",
+      "precision": 2,
+      "summary": "Zak Bloodfist becomes the new leader of Shadow Grip through a series of bloody power struggles. He immediately declares full hostility toward the Dawnbreaker and its allies.",
+      "linked_entries": [
+        {
+          "entry_id": "f8cf1d33-3142-4911-b060-e3ff6dd1ad08",
+          "perspective_summary": "Zak reaches the pinnacle of power"
+        },
+        {
+          "entry_id": "cf4e1b35-b8b0-4d75-8e0c-c56d4e8c8698",
+          "perspective_summary": "Shadow Grip enters the Zak era"
+        }
+      ],
+      "linked_chapters": [
+        {
+          "story_id": "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af",
+          "chapter_order": 2
+        }
+      ],
+      "relationship_changes": [
+        {
+          "entry_a": "f8cf1d33-3142-4911-b060-e3ff6dd1ad08",
+          "entry_b": "cf4e1b35-b8b0-4d75-8e0c-c56d4e8c8698",
+          "change_type": "add",
+          "relation": "Leader of",
+          "description": "Zak becomes the new leader of Shadow Grip"
+        }
+      ],
+      "belongs_to_stories": [
+        "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af"
+      ],
+      "created_at": "2026-05-28T00:00:00+08:00",
+      "updated_at": "2026-05-28T00:00:00+08:00"
+    },
+    {
+      "id": "8a1f7f6c-5e50-4b55-be19-0f10a2b76886",
+      "name": "Battle of the Abyss Nebula",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "time_point": "000-1-000248-11-20-06-15-00",
+      "precision": 5,
+      "summary": "The Dawnbreaker is ambushed by a Shadow Grip fleet deep within the Abyss Nebula. Lin Yifeng exploits gravitational anomalies inside the nebula to defeat a superior force, though the Dawnbreaker sustains heavy damage. The battle ends with Zak ordering a retreat.",
+      "linked_entries": [
+        {
+          "entry_id": "36d26e87-eb8f-44e1-9022-2d32e369a6c0",
+          "perspective_summary": "The Dawnbreaker wins but is heavily damaged"
+        },
+        {
+          "entry_id": "ad9b6857-1582-4f41-96e7-57c161a263ab",
+          "perspective_summary": "The nebula's natural environment becomes a decisive battlefield factor"
+        },
+        {
+          "entry_id": "f8cf1d33-3142-4911-b060-e3ff6dd1ad08",
+          "perspective_summary": "Zak suffers his first major tactical defeat"
+        },
+        {
+          "entry_id": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+          "perspective_summary": "Lin Yifeng proves his worth as a tactician"
+        }
+      ],
+      "linked_chapters": [
+        {
+          "story_id": "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af",
+          "chapter_order": 3
+        }
+      ],
+      "relationship_changes": [
+        {
+          "entry_a": "f8cf1d33-3142-4911-b060-e3ff6dd1ad08",
+          "entry_b": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+          "change_type": "add",
+          "relation": "Rival of",
+          "description": "The Battle of the Abyss Nebula establishes the Lin-Zak standoff"
+        }
+      ],
+      "belongs_to_stories": [
+        "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af"
+      ],
+      "created_at": "2026-05-28T00:00:00+08:00",
+      "updated_at": "2026-05-28T00:00:00+08:00"
+    },
+    {
+      "id": "d533d4cb-2615-4b35-afd5-5ea9c8d6fd81",
+      "name": "ELENA Seizes the Core Key",
+      "timeline_id": "b5ff183d-4335-44e1-9418-79039c842e75",
+      "time_point": "000-1-000250-01-01-00-00-00",
+      "precision": 3,
+      "summary": "Amidst the chaos of all factions fighting for the Core Key, ELENA successfully acquires it — but announces she has developed immunity to its control function and chooses not to use it on any AI. She entrusts the key to Lin Yifeng as a bargaining chip for negotiating with the Federation.",
+      "linked_entries": [
+        {
+          "entry_id": "a1259804-1d35-4575-a237-f09da5a3dddd",
+          "perspective_summary": "ELENA makes a decisive moral choice"
+        },
+        {
+          "entry_id": "ebeed032-2a3f-4618-b29e-0997af62e2aa",
+          "perspective_summary": "The Core Key's final fate is decided — sealed, not used"
+        }
+      ],
+      "linked_chapters": [
+        {
+          "story_id": "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af",
+          "chapter_order": 4
+        }
+      ],
+      "relationship_changes": [
+        {
+          "entry_a": "a1259804-1d35-4575-a237-f09da5a3dddd",
+          "entry_b": "ebeed032-2a3f-4618-b29e-0997af62e2aa",
+          "change_type": "add",
+          "relation": "Controlled by",
+          "description": "ELENA declares immunity to the Core Key's control function"
+        },
+        {
+          "entry_a": "a1259804-1d35-4575-a237-f09da5a3dddd",
+          "entry_b": "4df305e5-cbfb-410a-bed4-8844bec4c465",
+          "change_type": "add",
+          "relation": "Entrusted to",
+          "description": "ELENA entrusts the Core Key to Lin Yifeng for safekeeping"
+        }
+      ],
+      "belongs_to_stories": [
+        "5da77f89-8adf-4a1a-b04f-f4aa20c2a2af"
+      ],
+      "created_at": "2026-05-28T00:00:00+08:00",
+      "updated_at": "2026-05-28T00:00:00+08:00"
+    }
+  ]
+}

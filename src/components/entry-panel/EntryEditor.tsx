@@ -6,6 +6,15 @@ import { ImplicationTrace } from "./ImplicationTrace";
 import { EntryTimelineEvents } from "./EntryTimelineEvents";
 import { useT } from "@/lib/i18n";
 
+/** Strip a leading "# Name" heading from body if it matches the entry name. */
+function stripLeadingNameHeading(body: string, name: string): string {
+  const match = body.match(/^#\s+(.+?)(?:\r?\n|$)/);
+  if (match && match[1].trim() === name.trim()) {
+    return body.slice(match[0].length).trimStart();
+  }
+  return body;
+}
+
 type Props = {
   entry: Entry;
   editing: boolean;
@@ -74,7 +83,7 @@ export function EntryEditor({ entry, editing, worldPath, onEdit, onCancel, onSav
               </div>
             )}
             <div className="text-sm text-ink-secondary">
-              {entry.body ? <MarkdownContent content={entry.body} /> : <span className="text-ink-muted italic">{t.entry.noBody}</span>}
+              {entry.body ? <MarkdownContent content={stripLeadingNameHeading(entry.body, entry.name)} /> : <span className="text-ink-muted italic">{t.entry.noBody}</span>}
             </div>
             {worldPath && !editing && (
               <EntryTimelineEvents worldPath={worldPath} entryId={entry.id} onNavigateToTimeline={onNavigateToTimeline} onNavigateEntry={onNavigateEntry} />

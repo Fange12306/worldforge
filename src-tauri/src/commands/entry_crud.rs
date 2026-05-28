@@ -206,6 +206,53 @@ fn find_entry_by_uuid(entries_root: &PathBuf, uuid: &str) -> Option<PathBuf> {
     None
 }
 
+/// Resolve an ID-or-name to a UUID. Tries UUID exact match first, then name lookup.
+/// Returns the resolved UUID or an error with disambiguation suggestions.
+pub fn resolve_entry_id(world_path: &str, id_or_name: &str) -> Result<String, String> {
+    let entries_root = expand_path(world_path).join("entries");
+    if !entries_root.exists() {
+        return Err("词条目录尚未初始化".to_string());
+    }
+    // 1. Try UUID exact match
+    if find_entry_by_uuid(&entries_root, id_or_name).is_some() {
+        return Ok(id_or_name.to_string());
+    }
+    // 2. Try name lookup
+    let mut matches: Vec<(String, String)> = Vec::new(); // (id, type_label)
+    for t in &all_entry_types() {
+        let dir = PathBuf::from(type_dir(&entries_root, t));
+        if !dir.exists() { continue; }
+        if let Ok(read) = fs::read_dir(&dir) {
+            for e in read.flatten() {
+                let path = e.path();
+                if path.extension().and_then(|s| s.to_str()) != Some("md") { continue; }
+                if let Ok(raw) = fs::read_to_string(&path) {
+                    if let Ok((data, _)) = extract_frontmatter(&raw) {
+                        if data["name"].as_str() == Some(id_or_name) {
+                            if let Some(uid) = data["id"].as_str() {
+                                if !uid.is_empty() {
+                                    matches.push((uid.to_string(), entry_type_str(t).to_string()));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    match matches.len() {
+        0 => Err(format!("词条 '{}' 未找到", id_or_name)),
+        1 => Ok(matches[0].0.clone()),
+        _ => {
+            let lines: Vec<String> = matches.iter()
+                .map(|(uid, t)| format!("  [{}] {} ({})", t, id_or_name, uid))
+                .collect();
+            Err(format!("找到 {} 个名为 '{}' 的词条:\n{}\n请用 UUID 指定具体词条",
+                matches.len(), id_or_name, lines.join("\n")))
+        }
+    }
+}
+
 // ── Commands ──
 
 /// Search by UUID (frontmatter `id`), not filename.
@@ -292,7 +339,7 @@ pub fn update_entry(
         existing.tags.join(", "),
         constraints_yaml
     );
-    let body_content = if body.is_empty() { format!("# {}", name) } else { body };
+    let body_content = if body.is_empty() { existing.body.clone() } else { body };
     let new_content = format!("---\n{}---\n\n{}", fm, body_content);
 
     if type_changed {

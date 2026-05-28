@@ -92,6 +92,27 @@ fn default_time_format() -> TimeFormat {
     }
 }
 
+// ── Validation ──────────────────────────────────────
+
+const MAX_SUMMARY_CHARS: usize = 1000;
+const MAX_PERSPECTIVE_CHARS: usize = 400;
+
+fn validate_summary(summary: &str) -> Result<(), String> {
+    let n = summary.chars().count();
+    if n > MAX_SUMMARY_CHARS {
+        return Err(format!("事件描述不能超过 {} 字，当前 {} 字。请精简到 2-3 句话。", MAX_SUMMARY_CHARS, n));
+    }
+    Ok(())
+}
+
+fn validate_perspective(p: &str) -> Result<(), String> {
+    let n = p.chars().count();
+    if n > MAX_PERSPECTIVE_CHARS {
+        return Err(format!("词条视角简述不能超过 {} 字，当前 {} 字", MAX_PERSPECTIVE_CHARS, n));
+    }
+    Ok(())
+}
+
 // ── Commands ──────────────────────────────────────
 
 /// Create a new timeline. The first timeline in a world is auto-marked as default.
@@ -141,6 +162,7 @@ pub fn update_timeline(
     name: Option<String>,
     description: Option<String>,
     is_default: Option<bool>,
+    time_format_json: Option<String>,
 ) -> Result<Timeline, String> {
     let mut index = load_index(&world_path)?;
     let pos = index.timelines.iter()
@@ -160,6 +182,17 @@ pub fn update_timeline(
     if let Some(n) = name { t.name = n; }
     if let Some(d) = description { t.description = Some(d); }
     if let Some(d) = is_default { t.is_default = d; }
+    if let Some(ref json) = time_format_json {
+        let new_tf: TimeFormat = serde_json::from_str(json)
+            .map_err(|e| format!("解析时间格式失败: {}", e))?;
+        if new_tf.units.len() != t.time_format.units.len() {
+            return Err(format!(
+                "不能增删时间单位（当前 {} 个，传入 {} 个）。只能修改名称和最大值。",
+                t.time_format.units.len(), new_tf.units.len()
+            ));
+        }
+        t.time_format = new_tf;
+    }
     t.updated_at = Utc::now();
 
     let result = t.clone();
@@ -297,6 +330,16 @@ pub fn create_event(
         return Err(format!("时间格式错误: 期望 {} 段, 实际 {} 段", expected, actual));
     }
 
+    // Validate summary length
+    validate_summary(&summary)?;
+    if let Some(ref entries_str) = linked_entries {
+        for entry in parse_linked_entries(Some(entries_str)) {
+            if let Some(ref p) = entry.perspective_summary {
+                validate_perspective(p)?;
+            }
+        }
+    }
+
     let mut event_list = load_events(&world_path, &timeline_id)?;
     let parsed_entries = parse_linked_entries(linked_entries.as_deref());
     let parsed_chapters = parse_linked_chapters(linked_chapters.as_deref());
@@ -368,6 +411,16 @@ pub fn update_event(
         let expected = timeline.time_format.segment_count();
         if tp.split('-').count() != expected {
             return Err(format!("时间格式错误: 期望 {} 段", expected));
+        }
+    }
+
+    // Validate summary and perspective lengths
+    if let Some(ref s) = summary { validate_summary(s)?; }
+    if let Some(ref entries_str) = linked_entries {
+        for entry in parse_linked_entries(Some(entries_str)) {
+            if let Some(ref p) = entry.perspective_summary {
+                validate_perspective(p)?;
+            }
         }
     }
 

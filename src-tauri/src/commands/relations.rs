@@ -46,10 +46,9 @@ fn resolve_names(world_path: &str, refs: &mut [&mut EntityRef]) {
                 for e in read.flatten() {
                     let fname = e.file_name().to_string_lossy().to_string();
                     if !fname.ends_with(".md") { continue; }
-                    // Try to extract UUID prefix from filename: "{uuid}--{name}.md"
-                    let file_id = fname.split("--").next().unwrap_or("").to_string();
-                    if file_id.is_empty() || !entry_ids.contains(&file_id) { continue; }
                     if let Ok(raw) = fs::read_to_string(e.path()) {
+                        let file_id = parse_frontmatter_field(&raw, "id").unwrap_or_default();
+                        if file_id.is_empty() || !entry_ids.contains(&file_id) { continue; }
                         let name = parse_frontmatter_field(&raw, "name").unwrap_or_else(|| "未命名".to_string());
                         // Set name on all matching refs
                         for r in refs.iter_mut() {
@@ -181,13 +180,24 @@ pub fn add_relation(
     reverse_description: Option<String>,
     timeline_id: Option<String>,
 ) -> Result<RelationGraph, String> {
+    // Resolve entry names to UUIDs
+    let resolved_from_id = if from_type == "entry" {
+        crate::commands::entry_crud::resolve_entry_id(&world_path, &from_id)?
+    } else {
+        from_id
+    };
+    let resolved_to_id = if to_type == "entry" {
+        crate::commands::entry_crud::resolve_entry_id(&world_path, &to_id)?
+    } else {
+        to_id
+    };
     let from = EntityRef { name: None,
         entity_type: parse_entity_type(&from_type)?,
-        id: from_id,
+        id: resolved_from_id,
     };
     let to = EntityRef { name: None,
         entity_type: parse_entity_type(&to_type)?,
-        id: to_id,
+        id: resolved_to_id,
     };
     let edge = RelationEdge {
         id: Uuid::new_v4().to_string(),
@@ -312,19 +322,12 @@ pub fn traverse_graph(
 ) -> Result<Vec<crate::services::graph_traverse::TraversalResult>, String> {
     let et = parse_entity_type(&entity_type)?;
     let graph = graph_storage::load_graph(&world_path)?;
-    eprintln!("[traverse_graph] world={world_path}, entity_type={entity_type}, entity_id={entity_id}, max_depth={max_depth}, timeline_id={timeline_id:?}");
-    eprintln!("[traverse_graph] loaded {} edges from relations/index.json", graph.edges.len());
     // Filter edges by timeline scope before building the index
     let filtered: Vec<&RelationEdge> = graph.edges.iter()
         .filter(|e| RelationGraph::match_timeline_static(e, timeline_id.as_deref()))
         .collect();
-    eprintln!("[traverse_graph] after timeline filter: {} edges", filtered.len());
     let index = GraphIndex::build(&filtered);
     let mut results = index.bfs(&et, &entity_id, max_depth);
-    eprintln!("[traverse_graph] BFS returned {} results", results.len());
-    for r in &results {
-        eprintln!("[traverse_graph]   result: type={:?} id={} name={:?} dist={} via={}", r.entity.entity_type, r.entity.id, r.entity.name, r.distance, r.via_description);
-    }
     // Enrich with display names
     let mut refs: Vec<&mut EntityRef> = Vec::new();
     let mut event_ids: HashSet<String> = HashSet::new();

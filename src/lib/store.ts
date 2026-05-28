@@ -4,6 +4,8 @@ import { getT } from "./i18n";
 import type { ContextBreakdown } from "./context-window";
 import { getContextWindowSize } from "./context-window";
 
+export type UploadedFile = { name: string; storedName: string; content: string };
+
 // ── Types ──────────────────────────────────────────
 
 export type World = {
@@ -100,6 +102,8 @@ type AppStore = {
   // Drafts (unsent input, keyed by conversation ID — in-memory only)
   conversationDrafts: Record<string, string>;
   setConversationDraft: (convId: string, draft: string) => void;
+  conversationFiles: Record<string, UploadedFile[]>;
+  setConversationFiles: (convId: string, files: UploadedFile[]) => void;
 
   // Messages
   addMessage: (storyId: string, msg: Omit<Message, "id" | "timestamp"> & { toolCalls?: ToolCall[] }, convId?: string) => void;
@@ -467,6 +471,11 @@ export const useStore = create<AppStore>((set, get) => ({
   setConversationDraft: (convId, draft) =>
     set((s) => ({
       conversationDrafts: { ...s.conversationDrafts, [convId]: draft },
+    })),
+  conversationFiles: {},
+  setConversationFiles: (convId, files) =>
+    set((s) => ({
+      conversationFiles: { ...s.conversationFiles, [convId]: files },
     })),
 
   // Context window tracking

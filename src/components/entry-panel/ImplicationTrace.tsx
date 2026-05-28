@@ -99,7 +99,7 @@ export function ImplicationTrace({ worldPath, entryId, entryName, onNavigate }: 
                     onClick={() => onNavigate?.("entry", r.entity.id)}
                     className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[0.625rem] rounded bg-surface-800/50 text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
                   >
-                    {r.entity.name || entryNames.get(r.entity.id) || r.entity.id.slice(0, 8)}
+                    {r.entity.name || entryNames.get(r.entity.id) || `…${r.entity.id.slice(0, 8)}`}
                   </button>
                 ))}
               </div>

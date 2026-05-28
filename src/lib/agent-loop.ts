@@ -88,15 +88,6 @@ function getTools(): ToolDef[] {
   const ta = t();
   return [
   {
-    name: "FinalAnswer",
-    description: "Mark the current user request complete after you have already written the full final answer as normal assistant text. This tool has no side effects and should carry no long content.",
-    input_schema: {
-      type: "object",
-      properties: {},
-      additionalProperties: false,
-    },
-  },
-  {
     name: "EntryRead",
     description: "Read a full setting entry by ID. Returns the complete frontmatter and body content.",
     input_schema: {
@@ -251,9 +242,9 @@ function getTools(): ToolDef[] {
       properties: {
         relation_id: { type: "string", description: ta.relationId },
         from_type: { type: "string", description: ta.relationSourceType },
-        from_id: { type: "string", description: "Source entity ID" },
+        from_id: { type: "string", description: "Source entity ID or exact entry name. For entries, you can pass the display name instead of UUID — the backend resolves it automatically." },
         to_type: { type: "string", description: ta.relationTargetType },
-        to_id: { type: "string", description: "Target entity ID" },
+        to_id: { type: "string", description: "Target entity ID or exact entry name. For entries, you can pass the display name instead of UUID — the backend resolves it automatically." },
         description: { type: "string", description: ta.relationDesc },
         reverse_description: { type: "string", description: "反向关系描述。例如正向'父亲'→反向'子女'、正向'位于'→反向'容纳'。对称关系（如'战友'）可不填。" },
         timeline_id: { type: "string", description: ta.relationTimeline },
@@ -282,7 +273,7 @@ function getTools(): ToolDef[] {
   // ── Phase 5: Timeline & Event tools ──
   {
     name: "ListTimelines",
-    description: "List all timelines in the current world. Returns {id, name, description, is_default, time_format}. time_format.units lists time units (e.g. [{key:'era',name:'纪元'},{key:'year',name:'年'}]). time_point format: segment 0 is always '000' (reserved), then one segment per unit in display_order. Example for 4 units: '000-003000-000300-08-15'. Most worlds have exactly one default timeline.",
+    description: "List all timelines in the current world. Returns {id, name, description, is_default, time_format}. time_format.units lists time units. time_point format: segment 0 is '000' (reserved), then one segment per unit. Examples — 4 units (era/year/month/day): '000-003000-000300-08-15' (5 segments). 7 units (era/year/month/day/hour/minute/second): '000-003-000300-08-15-14-30-00' (8 segments). Always use ListTimelines first to get the exact unit count for THIS world.",
     input_schema: { type: "object", properties: {} },
   },
   {
@@ -295,7 +286,7 @@ function getTools(): ToolDef[] {
         delete: { type: "boolean", description: "Set to true to DELETE this timeline and all its events (requires timeline_id). World must have ≥2 timelines." },
         name: { type: "string", description: ta.timelineName },
         description: { type: "string", description: "Optional description" },
-        time_format_json: { type: "string", description: "Optional JSON TimeFormat (only for new timelines). If omitted, uses standard medieval fantasy format." },
+        time_format_json: { type: "string", description: `Optional JSON TimeFormat string. For new timelines: sets initial format. For update: modifies existing format (unit count must stay the same — only change names, max values, or digits). Schema: {"units":[{"key":"era","name":"纪元","max":null,"display_order":0,"digits":1},...]}. Default: era(1digit,max9), year(6digit,∞), month(2digit,max12), day(2digit,max30), hour(2digit,max24), minute(2digit,max60), second(2digit,max60).` },
         is_default: { type: "boolean", description: "Set as the default timeline (update only)" },
       },
       required: [],
@@ -326,9 +317,9 @@ function getTools(): ToolDef[] {
         name: { type: "string", description: ta.eventName },
         delete: { type: "boolean", description: "Set to true to DELETE this event (requires event_id). Irreversible." },
         time_point: { type: "string", description: ta.eventTimePoint },
-        summary: { type: "string", description: "Event description. Required for new events." },
+        summary: { type: "string", description: "Event description (≤1000 chars, 2-3 sentences ideal). Required for new events; can also be updated." },
         precision: { type: "number", description: ta.eventPrecision },
-        linked_entries: { type: "string", description: "JSON array of {entry_id, perspective_summary} objects. Example: [{\"entry_id\":\"uuid\",\"perspective_summary\":\"简述\"}]" },
+        linked_entries: { type: "string", description: "JSON array of {entry_id, perspective_summary}. perspective_summary ≤400 chars each. Example: [{\"entry_id\":\"uuid\",\"perspective_summary\":\"简述\"}]" },
         linked_chapters: { type: "string", description: "JSON array of {story_id, chapter_order} objects. Example: [{\"story_id\":\"uuid\",\"chapter_order\":1}]" },
         relationship_changes: { type: "string", description: "JSON array of {entry_a, entry_b, change_type, relation, description} objects. These are automatically synced to the relation graph (ExploreGraph). Example: [{\"entry_a\":\"uuid\",\"entry_b\":\"uuid2\",\"change_type\":\"add\",\"relation\":\"战友\",\"description\":\"共同抵御虚空入侵\"}]" },
       },
@@ -449,7 +440,8 @@ async function runConsistencyCheck(
     const related = await invoke<any[]>("traverse_graph", {
       worldPath, entityType, entityId, maxDepth: 1,
     });
-    const seen = new Set<string>([entityId]);
+    const seen = new Set<string>();
+    if (entityType === "entry") seen.add(entityId);
     for (const r of related) {
       if (r.entity.type === "entry") seen.add(r.entity.id);
     }
@@ -683,7 +675,7 @@ async function executeTool(
       if (input.status !== undefined) params.status = input.status as string;
       if (input.summary !== undefined) params.summary = input.summary as string;
       if (input.body !== undefined) params.body = input.body as string;
-      if (input.linked_events !== undefined) params.linkedEvents = input.linked_events as string;
+      if (input.linked_events !== undefined) params.linkedEvents = typeof input.linked_events === "string" ? input.linked_events : JSON.stringify(input.linked_events);
       const chapter = await invoke<{ id: string; order: number }>("write_outline", params);
       let msg = t().chapterSaved(chapter.id, chapter.order);
       if (ccResult && ccResult.soft.length > 0) {
@@ -891,13 +883,14 @@ async function executeTool(
         if (input.name) params.name = input.name;
         if (input.description) params.description = input.description;
         if (input.is_default !== undefined) params.isDefault = input.is_default;
+        if (input.time_format_json) params.timeFormatJson = typeof input.time_format_json === "string" ? input.time_format_json : JSON.stringify(input.time_format_json);
         const timeline = await invoke<any>("update_timeline", params);
         return t().timelineUpdatedResult(JSON.stringify(timeline, null, 2));
       } else {
         // Create new timeline
         const params: Record<string, unknown> = { worldPath, name: input.name as string };
         if (input.description) params.description = input.description;
-        if (input.time_format_json) params.timeFormatJson = input.time_format_json;
+        if (input.time_format_json) params.timeFormatJson = typeof input.time_format_json === "string" ? input.time_format_json : JSON.stringify(input.time_format_json);
         const timeline = await invoke<any>("create_timeline", params);
         return t().timelineCreatedResult(JSON.stringify(timeline, null, 2));
       }
@@ -949,9 +942,9 @@ async function executeTool(
         if (input.summary) params.summary = input.summary;
         if (input.name) params.nameUpdate = input.name;
         if (input.precision != null) params.precision = input.precision as number;
-        if (input.linked_entries) params.linkedEntries = input.linked_entries;
-        if (input.linked_chapters) params.linkedChapters = input.linked_chapters;
-        if (input.relationship_changes) params.relationshipChanges = input.relationship_changes;
+        if (input.linked_entries) params.linkedEntries = typeof input.linked_entries === "string" ? input.linked_entries : JSON.stringify(input.linked_entries);
+        if (input.linked_chapters) params.linkedChapters = typeof input.linked_chapters === "string" ? input.linked_chapters : JSON.stringify(input.linked_chapters);
+        if (input.relationship_changes) params.relationshipChanges = typeof input.relationship_changes === "string" ? input.relationship_changes : JSON.stringify(input.relationship_changes);
         const event = await invoke<any>("update_event", params);
         let msg = t().eventUpdatedResult(JSON.stringify(event, null, 2));
         if (ccResult && ccResult.soft.length > 0) {
@@ -968,9 +961,9 @@ async function executeTool(
         };
         if (input.name) params.name = input.name;
         if (input.precision != null) params.precision = input.precision as number;
-        if (input.linked_entries) params.linkedEntries = input.linked_entries;
-        if (input.linked_chapters) params.linkedChapters = input.linked_chapters;
-        if (input.relationship_changes) params.relationshipChanges = input.relationship_changes;
+        if (input.linked_entries) params.linkedEntries = typeof input.linked_entries === "string" ? input.linked_entries : JSON.stringify(input.linked_entries);
+        if (input.linked_chapters) params.linkedChapters = typeof input.linked_chapters === "string" ? input.linked_chapters : JSON.stringify(input.linked_chapters);
+        if (input.relationship_changes) params.relationshipChanges = typeof input.relationship_changes === "string" ? input.relationship_changes : JSON.stringify(input.relationship_changes);
         const event = await invoke<any>("create_event", params);
         let msg = t().eventCreatedResult(JSON.stringify(event, null, 2));
         if (ccResult && ccResult.soft.length > 0) {
@@ -1016,8 +1009,6 @@ export async function runAgentLoop(
   let turns = 0;
   let recoveryCount = 0;
   let totalToolUses = 0;
-  let finalAnswerNudgeCount = 0;
-  let awaitingFinalAnswer = false;
   let fullText = "";
   let lastUsageTotal = 0;
   let lastUsageMsgCount = 0;
@@ -1049,7 +1040,6 @@ export async function runAgentLoop(
       // Build tool use tracking for this turn
       const pendingToolUses: { id: string; name: string; input: Record<string, unknown> }[] = [];
       let turnText = "";
-      const confirmationTurn = awaitingFinalAnswer;
 
       // ── Step 1: Set up event listener BEFORE sending API request ──
       // setupStreamListener does dynamic import + Tauri listen, both async.
@@ -1066,11 +1056,11 @@ export async function runAgentLoop(
         switch (event.type) {
           case "text_delta":
             turnText += event.text || "";
-            if (!confirmationTurn) callbacks.onTextDelta(event.text || "");
+            callbacks.onTextDelta(event.text || "");
             break;
           case "thinking_delta":
             thinkingText += event.text || "";
-            if (!confirmationTurn) callbacks.onThinkingDelta(event.text || "");
+            callbacks.onThinkingDelta(event.text || "");
             break;
           case "thinking_done":
             callbacks.onThinkingDone();
@@ -1081,9 +1071,7 @@ export async function runAgentLoop(
               name: event.name || "",
               input: (event.input || {}) as Record<string, unknown>,
             });
-            if (event.name !== "FinalAnswer") {
-              callbacks.onToolUse(event.id || "", event.name || "", (event.input || {}) as Record<string, unknown>);
-            }
+            callbacks.onToolUse(event.id || "", event.name || "", (event.input || {}) as Record<string, unknown>);
             break;
           case "usage":
             // Track billed tokens for cost estimation
@@ -1122,6 +1110,7 @@ export async function runAgentLoop(
           case "stream_end":
             streamDone = true;
             lastStopReason = event.stop_reason || "";
+            console.log("[agent-loop] stream_end stop_reason=", lastStopReason);
             streamResolve();
             break;
           case "error":
@@ -1268,32 +1257,16 @@ export async function runAgentLoop(
         unlisten();
       }
 
-      if (!confirmationTurn) fullText += turnText;
-
-      const finalAnswerTool = pendingToolUses.find((tool) => tool.name === "FinalAnswer");
-      if (finalAnswerTool) {
-        if (!fullText.trim()) {
-          messages.push({
-            role: "user",
-            content: t().finalAnswerEmpty,
-          });
-          continue;
-        }
-        callbacks.onComplete(fullText, thinkingText);
-        return;
-      }
+      fullText += turnText;
 
       // Add assistant message to history (may be partial if truncated)
-      if (!confirmationTurn) {
-        messages.push({ role: "assistant", content: turnText });
-      }
+      messages.push({ role: "assistant", content: turnText });
 
       // Execute all tool calls that arrived — no artificial per-turn cap
 
       totalToolUses += pendingToolUses.length;
       for (const tool of pendingToolUses) {
-        if (tool.name === "FinalAnswer") continue;
-        awaitingFinalAnswer = false;
+        console.log("[agent-loop] executing tool:", tool.name, JSON.stringify(tool.input).slice(0, 200));
         const cacheKey = `${tool.name}::${JSON.stringify(tool.input)}`;
         const cached = toolCache.get(cacheKey);
         if (cached !== undefined) {
@@ -1304,6 +1277,7 @@ export async function runAgentLoop(
         }
         try {
           const result = await executeTool(tool.name, tool.input, worldPath, storyId);
+          console.log("[agent-loop] tool done:", tool.name, "resultLen=", result.length);
           toolCache.set(cacheKey, result);
           callbacks.onToolResult({ toolUseId: tool.id, toolName: tool.name, content: result }, tool.name);
           messages.push({
@@ -1323,6 +1297,7 @@ export async function runAgentLoop(
       // Both mean output was truncated. Recovery continues from where it cut off.
       const isTruncated = lastStopReason === "max_tokens" || lastStopReason === "length";
       if (isTruncated && recoveryCount < MAX_RECOVERY) {
+        console.log("[agent-loop] max_tokens recovery attempt", recoveryCount + 1, "/", MAX_RECOVERY);
         recoveryCount++;
         messages.push({
           role: "user",
@@ -1337,19 +1312,7 @@ export async function runAgentLoop(
 
       // If no tool calls and no recovery needed, we're done
       if (pendingToolUses.length === 0) {
-        if (totalToolUses > 0 && finalAnswerNudgeCount < 2) {
-          finalAnswerNudgeCount++;
-          awaitingFinalAnswer = true;
-          messages.push({
-            role: "user",
-            content: t().finalAnswerNudge,
-          });
-          continue;
-        }
-        if (totalToolUses > 0) {
-          callbacks.onError(t().finalAnswerMissing);
-          return;
-        }
+        console.log("[agent-loop] done");
         callbacks.onComplete(fullText, thinkingText);
         return;
       }

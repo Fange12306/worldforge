@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, type KeyboardEvent } from "react";
-import { useStore, type Message, type ToolCall, type TimelineBlock } from "@/lib/store";
+import { useStore, type Message, type ToolCall, type TimelineBlock, type UploadedFile } from "@/lib/store";
 import { invoke } from "@/lib/api";
 import { runAgentLoop, resetPermissions, type AgentMessage } from "@/lib/agent-loop";
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import { buildModelMessages } from "@/lib/model-context";
-import { appendSessionMessage, rewriteSessionMessages } from "@/lib/session-writer";
+import { appendSessionMessage, rewriteSessionMessages, messagesToSessionLines } from "@/lib/session-writer";
 import { ArrowUp, Square, X, Paperclip, Loader2 } from "lucide-react";
 import { InlinePermission } from "./PermissionDialog";
 import { ContextRing } from "./ContextRing";
@@ -12,37 +12,8 @@ import type { PermissionChoice } from "@/lib/agent-loop";
 import type { Entry } from "@/lib/types";
 import { useT, getT } from "@/lib/i18n";
 
-type UploadedFile = { name: string; storedName: string; content: string };
-
-function toSessionMessages(messages: Message[]) {
-  return messages.map((message) => {
-    const timestamp = new Date(message.timestamp || Date.now()).toISOString();
-    if (message.role === "assistant") {
-      return {
-        type: "assistant",
-        content: message.content,
-        thinking: message.thinking || null,
-        timestamp,
-      };
-    }
-    if (message.role === "system") {
-      return {
-        type: "system",
-        content: message.content,
-        timestamp,
-      };
-    }
-    return {
-      type: "user",
-      content: message.content,
-      timestamp,
-    };
-  });
-}
-
 export function ChatInput({ storyId }: { storyId: string }) {
   const { t } = useT();
-  const [files, setFiles] = useState<UploadedFile[]>([]);
   const [pendingUploads, setPendingUploads] = useState<string[]>([]);
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
   const [permission, setPermission] = useState<null | { toolName: string; details: string; callback: (c: PermissionChoice) => void }>(null);
@@ -85,6 +56,15 @@ export function ChatInput({ storyId }: { storyId: string }) {
   const setIsToolRunning = useStore((s) => s.setIsToolRunning);
   const updateStreamToolResult = useStore((s) => s.updateStreamToolResult);
   const clearStreamText = useStore((s) => s.clearStreamText);
+  const conversationFiles = useStore((s) => s.conversationFiles);
+  const setConversationFiles = useStore((s) => s.setConversationFiles);
+  const files = conversationFiles[activeConversationId || ""] || [];
+  const setFiles = (f: UploadedFile[] | ((prev: UploadedFile[]) => UploadedFile[])) => {
+    if (!activeConversationId) return;
+    const prev = conversationFiles[activeConversationId] || [];
+    const next = typeof f === "function" ? f(prev) : f;
+    setConversationFiles(activeConversationId, next);
+  };
   const conversationDrafts = useStore((s) => s.conversationDrafts);
   const setConversationDraft = useStore((s) => s.setConversationDraft);
 
@@ -132,7 +112,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
         } : ww),
       }));
       try {
-        await rewriteSessionMessages(w.path, c.id, toSessionMessages(nextMessages));
+        await rewriteSessionMessages(w.path, c.id, messagesToSessionLines(nextMessages));
       } catch {}
 
       clearStreamText();
@@ -398,7 +378,6 @@ export function ChatInput({ storyId }: { storyId: string }) {
             tc = matching[matching.length - 1];
           }
           if (tc) tc.result = result.content;
-          flushTurnText();
           updateStreamToolResult(result.toolUseId, result.content);
           appendSessionMessage(world.path, convId, { type: "tool_result", tool: toolName || result.toolName || "", output: result.content, timestamp: new Date().toISOString() }).catch(() => {});
           // Persist tool result in conversation so next API call includes full history

@@ -19,6 +19,8 @@ type BubbleProps = {
 
 export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
   const { t } = useT();
+  const avatar = useStore(s => s.avatar);
+  const username = useStore(s => s.username);
   const { message, isStreaming, isLastUser, theme, streamThinking = "", isThinking = false, isToolRunning = false, globalStreaming = false } = props;
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
@@ -42,13 +44,23 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
 
   return (
     <div className={cn("flex gap-3 animate-fade-in", isUser && "flex-row-reverse")}>
-      <div className={cn("flex-shrink-0 w-10 h-10 flex items-center justify-center",
-        isUser && "rounded-lg bg-surface-700 text-ink-secondary")}>
-        {isUser ? <User className="w-5 h-5" /> : <WorldForgeLogo className="w-10 h-10" />}
-      </div>
+      {isUser ? (
+        <span className="flex-shrink-0 w-10 h-10 rounded-full bg-surface-800 border border-edge flex items-center justify-center overflow-hidden">
+          {avatar ? (
+            <img src={avatar} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <User className="w-5 h-5 text-ink-secondary" />
+          )}
+        </span>
+      ) : (
+        <span className="flex-shrink-0 w-10 h-10 rounded-full bg-surface-800 border border-edge flex items-center justify-center overflow-hidden">
+          <WorldForgeLogo className="w-16 h-16 max-w-none translate-y-0.5" />
+        </span>
+      )}
       <div className={cn("flex-1 min-w-0", isUser && "flex flex-col")}>
         {isUser ? (
           <>
+            <span className="text-[0.625rem] text-ink-muted self-end mr-1 mb-0.5">{username || t.sidebar.localUser}</span>
             <div className="max-w-[85%] rounded-2xl bg-surface-800 px-4 py-2.5 self-end">
               <UserContent content={message.content} />
             </div>

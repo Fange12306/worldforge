@@ -93,7 +93,7 @@ function getTools(): ToolDef[] {
     input_schema: {
       type: "object",
       properties: {
-        entry_id: { type: "string", description: "The entry ID from EntrySearch results. This is a UUID for entries created after v0.6.0, or a legacy name-based slug for older entries. Always use the exact 'id' value returned by EntrySearch — do not derive it from the name yourself." },
+        entry_id: { type: "string", description: "Entry ID from EntrySearch results (UUID or legacy slug)." },
       },
       required: ["entry_id"],
     },
@@ -236,7 +236,7 @@ function getTools(): ToolDef[] {
   },
   {
     name: "Relation",
-    description: "Create, update, or remove a static relation between entities. Use for facts not tied to a specific event (e.g. '暗月匕首是暗月帝国的皇室圣物'). For event-driven relationship changes, use EventWrite.relationship_changes instead. IMPORTANT: always provide reverse_description for asymmetric relations. Ask yourself: 'if A's relation to B is X, what is B's relation to A?' Examples: '父亲' → '子女', '女王' → '臣民', '位于' → '容纳', '起源于' → '起源地'. Symmetric relations like '战友', '结盟' don't need it. Multiple edges between the same two entities are allowed — use different descriptions to distinguish them.",
+    description: "Create, update, or remove a static relation between entities. Use for cross-timeline facts. For event-driven changes use EventWrite.relationship_changes. Provide reverse_description for asymmetric relations. Multiple edges between the same pair are allowed with different descriptions.",
     input_schema: {
       type: "object",
       properties: {
@@ -273,7 +273,7 @@ function getTools(): ToolDef[] {
   // ── Phase 5: Timeline & Event tools ──
   {
     name: "ListTimelines",
-    description: "List all timelines in the current world. Returns {id, name, description, is_default, time_format}. time_format.units lists time units. time_point format: segment 0 is '000' (reserved), then one segment per unit. Examples — 4 units (era/year/month/day): '000-003000-000300-08-15' (5 segments). 7 units (era/year/month/day/hour/minute/second): '000-003-000300-08-15-14-30-00' (8 segments). Always use ListTimelines first to get the exact unit count for THIS world.",
+    description: "List all timelines in the current world. Returns {id, name, description, is_default, time_format}. time_format.units lists time unit names and digit counts.",
     input_schema: { type: "object", properties: {} },
   },
   {
@@ -317,7 +317,7 @@ function getTools(): ToolDef[] {
         name: { type: "string", description: ta.eventName },
         delete: { type: "boolean", description: "Set to true to DELETE this event (requires event_id). Irreversible." },
         time_point: { type: "string", description: ta.eventTimePoint },
-        summary: { type: "string", description: "Event description (≤1000 chars, 2-3 sentences ideal). Required for new events; can also be updated." },
+        summary: { type: "string", description: "Event description (2-3 sentences). Required for new events; can also be updated." },
         precision: { type: "number", description: ta.eventPrecision },
         linked_entries: { type: "string", description: "JSON array of {entry_id, perspective_summary}. perspective_summary ≤400 chars each. Example: [{\"entry_id\":\"uuid\",\"perspective_summary\":\"简述\"}]" },
         linked_chapters: { type: "string", description: "JSON array of {story_id, chapter_order} objects. Example: [{\"story_id\":\"uuid\",\"chapter_order\":1}]" },
@@ -334,7 +334,7 @@ function getTools(): ToolDef[] {
       properties: {
         timeline_id: { type: "string", description: "Timeline ID (required)" },
         event_id: { type: "string", description: "Event ID to move (required)" },
-        new_time_point: { type: "string", description: "New time point. Segment 0 is always '000' (placeholder), remaining segments match timeline units. Get the exact count from ListTimelines time_format." },
+        new_time_point: { type: "string", description: "New time point string (same format as EventWrite.time_point)." },
       },
       required: ["timeline_id", "event_id", "new_time_point"],
     },
@@ -789,8 +789,8 @@ async function executeTool(
         if (input.description) params.description = input.description;
         if (input.reverse_description !== undefined) params.reverseDescription = input.reverse_description;
         if (input.timeline_id !== undefined) params.timelineId = input.timeline_id;
-        const graph = await invoke<any>("update_relation", params);
-        return t().relationUpdated(JSON.stringify(graph, null, 2));
+        await invoke("update_relation", params);
+        return t().relationUpdated(relationId);
       }
       // Add path
       await invoke("add_relation", {
@@ -885,14 +885,14 @@ async function executeTool(
         if (input.is_default !== undefined) params.isDefault = input.is_default;
         if (input.time_format_json) params.timeFormatJson = typeof input.time_format_json === "string" ? input.time_format_json : JSON.stringify(input.time_format_json);
         const timeline = await invoke<any>("update_timeline", params);
-        return t().timelineUpdatedResult(JSON.stringify(timeline, null, 2));
+        return t().timelineUpdatedResult(timeline.name || tlId);
       } else {
         // Create new timeline
         const params: Record<string, unknown> = { worldPath, name: input.name as string };
         if (input.description) params.description = input.description;
         if (input.time_format_json) params.timeFormatJson = typeof input.time_format_json === "string" ? input.time_format_json : JSON.stringify(input.time_format_json);
         const timeline = await invoke<any>("create_timeline", params);
-        return t().timelineCreatedResult(JSON.stringify(timeline, null, 2));
+        return t().timelineCreatedResult(timeline.name || (input.name as string));
       }
     }
     case "ListEvents": {
@@ -946,7 +946,7 @@ async function executeTool(
         if (input.linked_chapters) params.linkedChapters = typeof input.linked_chapters === "string" ? input.linked_chapters : JSON.stringify(input.linked_chapters);
         if (input.relationship_changes) params.relationshipChanges = typeof input.relationship_changes === "string" ? input.relationship_changes : JSON.stringify(input.relationship_changes);
         const event = await invoke<any>("update_event", params);
-        let msg = t().eventUpdatedResult(JSON.stringify(event, null, 2));
+        let msg = t().eventUpdatedResult(event.name || evId);
         if (ccResult && ccResult.soft.length > 0) {
           msg += `\n\n${t().softConstraintReminder(ccResult.soft.join("\n"))}`;
         }
@@ -965,7 +965,7 @@ async function executeTool(
         if (input.linked_chapters) params.linkedChapters = typeof input.linked_chapters === "string" ? input.linked_chapters : JSON.stringify(input.linked_chapters);
         if (input.relationship_changes) params.relationshipChanges = typeof input.relationship_changes === "string" ? input.relationship_changes : JSON.stringify(input.relationship_changes);
         const event = await invoke<any>("create_event", params);
-        let msg = t().eventCreatedResult(JSON.stringify(event, null, 2));
+        let msg = t().eventCreatedResult(event.name || (input.name as string) || evTlId);
         if (ccResult && ccResult.soft.length > 0) {
           msg += `\n\n${t().softConstraintReminder(ccResult.soft.join("\n"))}`;
         }
@@ -983,7 +983,7 @@ async function executeTool(
         eventId: evId,
         newTimePoint: newTp,
       });
-      return t().eventUpdatedResult(JSON.stringify(event, null, 2));
+      return t().eventUpdatedResult(event.name || evId);
     }
     default:
       return t().unknownTool(name);

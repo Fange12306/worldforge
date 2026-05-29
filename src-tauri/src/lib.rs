@@ -225,7 +225,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             if let RunEvent::Reopen { .. } = &_event {
                 let _ = _app_handle.show();
-                if let Some(window) = app_handle.get_webview_window("main") {
+                if let Some(window) = _app_handle.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();
                 }

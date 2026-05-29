@@ -366,7 +366,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
           turnToolCallsRef.current = [...turnToolCallsRef.current, tc];
           streamStateRef.current.toolCalls = [...toolCalls];
           addStreamToolCall(tc);
-          appendSessionMessage(world.path, convId, { type: "tool_use", tool: name, input: input || {}, timestamp: new Date().toISOString() }).catch(() => {});
+          appendSessionMessage(world.path, convId, { type: "tool_use", id, tool: name, input: input || {}, timestamp: new Date().toISOString() }).catch(() => {});
           setIsThinking(false); setIsToolRunning(true);
           const b: TimelineBlock = { type: "tool", call: tc }; timeline.push(b); prevBlock = b;
         },
@@ -379,7 +379,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
           }
           if (tc) tc.result = result.content;
           updateStreamToolResult(result.toolUseId, result.content);
-          appendSessionMessage(world.path, convId, { type: "tool_result", tool: toolName || result.toolName || "", output: result.content, timestamp: new Date().toISOString() }).catch(() => {});
+          appendSessionMessage(world.path, convId, { type: "tool_result", tool: toolName || result.toolName || "", tool_use_id: result.toolUseId, output: result.content, timestamp: new Date().toISOString() }).catch(() => {});
           // Persist tool result in conversation so next API call includes full history
           addMessage(storyId, { role: "system", content: `[工具结果: ${toolName || result.toolName || "tool"}]\n${result.content}` }, convId);
           // Bump refreshKey when world data changes

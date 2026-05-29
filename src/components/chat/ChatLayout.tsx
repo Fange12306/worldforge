@@ -56,29 +56,33 @@ export function ChatLayout() {
       .flatMap((s) => s.conversations)
       .find((c) => c.id === activeConversationId);
     if (!conv || conv.messages.length > 0) return; // already loaded
-    invoke<Array<{ type: string; content: string; thinking?: string; tool?: string; input?: unknown; output?: string }>>("load_session", { worldPath: activeWorld.path, sessionId: activeConversationId })
+    invoke<Array<{ type: string; content: string; thinking?: string; id?: string; tool?: string; tool_use_id?: string; input?: unknown; output?: string }>>("load_session", { worldPath: activeWorld.path, sessionId: activeConversationId })
       .then((msgs) => {
         // Reconstruct messages with thinking and tool calls
         type StoreMessage = { id: string; role: "user" | "assistant" | "system"; content: string; thinking?: string; toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }>; timestamp: number };
         const convMsgs: StoreMessage[] = [];
-        let pendingToolCalls: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }> = [];
+        const pendingMap = new Map<string, { id: string; name: string; input: Record<string, unknown>; result: string }>();
+        const pendingOrder: string[] = [];
         for (const m of msgs) {
           if (m.type === "user") {
             convMsgs.push({ id: `msg_${convMsgs.length}`, role: "user", content: m.content, timestamp: Date.now() });
+            pendingMap.clear(); pendingOrder.length = 0;
           } else if (m.type === "assistant") {
-            convMsgs.push({ id: `msg_${convMsgs.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: pendingToolCalls.length > 0 ? [...pendingToolCalls] : undefined, timestamp: Date.now() });
-            pendingToolCalls = [];
+            const toolCalls = pendingOrder.map((tid) => pendingMap.get(tid)!).filter(Boolean);
+            convMsgs.push({ id: `msg_${convMsgs.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: toolCalls.length > 0 ? toolCalls : undefined, timestamp: Date.now() });
+            pendingMap.clear(); pendingOrder.length = 0;
           } else if (m.type === "system") {
             convMsgs.push({ id: `msg_${convMsgs.length}`, role: "system", content: m.content, timestamp: Date.now() });
           } else if (m.type === "tool_use") {
-            pendingToolCalls.push({ id: `tc_${pendingToolCalls.length}`, name: m.tool || "", input: (m.input as Record<string, unknown>) || {}, result: "" });
+            const tid = m.id || `tc_${pendingOrder.length}`;
+            pendingMap.set(tid, { id: tid, name: m.tool || "", input: (m.input as Record<string, unknown>) || {}, result: "" });
+            pendingOrder.push(tid);
           } else if (m.type === "tool_result") {
-            const last = pendingToolCalls[pendingToolCalls.length - 1];
-            if (last) last.result = (m.output as string) || "";
-            // Also persist as system message so context tracking includes it in next API call
-            const toolName = m.tool || "tool";
             const output = (m.output as string) || "";
-            convMsgs.push({ id: `msg_${convMsgs.length}`, role: "system", content: `[工具结果: ${toolName}]\n${output}`, timestamp: Date.now() });
+            const tuid = m.tool_use_id || "";
+            const tc = tuid ? pendingMap.get(tuid) : undefined;
+            if (tc) tc.result = output;
+            convMsgs.push({ id: `msg_${convMsgs.length}`, role: "system", content: `[工具结果: ${m.tool || "tool"}]\n${output}`, timestamp: Date.now() });
           }
         }
         if (convMsgs.length > 0) {

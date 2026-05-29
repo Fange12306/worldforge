@@ -23,6 +23,8 @@ pub enum SessionMessage {
     System { content: String, timestamp: String },
     #[serde(rename = "tool_use")]
     ToolUse {
+        #[serde(default)]
+        id: String,
         tool: String,
         input: serde_json::Value,
         timestamp: String,
@@ -30,6 +32,8 @@ pub enum SessionMessage {
     #[serde(rename = "tool_result")]
     ToolResult {
         tool: String,
+        #[serde(default)]
+        tool_use_id: String,
         output: String,
         timestamp: String,
     },

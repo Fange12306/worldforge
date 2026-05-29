@@ -54,14 +54,14 @@ export function messagesToSessionLines(messages: Message[]): SessionMessage[] {
     } else if (msg.role === "assistant") {
       if (msg.toolCalls) {
         for (const tc of msg.toolCalls) {
-          lines.push({ type: "tool_use", tool: tc.name, input: tc.input, timestamp: ts });
+          lines.push({ type: "tool_use", id: tc.id, tool: tc.name, input: tc.input, timestamp: ts });
         }
       }
       lines.push({ type: "assistant", content: msg.content, thinking: msg.thinking || null, timestamp: ts });
       if (msg.toolCalls) {
         for (const tc of msg.toolCalls) {
           if (tc.result) {
-            lines.push({ type: "tool_result", tool: tc.name, output: tc.result, timestamp: ts });
+            lines.push({ type: "tool_result", tool: tc.name, tool_use_id: tc.id, output: tc.result, timestamp: ts });
           }
         }
       }

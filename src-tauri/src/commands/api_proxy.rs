@@ -305,6 +305,11 @@ async fn stream_anthropic(
         body["tools"] = serde_json::Value::Array(anthropic_tools);
     }
 
+    // Enable automatic prompt caching — system prompt + tools + conversation prefix
+    // get 90% discount on cache reads. Minimum 2048 tokens (Sonnet) which our
+    // ~5.8k system prompt easily exceeds.
+    body["cache_control"] = serde_json::json!({"type": "ephemeral"});
+
     let response = client
         .post(api_url)
         .header("x-api-key", &api_key)
@@ -461,9 +466,10 @@ async fn stream_openai_compatible(
 
     // OpenAI-compatible: max_tokens is optional. Omit it and let the provider
     // decide its own limit. Recovery in agent-loop.ts handles truncation regardless.
+    // Build body with tools BEFORE messages so that the static tools prefix
+    // is independently cacheable across conversations by DeepSeek/OpenAI auto-caching.
     let mut body = serde_json::json!({
         "model": model,
-        "messages": msgs,
         "stream": true,
         "stream_options": {
             "include_usage": true,
@@ -472,6 +478,7 @@ async fn stream_openai_compatible(
     if !oai_tools.is_empty() {
         body["tools"] = serde_json::Value::Array(oai_tools);
     }
+    body["messages"] = serde_json::json!(msgs);
     if _max_tokens > 0 {
         body["max_tokens"] = serde_json::json!(_max_tokens);
     }

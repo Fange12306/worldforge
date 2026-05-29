@@ -131,30 +131,29 @@ export function AppShell() {
           }
           if (convId) {
             try {
-              const msgs = await invoke<Array<{ type: string; content: string; thinking?: string; tool?: string; input?: unknown; output?: string }>>("load_session", { worldPath, sessionId: convId });
+              const msgs = await invoke<Array<{ type: string; content: string; thinking?: string; id?: string; tool?: string; tool_use_id?: string; input?: unknown; output?: string }>>("load_session", { worldPath, sessionId: convId });
               type SM = { id: string; role: "user" | "assistant" | "system"; content: string; thinking?: string; toolCalls?: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }>; timestamp: number };
               const result: SM[] = [];
-              let pending: Array<{ id: string; name: string; input: Record<string, unknown>; result: string }> = [];
-              let lastAssistantIdx: number | null = null;
+              const pendingMap = new Map<string, { id: string; name: string; input: Record<string, unknown>; result: string }>();
+              const pendingOrder: string[] = [];
               for (const m of msgs) {
-                if (m.type === "user") { result.push({ id: `msg_${result.length}`, role: "user", content: m.content, timestamp: Date.now() }); pending = []; lastAssistantIdx = null; }
+                if (m.type === "user") { result.push({ id: `msg_${result.length}`, role: "user", content: m.content, timestamp: Date.now() }); pendingMap.clear(); pendingOrder.length = 0; }
                 else if (m.type === "assistant") {
-                  result.push({ id: `msg_${result.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: pending.length > 0 ? [...pending] : undefined, timestamp: Date.now() });
-                  lastAssistantIdx = result.length - 1;
-                  pending = [];
+                  const toolCalls = pendingOrder.map((tid) => pendingMap.get(tid)!).filter(Boolean);
+                  result.push({ id: `msg_${result.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: toolCalls.length > 0 ? toolCalls : undefined, timestamp: Date.now() });
+                  pendingMap.clear(); pendingOrder.length = 0;
                 }
                 else if (m.type === "system") result.push({ id: `msg_${result.length}`, role: "system", content: m.content, timestamp: Date.now() });
-                else if (m.type === "tool_use") pending.push({ id: `tc_${pending.length}`, name: m.tool || "", input: (m.input as Record<string, unknown>) || {}, result: "" });
+                else if (m.type === "tool_use") {
+                  const tid = m.id || `tc_${pendingOrder.length}`;
+                  pendingMap.set(tid, { id: tid, name: m.tool || "", input: (m.input as Record<string, unknown>) || {}, result: "" });
+                  pendingOrder.push(tid);
+                }
                 else if (m.type === "tool_result") {
                   const output = (m.output as string) || "";
-                  const last = pending[pending.length - 1];
-                  if (last) { last.result = output; }
-                  else if (lastAssistantIdx !== null) {
-                    const lastMsg = result[lastAssistantIdx];
-                    if (lastMsg?.toolCalls) {
-                      for (const tc of lastMsg.toolCalls) { if (!tc.result) { tc.result = output; break; } }
-                    }
-                  }
+                  const tuid = m.tool_use_id || "";
+                  const tc = tuid ? pendingMap.get(tuid) : undefined;
+                  if (tc) { tc.result = output; }
                   result.push({ id: `msg_${result.length}`, role: "system", content: `[工具结果: ${m.tool || "tool"}]\n${output}`, timestamp: Date.now() });
                 }
               }

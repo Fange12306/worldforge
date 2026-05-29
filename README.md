@@ -15,6 +15,10 @@
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="license" />
 </p>
 
+<p align="center">
+  <img src="public/screenshots/demo.png" alt="WorldForge Screenshot" width="900" />
+</p>
+
 ---
 
 ## What It Does

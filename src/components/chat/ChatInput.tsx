@@ -43,6 +43,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
   const activeConversationId = useStore((s) => s.activeConversationId);
   const llmProvider = useStore((s) => s.llmProvider);
   const llmModels = useStore((s) => s.llmModels);
+  const providers = useStore((s) => s.providers);
   const activeModel = useStore((s) => s.activeModel);
   const setActiveModel = useStore((s) => s.setActiveModel);
   const addMessage = useStore((s) => s.addMessage);
@@ -346,6 +347,9 @@ export function ChatInput({ storyId }: { storyId: string }) {
       const currentModelConfig = llmModels.find((m) => m.name === activeModel);
       const reasoningEffort = currentModelConfig?.reasoningEffort;
       const maxTokens = currentModelConfig?.maxTokens;
+      const currentProvider = providers.find((p) => p.id === currentModelConfig?.providerId);
+      const thinkingStyle = currentProvider?.thinkingStyle;
+      const baseUrl = currentProvider?.baseUrl;
 
       await runAgentLoop(world.path, systemPrompt, history, {
         onTextDelta: (t) => { if (abortRef.current) return; appendStreamText(t); finalContent += t; turnTextRef.current += t; streamStateRef.current.text = finalContent;
@@ -407,7 +411,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
           }
           clearStreamText();
         },
-      }, llmProvider, activeModel, storyId, reasoningEffort, convId, maxTokens, abortRef);
+      }, llmProvider, activeModel, storyId, reasoningEffort, convId, maxTokens, abortRef, thinkingStyle, baseUrl);
     } catch (e: any) {
       setStreaming(false);
       if (!abortRef.current) addMessage(storyId, { role: "assistant", content: `Error: ${e}` }, convId);
@@ -534,7 +538,9 @@ export function ChatInput({ storyId }: { storyId: string }) {
               <select value={activeModel} onChange={(e) => setActiveModel(e.target.value)}
                 className="text-[0.688rem] bg-transparent text-ink-muted py-0 appearance-none outline-none cursor-pointer truncate max-w-[220px]"
               >
-                {llmModels.map((m) => <option key={m.name} value={m.name}>{m.alias || m.name}</option>)}
+                {llmModels
+                  .filter((m) => m.providerId && m.providerId === llmProvider)
+                  .map((m) => <option key={m.name} value={m.name}>{m.alias || m.name}</option>)}
               </select>
             )}
             {isStreamingHere ? (

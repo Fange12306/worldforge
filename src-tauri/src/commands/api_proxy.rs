@@ -197,11 +197,13 @@ pub async fn stream_chat(
     max_tokens: u32,
     reasoning_effort: Option<String>,
     conversation_id: Option<String>,
+    thinking_style: Option<String>,
+    base_url: Option<String>,
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
     let mut last_error = String::new();
     for attempt in 0..MAX_RETRIES {
-        match stream_chat_inner(app.clone(), messages.clone(), system_prompt.clone(), model.clone(), tools.clone(), provider.clone(), max_tokens, reasoning_effort.clone(), conversation_id.clone()).await {
+        match stream_chat_inner(app.clone(), messages.clone(), system_prompt.clone(), model.clone(), tools.clone(), provider.clone(), max_tokens, reasoning_effort.clone(), conversation_id.clone(), thinking_style.clone(), base_url.clone()).await {
             Ok(()) => return Ok(()),
             Err(e) => {
                 last_error = e.clone();
@@ -228,24 +230,25 @@ async fn stream_chat_inner(
     max_tokens: u32,
     reasoning_effort: Option<String>,
     conversation_id: Option<String>,
+    thinking_style: Option<String>,
+    base_url: Option<String>,
 ) -> Result<(), String> {
-    // Get API key (api_key.rs already prefixes with "api_key_")
     let api_key = crate::commands::api_key::get_api_key(provider.clone())
         .map_err(|e| format!("未配置 API Key: {}", e))?;
 
-    let default_api_url = match provider.as_str() {
-        "anthropic" => "https://api.anthropic.com/v1/messages",
-        "openai" => "https://api.openai.com/v1/chat/completions",
-        "deepseek" => "https://api.deepseek.com/v1/chat/completions",
-        _ => return Err(format!("未知 Provider: {}", provider)),
+    let default_url = match thinking_style.as_deref() {
+        Some("anthropic") => "https://api.anthropic.com/v1/messages",
+        _ => "https://api.deepseek.com/v1/chat/completions", // sensible default for custom providers
     };
-    let configured_api_url = crate::commands::api_key::get_api_base_url(provider.clone());
-    let api_url = configured_api_url.as_deref().unwrap_or(default_api_url);
+    let api_url = base_url.as_deref()
+        .filter(|u| !u.trim().is_empty())
+        .unwrap_or(default_url);
 
-    if provider == "anthropic" {
+    if thinking_style.as_deref() == Some("anthropic") {
         stream_anthropic(app, messages, system_prompt, model, tools, api_key, api_url, max_tokens, reasoning_effort, conversation_id).await
     } else {
-        stream_openai_compatible(app, messages, system_prompt, model, tools, api_key, api_url, provider, max_tokens, reasoning_effort, conversation_id).await
+        let style = thinking_style.unwrap_or_else(|| "none".to_string());
+        stream_openai_compatible(app, messages, system_prompt, model, tools, api_key, api_url, style, max_tokens, reasoning_effort, conversation_id).await
     }
 }
 
@@ -284,10 +287,12 @@ async fn stream_anthropic(
 
     // Map reasoning_effort to Anthropic thinking config
     let thinking_config = match reasoning_effort.as_deref() {
+        Some("disabled") => serde_json::json!({"type": "disabled"}),
         Some("low") => serde_json::json!({"type": "enabled", "budget_tokens": 1024}),
         Some("medium") => serde_json::json!({"type": "enabled", "budget_tokens": 4096}),
         Some("high") => serde_json::json!({"type": "enabled", "budget_tokens": 16384}),
-        _ => serde_json::json!({"type": "adaptive"}),
+        Some("max") => serde_json::json!({"type": "enabled", "budget_tokens": 32768}),
+        _ => serde_json::json!({"type": "adaptive"}), // "default" or absent → adaptive
     };
 
     let mut body = serde_json::json!({
@@ -440,7 +445,7 @@ async fn stream_openai_compatible(
     tools: Vec<ToolDef>,
     api_key: String,
     api_url: &str,
-    _provider: String,
+    thinking_style: String,
     _max_tokens: u32,  // OpenAI-compatible: included in body when tool config doesn't provide it
     reasoning_effort: Option<String>,
     conversation_id: Option<String>,
@@ -482,9 +487,24 @@ async fn stream_openai_compatible(
     if _max_tokens > 0 {
         body["max_tokens"] = serde_json::json!(_max_tokens);
     }
-    if let Some(ref effort) = reasoning_effort {
-        if effort != "default" {
-            body["reasoning_effort"] = serde_json::json!(effort);
+    // Apply thinking parameters based on provider's thinking style.
+    // "deepseek": send thinking toggle + reasoning_effort (DeepSeek V4 extension).
+    // "none": skip — standard OpenAI-compatible, no thinking params.
+    if thinking_style == "deepseek" {
+        let effort = reasoning_effort.as_deref().unwrap_or("disabled");
+        match effort {
+            "disabled" | "default" => {
+                body["thinking"] = serde_json::json!({"type": "disabled"});
+            }
+            _ => {
+                body["thinking"] = serde_json::json!({"type": "enabled"});
+                // DeepSeek V4 only supports "high" and "max"; low/medium → high
+                let mapped = match effort {
+                    "low" | "medium" => "high",
+                    other => other,
+                };
+                body["reasoning_effort"] = serde_json::json!(mapped);
+            }
         }
     }
 

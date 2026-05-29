@@ -94,6 +94,7 @@ pub fn run() {
             api_key::load_username,
             api_key::save_avatar,
             api_key::load_avatar,
+            api_key::fetch_models,
             // LLM API proxy
             api_proxy::stream_chat,
             api_proxy::test_connection,

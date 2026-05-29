@@ -63,10 +63,18 @@ export type Message = {
   timestamp: number;
 };
 
+export type ProviderConfig = {
+  id: string;
+  name: string;
+  baseUrl: string;
+  thinkingStyle: "deepseek" | "anthropic" | "none";
+};
+
 export type ModelConfig = {
   name: string;
   alias?: string;
-  reasoningEffort?: "default" | "low" | "medium" | "high";
+  providerId: string;
+  reasoningEffort?: "disabled" | "low" | "medium" | "high" | "max";
   contextWindow?: number;
   maxTokens?: number;
 };
@@ -124,9 +132,16 @@ type AppStore = {
   setUsername: (name: string) => void;
 
   // LLM settings
-  llmProvider: string;
+  providers: ProviderConfig[];
+  activeProviderId: string;
+  llmProvider: string;          // deprecated — derived from activeProviderId
   llmModels: ModelConfig[];
   activeModel: string;
+  setProviders: (p: ProviderConfig[]) => void;
+  addProvider: (p: ProviderConfig) => void;
+  removeProvider: (id: string) => void;
+  updateProvider: (id: string, patch: Partial<ProviderConfig>) => void;
+  setActiveProviderId: (id: string) => void;
   setLlmProvider: (p: string) => void;
   setLlmModels: (m: ModelConfig[]) => void;
   setActiveModel: (m: string) => void;
@@ -460,9 +475,18 @@ export const useStore = create<AppStore>((set, get) => ({
   username: "",
   setUsername: (name) => set({ username: name }),
 
+  providers: [],
+  activeProviderId: "",
   llmProvider: "",
   llmModels: [],
   activeModel: "",
+  setProviders: (p) => set({ providers: p }),
+  addProvider: (p) => set((s) => ({ providers: [...s.providers, p] })),
+  removeProvider: (id) => set((s) => ({ providers: s.providers.filter((p) => p.id !== id) })),
+  updateProvider: (id, patch) => set((s) => ({
+    providers: s.providers.map((p) => p.id === id ? { ...p, ...patch } : p),
+  })),
+  setActiveProviderId: (id) => set({ activeProviderId: id, llmProvider: id }),
   setLlmProvider: (p) => set({ llmProvider: p }),
   setLlmModels: (m) => set({ llmModels: m }),
   setActiveModel: (m) => set({ activeModel: m }),

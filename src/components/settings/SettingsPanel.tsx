@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { useStore, type ModelConfig } from "@/lib/store";
+import { useStore, type ModelConfig, type ProviderConfig } from "@/lib/store";
 import { invoke } from "@/lib/api";
-import { X, Eye, EyeOff, SlidersHorizontal, Palette, Bot, UserRound, ArrowLeft, Pencil, Sun, Moon } from "lucide-react";
+import { X, Eye, EyeOff, SlidersHorizontal, Palette, Bot, UserRound, ArrowLeft, Pencil, Sun, Moon, Plus } from "lucide-react";
 import { MemoryManager } from "./MemoryManager";
 import { useT } from "@/lib/i18n";
 import { WorldForgeLogo } from "@/components/brand/WorldForgeLogo";
@@ -19,18 +19,16 @@ const sectionDefs: Array<{
   { id: "personalization", icon: UserRound },
 ];
 
-const DEFAULT_BASE_URLS: Record<string, string> = {
-  deepseek: "https://api.deepseek.com/v1/chat/completions",
-  anthropic: "https://api.anthropic.com/v1/messages",
-  openai: "https://api.openai.com/v1/chat/completions",
-};
+const PRESET_PROVIDERS: ProviderConfig[] = [
+  { id: "", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1/chat/completions", thinkingStyle: "deepseek" },
+  { id: "", name: "Anthropic", baseUrl: "https://api.anthropic.com/v1/messages", thinkingStyle: "anthropic" },
+  { id: "", name: "OpenAI", baseUrl: "https://api.openai.com/v1/chat/completions", thinkingStyle: "none" },
+];
 
-function inferProviderFromBaseUrl(url: string): string {
-  const value = url.toLowerCase();
-  if (value.includes("anthropic")) return "anthropic";
-  if (value.includes("deepseek")) return "deepseek";
-  return "openai";
+function newProviderId(): string {
+  return crypto.randomUUID();
 }
+
 function sanitizeModelName(value: string): string {
   return value
     .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
@@ -39,9 +37,17 @@ function sanitizeModelName(value: string): string {
 }
 
 function normalizeModels(models: ModelConfig[]): ModelConfig[] {
+  const seen = new Set<string>();
   return models
     .map((model) => ({ ...model, name: sanitizeModelName(model.name) }))
-    .filter((model) => model.name.length > 0);
+    .filter((model) => {
+      if (model.name.length === 0) return false;
+      if (!model.providerId) return false; // drop orphaned old-format models
+      const key = `${model.providerId}::${model.name}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function clampCompressionThreshold(value: number): number {
@@ -50,84 +56,8 @@ function clampCompressionThreshold(value: number): number {
 
 export function SettingsPanel({ onClose }: Props) {
   const { t } = useT();
-  const llmProvider = useStore((s) => s.llmProvider);
-  const llmModels = useStore((s) => s.llmModels);
-  const activeModel = useStore((s) => s.activeModel);
-  const setLlmProvider = useStore((s) => s.setLlmProvider);
-  const setLlmModels = useStore((s) => s.setLlmModels);
-  const setActiveModel = useStore((s) => s.setActiveModel);
-  const setCompressionThreshold = useStore((s) => s.setCompressionThreshold);
-  const [activeSection, setActiveSection] = useState<SettingsSection>("general");
-  const [models, setModels] = useState(llmModels);
-  const [newModelName, setNewModelName] = useState("");
-  const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URLS[llmProvider] || DEFAULT_BASE_URLS.deepseek);
-  const [compressionThresholdDraft, setCompressionThresholdDraft] = useState(useStore.getState().compressionThreshold);
-
-  useEffect(() => { setModels(normalizeModels(llmModels)); }, [llmModels]);
-
-  const [apiKey, setApiKey] = useState("");
-  const [showKey, setShowKey] = useState(false);
-  const [bingApiKey, setBingApiKey] = useState("");
-  const [showBingKey, setShowBingKey] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
-
-  useEffect(() => {
-    if (!llmProvider) setLlmProvider("deepseek");
-  }, []);
-
-  useEffect(() => {
-    invoke<{ baseUrl?: string; activeModel?: string; compressionThreshold?: number }>("load_config")
-      .then((cfg) => {
-        if (cfg.baseUrl) setBaseUrl(cfg.baseUrl);
-        if (cfg.activeModel) setActiveModel(cfg.activeModel);
-        if (cfg.compressionThreshold != null) {
-          const threshold = clampCompressionThreshold(cfg.compressionThreshold);
-          setCompressionThreshold(threshold);
-          setCompressionThresholdDraft(threshold);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!llmProvider) return;
-    invoke<string>("get_api_key", { provider: llmProvider })
-      .then((key) => { if (key) setApiKey(key); })
-      .catch(() => { setApiKey(""); });
-  }, [llmProvider]);
-
-  useEffect(() => {
-    invoke<string>("get_api_key", { provider: "bing_search" })
-      .then((key) => { if (key) setBingApiKey(key); })
-      .catch(() => {});
-  }, []);
-
-  const handleSave = async () => {
-    if (!apiKey) return;
-    const provider = inferProviderFromBaseUrl(baseUrl);
-    const cleanedModels = normalizeModels(models);
-    const cleanedActiveModel = sanitizeModelName(useStore.getState().activeModel);
-    const compressionThreshold = clampCompressionThreshold(compressionThresholdDraft);
-    try {
-      await invoke("save_config", { provider, models: cleanedModels, key: apiKey, baseUrl, activeModel: useStore.getState().activeModel, compressionThreshold });
-      if (bingApiKey) {
-        await invoke("save_api_key", { provider: "bing_search", key: bingApiKey });
-      }
-      setLlmProvider(provider);
-      setModels(cleanedModels);
-      setLlmModels(cleanedModels);
-      setCompressionThreshold(compressionThreshold);
-      if (cleanedModels.length > 0) {
-        setActiveModel(cleanedModels.some((m) => m.name === cleanedActiveModel) ? cleanedActiveModel : cleanedModels[0].name);
-      }
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      alert(`${t.model.save}: ${e}`);
-    }
-  };
+  const activeSection = useStore((s) => useState<SettingsSection>("general")[0]);
+  const [section, setSection] = useState<SettingsSection>("general");
 
   return (
     <div className="fixed inset-0 z-40 flex gap-3 bg-surface-950 p-3">
@@ -144,14 +74,14 @@ export function SettingsPanel({ onClose }: Props) {
           <div className="my-2 h-px bg-edge" />
 
           <div className="space-y-1">
-            {sectionDefs.map((section) => {
-              const Icon = section.icon;
-              const active = activeSection === section.id;
-              const label = t.settingsNav[section.id] || section.id;
+            {sectionDefs.map((s) => {
+              const Icon = s.icon;
+              const active = section === s.id;
+              const label = t.settingsNav[s.id] || s.id;
               return (
                 <button
-                  key={section.id}
-                  onClick={() => setActiveSection(section.id)}
+                  key={s.id}
+                  onClick={() => setSection(s.id)}
                   className={`w-full h-9 px-2.5 rounded-md flex items-center gap-2 text-sm transition-colors ${
                     active
                       ? "bg-surface-800 text-ink"
@@ -169,267 +99,649 @@ export function SettingsPanel({ onClose }: Props) {
 
       <main className="min-w-0 flex-1 overflow-auto">
         <div className="max-w-3xl px-4 py-2">
-            {activeSection === "general" && (
-              <GeneralSection />
-            )}
-            {activeSection === "appearance" && (
-              <AppearanceSection />
-            )}
-            {activeSection === "personalization" && (
-              <PersonalizationSection />
-            )}
-            {activeSection === "model" && (
-              <section className="pt-5">
-                <h2 className="text-xl font-semibold text-ink mb-7">{t.model.title}</h2>
-
-                <div className="space-y-7">
-                  <div>
-                    <h3 className="text-sm font-medium text-ink mb-3">{t.model.connection}</h3>
-                    <div className="space-y-3">
-                      <div className="flex items-start gap-6 min-h-9">
-                        <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.baseUrl}</label>
-                        <input
-                          value={baseUrl}
-                          onChange={(e) => setBaseUrl(e.target.value)}
-                          placeholder="https://api.example.com/v1/chat/completions"
-                          className="w-96 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
-                        />
-                      </div>
-
-                      <div className="flex items-start gap-6 min-h-9">
-                        <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.apiKey}</label>
-                        <div className="relative w-96">
-                          <input
-                            type={showKey ? "text" : "password"}
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                            placeholder={t.model.enterApiKey}
-                            className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 pr-9 outline-none focus:border-brand-500/30 transition-colors font-mono"
-                          />
-                          <button
-                            onClick={() => setShowKey(!showKey)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
-                            title={showKey ? t.model.hideKey : t.model.showKey}
-                          >
-                            {showKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 pl-[136px]">
-                        <button
-                          onClick={async () => {
-                            setTesting(true);
-                            setTestResult(null);
-                            if (!apiKey) {
-                              setTestResult({ ok: false, msg: t.model.enterApiKeyFirst });
-                              setTesting(false);
-                              return;
-                            }
-                            try {
-                              const cleanedModels = normalizeModels(models);
-                              const selectedModel = sanitizeModelName(activeModel);
-                              const testModel = cleanedModels.some((m) => m.name === selectedModel)
-                                ? selectedModel
-                                : cleanedModels[0]?.name || "";
-                              const result = await invoke<string>("test_connection", {
-                                provider: inferProviderFromBaseUrl(baseUrl),
-                                apiKey: apiKey,
-                                model: testModel,
-                                baseUrl,
-                              });
-                              setTestResult({ ok: true, msg: result });
-                            } catch (e: any) {
-                              setTestResult({ ok: false, msg: String(e) });
-                            }
-                            setTesting(false);
-                          }}
-                          disabled={testing}
-                          className="px-3 h-8 rounded-md border border-edge text-xs text-ink-secondary hover:text-ink hover:bg-surface-800 transition-colors disabled:opacity-50"
-                        >
-                          {testing ? t.model.testing : t.model.testConnection}
-                        </button>
-                        {testResult && (
-                          <span className={`text-xs ${testResult.ok ? "text-success" : "text-error"}`}>
-                            {testResult.msg}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-4">
-                    <h3 className="text-sm font-medium text-ink mb-3">{t.model.searchTitle}</h3>
-                    <div className="flex items-start gap-6 min-h-9">
-                      <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.searchApiKeyLabel}</label>
-                      <div className="relative w-96">
-                        <input
-                          type={showBingKey ? "text" : "password"}
-                          value={bingApiKey}
-                          onChange={(e) => setBingApiKey(e.target.value)}
-                          placeholder={t.model.searchApiKeyPlaceholder}
-                          className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 pr-9 outline-none focus:border-brand-500/30 transition-colors font-mono"
-                        />
-                        <button
-                          onClick={() => setShowBingKey(!showBingKey)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
-                        >
-                          {showBingKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                    </div>
-                    <p className="pl-[136px] text-[0.625rem] text-ink-muted mt-1">{t.model.searchApiKeyHint}</p>
-                  </div>
-
-                  <div>
-                    <h3 className="text-sm font-medium text-ink mb-3">{t.model.models}</h3>
-                    <div className="space-y-3">
-                      <div className="flex items-start gap-6 min-h-9">
-                        <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.defaultModel}</label>
-                        <select
-                          value={activeModel}
-                          onChange={(e) => setActiveModel(e.target.value)}
-                          className="w-96 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2.5 outline-none focus:border-brand-500/30 transition-colors"
-                        >
-                          {models.length === 0 && <option value="">{t.model.noModels}</option>}
-                          {models.map((m) => (
-                            <option key={m.name} value={m.name}>{m.alias || m.name}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div className="flex items-start gap-6">
-                        <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.availableModels}</label>
-                        <div className="w-[680px] space-y-1.5">
-                          <div className="grid grid-cols-[minmax(0,1fr)_120px_104px_100px_68px_32px] gap-2 px-0.5 text-[0.625rem] text-ink-muted">
-                            <span>{t.model.modelId}</span>
-                            <span>{t.model.displayName}</span>
-                            <span>{t.model.reasoningEffort}</span>
-                            <span>{t.model.contextWindow}</span>
-                            <span>{t.model.maxOutput}</span>
-                            <span />
-                          </div>
-                          {models.map((m, i) => (
-                            <div key={`${m.name}-${i}`} className="grid grid-cols-[minmax(0,1fr)_120px_104px_100px_68px_32px] gap-2">
-                              <input
-                                value={m.name}
-                                onChange={(e) => {
-                                  const next: ModelConfig[] = [...models];
-                                  next[i] = { ...next[i], name: sanitizeModelName(e.target.value) };
-                                  setModels(next);
-                                }}
-                                placeholder={t.model.modelId}
-                                className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
-                              />
-                              <input
-                                value={m.alias || ""}
-                                onChange={(e) => {
-                                  const next: ModelConfig[] = [...models];
-                                  next[i] = { ...next[i], alias: e.target.value };
-                                  setModels(next);
-                                }}
-                                placeholder={t.model.displayName}
-                                className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors"
-                              />
-                              <select
-                                value={m.reasoningEffort || "default"}
-                                onChange={(e) => {
-                                  const next: ModelConfig[] = [...models];
-                                  next[i] = { ...next[i], reasoningEffort: e.target.value as ModelConfig["reasoningEffort"] };
-                                  setModels(next);
-                                }}
-                                className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors"
-                              >
-                                <option value="default">{t.model.reasoningDefault}</option>
-                                <option value="low">{t.model.reasoningLow}</option>
-                                <option value="medium">{t.model.reasoningMedium}</option>
-                                <option value="high">{t.model.reasoningHigh}</option>
-                              </select>
-                              <input
-                                value={m.contextWindow || ""}
-                                onChange={(e) => {
-                                  const next: ModelConfig[] = [...models];
-                                  const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
-                                  next[i] = { ...next[i], contextWindow: v && !isNaN(v) ? v : undefined };
-                                  setModels(next);
-                                }}
-                                placeholder="128000"
-                                className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
-                              />
-                              <input
-                                value={m.maxTokens || ""}
-                                onChange={(e) => {
-                                  const next: ModelConfig[] = [...models];
-                                  const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
-                                  next[i] = { ...next[i], maxTokens: v && !isNaN(v) ? v : undefined };
-                                  setModels(next);
-                                }}
-                                placeholder="64000"
-                                className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
-                              />
-                              <button
-                                onClick={() => setModels(models.filter((_, j) => j !== i))}
-                                className="h-8 w-8 flex items-center justify-center rounded-md text-ink-muted hover:text-error hover:bg-surface-900 transition-colors"
-                                title={t.model.deleteModel}
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                          <div className="flex gap-2">
-                            <input
-                              value={newModelName}
-                              onChange={(e) => setNewModelName(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" && newModelName.trim()) {
-                                  setModels([...models, { name: sanitizeModelName(newModelName), reasoningEffort: "default" }]);
-                                  setNewModelName("");
-                                }
-                              }}
-                              placeholder={t.model.addModelPlaceholder}
-                              className="w-72 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
-                            />
-                            <button
-                              onClick={() => {
-                                if (newModelName.trim()) {
-                                  setModels([...models, { name: sanitizeModelName(newModelName), reasoningEffort: "default" }]);
-                                  setNewModelName("");
-                                }
-                              }}
-                              className="w-14 h-8 text-xs text-ink-muted hover:text-ink bg-surface-900 border border-edge rounded-md transition-colors"
-                            >
-                              {t.model.add}
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <CompressionThresholdSetting
-                    value={compressionThresholdDraft}
-                    onChange={setCompressionThresholdDraft}
-                  />
-
-                  <div className="flex items-center gap-2 pl-[136px]">
-                    <button
-                      onClick={handleSave}
-                      className="px-4 h-8 rounded-md bg-brand-600 text-white text-xs font-medium hover:bg-brand-500 transition-colors"
-                    >
-                      {saved ? t.model.saved : t.model.save}
-                    </button>
-                  </div>
-                  <p className="pl-[136px] text-[0.625rem] text-ink-muted">
-                    {t.model.apiKeyStorageNote}
-                  </p>
-                </div>
-              </section>
-            )}
+            {section === "general" && <GeneralSection />}
+            {section === "appearance" && <AppearanceSection />}
+            {section === "personalization" && <PersonalizationSection />}
+            {section === "model" && <ModelSection />}
         </div>
       </main>
     </div>
   );
 }
+
+// ── Model Section ────────────────────────────────────
+
+function ModelSection() {
+  const { t } = useT();
+  const storeProviders = useStore((s) => s.providers);
+  const setStoreProviders = useStore((s) => s.setProviders);
+  const activeProviderId = useStore((s) => s.activeProviderId);
+  const setActiveProviderId = useStore((s) => s.setActiveProviderId);
+  const llmModels = useStore((s) => s.llmModels);
+  const setLlmModels = useStore((s) => s.setLlmModels);
+  const activeModel = useStore((s) => s.activeModel);
+  const setActiveModel = useStore((s) => s.setActiveModel);
+  const setCompressionThreshold = useStore((s) => s.setCompressionThreshold);
+
+  // Local copies for editing
+  const [providers, setProviders] = useState<ProviderConfig[]>(storeProviders);
+  const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+  const [models, setModels] = useState<ModelConfig[]>(llmModels);
+  const [compressionThresholdDraft, setCompressionThresholdDraft] = useState(useStore.getState().compressionThreshold);
+
+  // Currently editing provider (defaults to active, or first)
+  const [editingProviderId, setEditingProviderId] = useState<string>(
+    activeProviderId || storeProviders[0]?.id || ""
+  );
+
+  // Sync from store on mount
+  useEffect(() => {
+    if (storeProviders.length > 0) setProviders(storeProviders);
+  }, [storeProviders]);
+  useEffect(() => { setModels(normalizeModels(llmModels)); }, [llmModels]);
+
+  // Load persisted config
+  useEffect(() => {
+    invoke<{ providers?: string; models?: Array<ModelConfig>; activeProviderId?: string; activeModel?: string; compressionThreshold?: number }>("load_config")
+      .then((cfg) => {
+        if (cfg.providers) {
+          try {
+            const parsed: ProviderConfig[] = JSON.parse(cfg.providers);
+            if (parsed.length > 0) {
+              setProviders(parsed);
+              setStoreProviders(parsed);
+              if (!editingProviderId || !parsed.find((p) => p.id === editingProviderId)) {
+                const target = parsed.find((p) => p.id === cfg.activeProviderId) || parsed[0];
+                setEditingProviderId(target.id);
+                setActiveProviderId(target.id);
+              }
+            }
+          } catch {}
+        }
+        if (cfg.models && Array.isArray(cfg.models)) {
+          const normalized = normalizeModels(cfg.models);
+          setModels(normalized);
+          setLlmModels(normalized);
+        }
+        if (cfg.activeModel) setActiveModel(cfg.activeModel);
+        if (cfg.compressionThreshold != null) {
+          const threshold = clampCompressionThreshold(cfg.compressionThreshold);
+          setCompressionThreshold(threshold);
+          setCompressionThresholdDraft(threshold);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Load API keys for all providers
+  useEffect(() => {
+    for (const p of providers) {
+      if (!p.id) continue;
+      invoke<string>("get_api_key", { provider: p.id })
+        .then((key) => setApiKeys((prev) => ({ ...prev, [p.id]: key })))
+        .catch(() => {});
+    }
+  }, [providers]);
+
+  // Bing search key
+  const [bingApiKey, setBingApiKey] = useState("");
+  const [showBingKey, setShowBingKey] = useState(false);
+  useEffect(() => {
+    invoke<string>("get_api_key", { provider: "bing_search" })
+      .then((key) => { if (key) setBingApiKey(key); })
+      .catch(() => {});
+  }, []);
+
+  // Show/hide key toggles
+  const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
+
+  const currentProvider = providers.find((p) => p.id === editingProviderId);
+  const currentModels = models.filter((m) => m.providerId === editingProviderId);
+  const currentApiKey = apiKeys[editingProviderId] || "";
+
+  // New model input
+  const [newModelName, setNewModelName] = useState("");
+
+  // Fetch models state
+  const [fetching, setFetching] = useState(false);
+  const [fetchResult, setFetchResult] = useState<{ count: number } | null>(null);
+  const [fetchError, setFetchError] = useState("");
+
+  // Test connection
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+
+  // Saved indicator
+  const [saved, setSaved] = useState(false);
+
+  // Add provider form
+  const [addingProvider, setAddingProvider] = useState(false);
+  const [newProviderForm, setNewProviderForm] = useState<{
+    name: string;
+    baseUrl: string;
+    thinkingStyle: ProviderConfig["thinkingStyle"];
+  }>({ name: "", baseUrl: "", thinkingStyle: "none" });
+
+  // ── Actions ──
+
+  const handleSelectPreset = (presetIdx: number) => {
+    const preset = PRESET_PROVIDERS[presetIdx];
+    const id = newProviderId();
+    const newProvider: ProviderConfig = { ...preset, id };
+    const updated = [...providers, newProvider];
+    setProviders(updated);
+    setEditingProviderId(id);
+    setAddingProvider(false);
+  };
+
+  const handleAddCustomProvider = () => {
+    if (!newProviderForm.name.trim() || !newProviderForm.baseUrl.trim()) return;
+    const newProvider: ProviderConfig = {
+      id: newProviderId(),
+      name: newProviderForm.name.trim(),
+      baseUrl: newProviderForm.baseUrl.trim(),
+      thinkingStyle: newProviderForm.thinkingStyle,
+    };
+    const updated = [...providers, newProvider];
+    setProviders(updated);
+    setEditingProviderId(newProvider.id);
+    setAddingProvider(false);
+    setNewProviderForm({ name: "", baseUrl: "", thinkingStyle: "none" });
+  };
+
+  const handleRemoveProvider = (id: string) => {
+    if (providers.length <= 1) return;
+    const updated = providers.filter((p) => p.id !== id);
+    setProviders(updated);
+    // Remove models belonging to this provider
+    setModels((prev) => prev.filter((m) => m.providerId !== id));
+    if (editingProviderId === id) {
+      setEditingProviderId(updated[0]?.id || "");
+    }
+  };
+
+  const handleUpdateProvider = (id: string, patch: Partial<ProviderConfig>) => {
+    setProviders((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  };
+
+  const handleFetchModels = async () => {
+    if (!currentProvider) return;
+    setFetching(true);
+    setFetchResult(null);
+    setFetchError("");
+    try {
+      const key = apiKeys[currentProvider.id] || "";
+      const fetched: string[] = await invoke("fetch_models", {
+        baseUrl: currentProvider.baseUrl,
+        apiKey: key,
+      });
+      // Deduplicate against ALL models (across providers), not just current
+      const existingNames = new Set(models.map((m) => m.name));
+      const newOnes = fetched
+        .filter((name) => !existingNames.has(name))
+        .map((name) => ({
+          name: sanitizeModelName(name),
+          providerId: currentProvider.id,
+          reasoningEffort: "disabled" as const,
+        }));
+      setModels((prev) => [...prev, ...newOnes]);
+      setFetchResult({ count: fetched.length });
+    } catch (e: any) {
+      setFetchError(String(e));
+    }
+    setFetching(false);
+  };
+
+  const handleTestConnection = async () => {
+    setTesting(true);
+    setTestResult(null);
+    if (!currentApiKey) {
+      setTestResult({ ok: false, msg: t.model.enterApiKeyFirst });
+      setTesting(false);
+      return;
+    }
+    try {
+      const cleanedModels = normalizeModels(currentModels);
+      const testModel = cleanedModels[0]?.name || currentProvider?.name || "";
+      const result = await invoke<string>("test_connection", {
+        provider: currentProvider?.thinkingStyle === "anthropic" ? "anthropic" : "openai",
+        apiKey: currentApiKey,
+        model: testModel,
+        baseUrl: currentProvider?.baseUrl,
+      });
+      setTestResult({ ok: true, msg: result });
+    } catch (e: any) {
+      setTestResult({ ok: false, msg: String(e) });
+    }
+    setTesting(false);
+  };
+
+  const handleSave = async () => {
+    // Persist API keys per provider
+    for (const [providerId, key] of Object.entries(apiKeys)) {
+      if (key) {
+        try { await invoke("save_api_key", { provider: providerId, key }); } catch {}
+      }
+    }
+    if (bingApiKey) {
+      try { await invoke("save_api_key", { provider: "bing_search", key: bingApiKey }); } catch {}
+    }
+
+    const cleanedModels = normalizeModels(models);
+    const cleanedActiveModel = sanitizeModelName(activeModel);
+    const compressionThreshold = clampCompressionThreshold(compressionThresholdDraft);
+    const activePid = editingProviderId || providers[0]?.id || "";
+
+    try {
+      await invoke("save_config", {
+        providers: JSON.stringify(providers),
+        models: cleanedModels,
+        providerId: activePid,
+        key: apiKeys[activePid] || "",
+        baseUrl: currentProvider?.baseUrl || null,
+        activeModel: cleanedActiveModel,
+        compressionThreshold,
+      });
+
+      // Sync to store
+      setStoreProviders(providers);
+      setLlmModels(cleanedModels);
+      setActiveProviderId(activePid);
+      setCompressionThreshold(compressionThreshold);
+      if (cleanedModels.length > 0) {
+        const currentProviderModels = cleanedModels.filter((m) => m.providerId === activePid);
+        setActiveModel(
+          currentProviderModels.some((m) => m.name === cleanedActiveModel)
+            ? cleanedActiveModel
+            : currentProviderModels[0]?.name || cleanedModels[0].name
+        );
+      }
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      alert(`${t.model.save}: ${e}`);
+    }
+  };
+
+  return (
+    <section className="pt-5">
+      <h2 className="text-xl font-semibold text-ink mb-7">{t.model.title}</h2>
+
+      <div className="space-y-7">
+        {/* Provider Selection */}
+        <div>
+          <h3 className="text-sm font-medium text-ink mb-3">{t.model.providers}</h3>
+
+          <div className="flex items-start gap-6 min-h-9">
+            <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.provider}</label>
+            <div className="w-96 space-y-3">
+              <div className="flex items-center gap-2">
+                <select
+                  value={editingProviderId}
+                  onChange={(e) => setEditingProviderId(e.target.value)}
+                  className="flex-1 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2.5 outline-none focus:border-brand-500/30 transition-colors"
+                >
+                  {providers.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setAddingProvider(true)}
+                  className="h-8 w-8 flex items-center justify-center rounded-md border border-edge text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
+                  title={t.model.addProvider}
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+                {providers.length > 1 && (
+                  <button
+                    onClick={() => handleRemoveProvider(editingProviderId)}
+                    className="h-8 w-8 flex items-center justify-center rounded-md border border-edge text-ink-muted hover:text-error hover:bg-surface-900 transition-colors"
+                    title={t.model.deleteModel}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Add Provider Panel */}
+              {addingProvider && (
+                <div className="rounded-lg border border-edge bg-surface-900/50 p-3 space-y-2">
+                  <p className="text-xs font-medium text-ink">{t.model.addProvider}</p>
+                  {/* Presets */}
+                  <div className="flex gap-2">
+                    {PRESET_PROVIDERS.map((preset, idx) => (
+                      <button
+                        key={preset.name}
+                        onClick={() => handleSelectPreset(idx)}
+                        className="px-3 py-1.5 text-xs rounded-md border border-edge text-ink-secondary hover:text-ink hover:bg-surface-800 transition-colors"
+                      >
+                        {preset.name}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => {
+                        setAddingProvider(false);
+                        setNewProviderForm({ name: "", baseUrl: "", thinkingStyle: "none" });
+                      }}
+                      className="px-3 py-1.5 text-xs rounded-md text-ink-muted hover:text-ink transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  {/* Custom provider form */}
+                  <div className="space-y-2 pt-1">
+                    <input
+                      value={newProviderForm.name}
+                      onChange={(e) => setNewProviderForm((f) => ({ ...f, name: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAddCustomProvider(); }}
+                      placeholder={t.model.providerName}
+                      className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors"
+                    />
+                    <input
+                      value={newProviderForm.baseUrl}
+                      onChange={(e) => setNewProviderForm((f) => ({ ...f, baseUrl: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Enter") handleAddCustomProvider(); }}
+                      placeholder={t.model.providerUrl}
+                      className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
+                    />
+                    <select
+                      value={newProviderForm.thinkingStyle}
+                      onChange={(e) => setNewProviderForm((f) => ({ ...f, thinkingStyle: e.target.value as ProviderConfig["thinkingStyle"] }))}
+                      className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors"
+                    >
+                      <option value="none">{t.model.customProvider}</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="anthropic">Anthropic</option>
+                    </select>
+                    <button
+                      onClick={handleAddCustomProvider}
+                      disabled={!newProviderForm.name.trim() || !newProviderForm.baseUrl.trim()}
+                      className="px-3 py-1.5 h-8 text-xs rounded-md bg-brand-600 text-white font-medium hover:bg-brand-500 transition-colors disabled:opacity-50"
+                    >
+                      {t.model.add}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Provider Config */}
+        {currentProvider && (
+          <>
+            <div>
+              <h3 className="text-sm font-medium text-ink mb-3">{t.model.connection}</h3>
+              <div className="space-y-3">
+                <div className="flex items-start gap-6 min-h-9">
+                  <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.providerName}</label>
+                  <input
+                    value={currentProvider.name}
+                    onChange={(e) => handleUpdateProvider(currentProvider.id, { name: e.target.value })}
+                    className="w-96 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors"
+                  />
+                </div>
+
+                <div className="flex items-start gap-6 min-h-9">
+                  <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.baseUrl}</label>
+                  <input
+                    value={currentProvider.baseUrl}
+                    onChange={(e) => handleUpdateProvider(currentProvider.id, { baseUrl: e.target.value })}
+                    placeholder="https://api.example.com/v1/chat/completions"
+                    className="w-96 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
+                  />
+                </div>
+
+                <div className="flex items-start gap-6 min-h-9">
+                  <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.thinkingStyle}</label>
+                  <div className="w-96 space-y-1.5">
+                    <select
+                      value={currentProvider.thinkingStyle}
+                      onChange={(e) => handleUpdateProvider(currentProvider.id, { thinkingStyle: e.target.value as ProviderConfig["thinkingStyle"] })}
+                      className="w-40 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2.5 outline-none focus:border-brand-500/30 transition-colors"
+                    >
+                      <option value="none">{t.model.customProvider}</option>
+                      <option value="deepseek">DeepSeek</option>
+                      <option value="anthropic">Anthropic</option>
+                    </select>
+                    <p className="text-[0.625rem] text-ink-muted">{t.model.thinkingStyleHint}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-6 min-h-9">
+                  <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.apiKey}</label>
+                  <div className="relative w-96">
+                    <input
+                      type={showKeys[currentProvider.id] ? "text" : "password"}
+                      value={currentApiKey}
+                      onChange={(e) => setApiKeys((prev) => ({ ...prev, [currentProvider.id]: e.target.value }))}
+                      placeholder={t.model.enterApiKey}
+                      className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 pr-9 outline-none focus:border-brand-500/30 transition-colors font-mono"
+                    />
+                    <button
+                      onClick={() => setShowKeys((prev) => ({ ...prev, [currentProvider.id]: !prev[currentProvider.id] }))}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
+                    >
+                      {showKeys[currentProvider.id] ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pl-[136px]">
+                  <button
+                    onClick={handleFetchModels}
+                    disabled={fetching}
+                    className="px-3 h-8 rounded-md border border-edge text-xs text-ink-secondary hover:text-ink hover:bg-surface-800 transition-colors disabled:opacity-50"
+                  >
+                    {fetching ? t.model.fetchingModels : t.model.fetchModels}
+                  </button>
+                  <button
+                    onClick={handleTestConnection}
+                    disabled={testing}
+                    className="px-3 h-8 rounded-md border border-edge text-xs text-ink-secondary hover:text-ink hover:bg-surface-800 transition-colors disabled:opacity-50"
+                  >
+                    {testing ? t.model.testing : t.model.testConnection}
+                  </button>
+                  {fetchResult && (
+                    <span className="text-xs text-success">{t.model.fetchSuccess.replace("{n}", String(fetchResult.count))}</span>
+                  )}
+                  {fetchError && (
+                    <span className="text-xs text-error">{t.model.fetchFailed}: {fetchError}</span>
+                  )}
+                  {testResult && (
+                    <span className={`text-xs ${testResult.ok ? "text-success" : "text-error"}`}>
+                      {testResult.msg}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Models */}
+            <div>
+              <h3 className="text-sm font-medium text-ink mb-3">{t.model.models}</h3>
+              <div className="space-y-3">
+                <div className="flex items-start gap-6 min-h-9">
+                  <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.defaultModel}</label>
+                  <select
+                    value={activeModel}
+                    onChange={(e) => setActiveModel(e.target.value)}
+                    className="w-96 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2.5 outline-none focus:border-brand-500/30 transition-colors"
+                  >
+                    {currentModels.length === 0 && <option value="">{t.model.noModels}</option>}
+                    {currentModels.map((m) => (
+                      <option key={m.name} value={m.name}>{m.alias || m.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-start gap-6">
+                  <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.availableModels}</label>
+                  <div className="w-[680px] space-y-1.5">
+                    <div className="grid grid-cols-[minmax(0,1fr)_120px_104px_100px_68px_32px] gap-2 px-0.5 text-[0.625rem] text-ink-muted">
+                      <span>{t.model.modelId}</span>
+                      <span>{t.model.displayName}</span>
+                      <span>{t.model.reasoningEffort}</span>
+                      <span>{t.model.contextWindow}</span>
+                      <span>{t.model.maxOutput}</span>
+                      <span />
+                    </div>
+                    {currentModels.map((m, i) => {
+                      const globalIdx = models.findIndex((gm) => gm.name === m.name && gm.providerId === m.providerId);
+                      const thinkingEnabled = currentProvider.thinkingStyle !== "none";
+                      return (
+                        <div key={`${m.name}-${i}`} className="grid grid-cols-[minmax(0,1fr)_120px_104px_100px_68px_32px] gap-2">
+                          <input
+                            value={m.name}
+                            onChange={(e) => {
+                              const next = [...models];
+                              next[globalIdx] = { ...next[globalIdx], name: sanitizeModelName(e.target.value) };
+                              setModels(next);
+                            }}
+                            placeholder={t.model.modelId}
+                            className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
+                          />
+                          <input
+                            value={m.alias || ""}
+                            onChange={(e) => {
+                              const next = [...models];
+                              next[globalIdx] = { ...next[globalIdx], alias: e.target.value };
+                              setModels(next);
+                            }}
+                            placeholder={t.model.displayName}
+                            className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors"
+                          />
+                          <select
+                            value={thinkingEnabled ? (m.reasoningEffort || "disabled") : "disabled"}
+                            disabled={!thinkingEnabled}
+                            onChange={(e) => {
+                              const next = [...models];
+                              next[globalIdx] = { ...next[globalIdx], reasoningEffort: e.target.value as ModelConfig["reasoningEffort"] };
+                              setModels(next);
+                            }}
+                            className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors disabled:opacity-40"
+                          >
+                            <option value="disabled">{t.model.reasoningOff}</option>
+                            {thinkingEnabled && (
+                              <>
+                                <option value="low">{t.model.reasoningLow}</option>
+                                <option value="medium">{t.model.reasoningMedium}</option>
+                                <option value="high">{t.model.reasoningHigh}</option>
+                                <option value="max">{t.model.reasoningMax}</option>
+                              </>
+                            )}
+                          </select>
+                          <input
+                            value={m.contextWindow || ""}
+                            onChange={(e) => {
+                              const next = [...models];
+                              const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
+                              next[globalIdx] = { ...next[globalIdx], contextWindow: v && !isNaN(v) ? v : undefined };
+                              setModels(next);
+                            }}
+                            placeholder="128000"
+                            className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
+                          />
+                          <input
+                            value={m.maxTokens || ""}
+                            onChange={(e) => {
+                              const next = [...models];
+                              const v = e.target.value ? parseInt(e.target.value, 10) : undefined;
+                              next[globalIdx] = { ...next[globalIdx], maxTokens: v && !isNaN(v) ? v : undefined };
+                              setModels(next);
+                            }}
+                            placeholder="64000"
+                            className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
+                          />
+                          <button
+                            onClick={() => setModels(models.filter((_, j) => j !== globalIdx))}
+                            className="h-8 w-8 flex items-center justify-center rounded-md text-ink-muted hover:text-error hover:bg-surface-900 transition-colors"
+                            title={t.model.deleteModel}
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                    <div className="flex gap-2">
+                      <input
+                        value={newModelName}
+                        onChange={(e) => setNewModelName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && newModelName.trim() && currentProvider) {
+                            setModels([...models, { name: sanitizeModelName(newModelName), providerId: currentProvider.id, reasoningEffort: "disabled" }]);
+                            setNewModelName("");
+                          }
+                        }}
+                        placeholder={t.model.addModelPlaceholder}
+                        className="w-72 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
+                      />
+                      <button
+                        onClick={() => {
+                          if (newModelName.trim() && currentProvider) {
+                            setModels([...models, { name: sanitizeModelName(newModelName), providerId: currentProvider.id, reasoningEffort: "disabled" }]);
+                            setNewModelName("");
+                          }
+                        }}
+                        className="w-14 h-8 text-xs text-ink-muted hover:text-ink bg-surface-900 border border-edge rounded-md transition-colors"
+                      >
+                        {t.model.add}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Bing Search Key (independent of provider) */}
+        <div>
+          <h3 className="text-sm font-medium text-ink mb-3">{t.model.searchTitle}</h3>
+          <div className="flex items-start gap-6 min-h-9">
+            <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.searchApiKeyLabel}</label>
+            <div className="relative w-96">
+              <input
+                type={showBingKey ? "text" : "password"}
+                value={bingApiKey}
+                onChange={(e) => setBingApiKey(e.target.value)}
+                placeholder={t.model.searchApiKeyPlaceholder}
+                className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 pr-9 outline-none focus:border-brand-500/30 transition-colors font-mono"
+              />
+              <button
+                onClick={() => setShowBingKey(!showBingKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
+              >
+                {showBingKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
+          </div>
+          <p className="pl-[136px] text-[0.625rem] text-ink-muted mt-1">{t.model.searchApiKeyHint}</p>
+        </div>
+
+        <CompressionThresholdSetting
+          value={compressionThresholdDraft}
+          onChange={setCompressionThresholdDraft}
+        />
+
+        <div className="flex items-center gap-2 pl-[136px]">
+          <button
+            onClick={handleSave}
+            className="px-4 h-8 rounded-md bg-brand-600 text-white text-xs font-medium hover:bg-brand-500 transition-colors"
+          >
+            {saved ? t.model.saved : t.model.save}
+          </button>
+        </div>
+        <p className="pl-[136px] text-[0.625rem] text-ink-muted">
+          {t.model.apiKeyStorageNote}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+// ── General Section ──────────────────────────────────
 
 function GeneralSection() {
   const { t } = useT();
@@ -443,7 +755,6 @@ function GeneralSection() {
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState("");
 
-  // Avatar & Username
   const [avatar, setAvatar] = useState("");
   const [username, setUsername] = useState("");
   const [usernameSaved, setUsernameSaved] = useState(false);
@@ -460,7 +771,6 @@ function GeneralSection() {
     const reader = new FileReader();
     reader.onload = async () => {
       const dataUrl = reader.result as string;
-      // Resize to 128x128
       const resized = await resizeImage(dataUrl, 128);
       setAvatar(resized);
       setStoreAvatar(resized);
@@ -510,7 +820,6 @@ function GeneralSection() {
     <section className="pt-5">
       <h2 className="text-xl font-semibold text-ink mb-7">{t.general.title}</h2>
       <div className="space-y-7">
-        {/* Profile */}
         <div>
           <h3 className="text-sm font-medium text-ink mb-3">{t.general.profile}</h3>
           <div className="flex items-start gap-6">
@@ -583,7 +892,6 @@ function GeneralSection() {
           </div>
         </div>
 
-        {/* Update Check */}
         <div>
           <h3 className="text-sm font-medium text-ink mb-3">{t.general.updates}</h3>
           <div className="flex items-start gap-6">
@@ -628,7 +936,6 @@ function GeneralSection() {
           </div>
         </div>
 
-        {/* About */}
         <div>
           <h3 className="text-sm font-medium text-ink mb-3">{t.general.about}</h3>
           <div className="bg-surface-800/50 border border-surface-700/50 rounded-xl p-5 max-w-md">
@@ -667,6 +974,8 @@ function GeneralSection() {
     </section>
   );
 }
+
+// ── Personalization Section ──────────────────────────
 
 function PersonalizationSection() {
   const { t } = useT();
@@ -733,8 +1042,6 @@ function PersonalizationSection() {
 
 function WorldGuidanceSection() {
   const { t } = useT();
-  // Discover ALL worlds from disk, not from the ephemeral store.
-  // This ensures guidance from all worlds (including ones not currently open) is visible.
   const [diskWorlds, setDiskWorlds] = useState<{ name: string; path: string }[]>([]);
   const [prompts, setPrompts] = useState<Record<string, string>>({});
   const [saved, setSaved] = useState<Record<string, boolean>>({});
@@ -864,6 +1171,8 @@ function WorldGuidanceSection() {
   );
 }
 
+// ── Compression Threshold ────────────────────────────
+
 function CompressionThresholdSetting({ value, onChange }: { value: number; onChange: (value: number) => void }) {
   const { t } = useT();
 
@@ -896,6 +1205,8 @@ function CompressionThresholdSetting({ value, onChange }: { value: number; onCha
   );
 }
 
+// ── Appearance Section ───────────────────────────────
+
 function AppearanceSection() {
   const { t } = useT();
   const theme = useStore((s) => s.theme);
@@ -913,7 +1224,6 @@ function AppearanceSection() {
     <section className="pt-5">
       <h2 className="text-xl font-semibold text-ink mb-7">{t.appearance.title}</h2>
       <div className="space-y-7">
-        {/* Theme */}
         <div>
           <h3 className="text-sm font-medium text-ink mb-3">{t.appearance.theme}</h3>
           <div className="flex items-start gap-6">
@@ -939,7 +1249,6 @@ function AppearanceSection() {
           </div>
         </div>
 
-        {/* Font Size */}
         <div>
           <h3 className="text-sm font-medium text-ink mb-3">{t.appearance.fontSize}</h3>
           <div className="flex items-start gap-6">
@@ -976,7 +1285,6 @@ function resizeImage(dataUrl: string, size: number): Promise<string> {
       canvas.height = size;
       const ctx = canvas.getContext("2d");
       if (!ctx) { resolve(dataUrl); return; }
-      // Crop center square
       const minDim = Math.min(img.width, img.height);
       const sx = (img.width - minDim) / 2;
       const sy = (img.height - minDim) / 2;

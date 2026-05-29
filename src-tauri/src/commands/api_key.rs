@@ -46,14 +46,19 @@ fn save_store(map: &HashMap<String, String>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_config(provider: String, models: Vec<serde_json::Value>, key: String, base_url: Option<String>, active_model: Option<String>, compression_threshold: Option<f64>) -> Result<(), String> {
+pub fn save_config(providers: String, models: Vec<serde_json::Value>, provider_id: String, key: String, base_url: Option<String>, active_model: Option<String>, compression_threshold: Option<f64>) -> Result<(), String> {
     let mut map = load_store();
-    let prov = provider.clone();
-    map.insert("provider".to_string(), provider);
+    map.insert("providers".to_string(), providers);
     map.insert("models".to_string(), serde_json::to_string(&models).unwrap_or_default());
-    map.insert(prov.clone(), key);
+    map.insert("active_provider_id".to_string(), provider_id.clone());
+    // API Key stored by provider ID
+    if !key.is_empty() {
+        map.insert(provider_id.clone(), key);
+    }
+    // Backward compat: also store under old provider key
+    map.insert("provider".to_string(), provider_id.clone());
     if let Some(url) = base_url {
-        map.insert(format!("{}_base_url", prov), url);
+        map.insert(format!("{}_base_url", provider_id), url);
     }
     if let Some(am) = active_model {
         map.insert("active_model".to_string(), am);
@@ -67,9 +72,16 @@ pub fn save_config(provider: String, models: Vec<serde_json::Value>, key: String
 #[tauri::command]
 pub fn load_config() -> Result<serde_json::Value, String> {
     let map = load_store();
+    let providers_str = map.get("providers").cloned().unwrap_or_default();
     let models_str = map.get("models").cloned().unwrap_or_default();
     let models: Vec<serde_json::Value> = serde_json::from_str(&models_str).unwrap_or_default();
-    let provider = map.get("provider").cloned().unwrap_or_default();
+    let active_provider_id = map.get("active_provider_id").cloned().unwrap_or_default();
+    // Backward compat: fall back to old "provider" key
+    let provider = if active_provider_id.is_empty() {
+        map.get("provider").cloned().unwrap_or_default()
+    } else {
+        active_provider_id.clone()
+    };
     let base_url = if provider.is_empty() {
         String::new()
     } else {
@@ -80,7 +92,9 @@ pub fn load_config() -> Result<serde_json::Value, String> {
         .get("compression_threshold")
         .and_then(|v| v.parse::<f64>().ok());
     Ok(serde_json::json!({
+        "providers": providers_str,
         "provider": provider,
+        "activeProviderId": active_provider_id,
         "models": models,
         "baseUrl": base_url,
         "activeModel": active_model,
@@ -93,6 +107,46 @@ pub fn save_active_model(active_model: String) -> Result<(), String> {
     let mut map = load_store();
     map.insert("active_model".to_string(), active_model);
     save_store(&map)
+}
+
+/// Proxy GET {base_url}/models through Rust to avoid CORS issues.
+/// Strips /chat/completions suffix and appends /models.
+#[tauri::command]
+pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
+    // Strip trailing path segments like /chat/completions or /v1/chat/completions
+    let base = base_url
+        .trim_end_matches('/')
+        .replace("/chat/completions", "")
+        .replace("/messages", "");  // Anthropic format
+    let models_url = format!("{}/models", base);
+
+    let client = reqwest::Client::new();
+    let mut req = client.get(&models_url);
+    if !api_key.is_empty() {
+        req = req.header("Authorization", format!("Bearer {}", api_key));
+    }
+
+    let resp = req.send().await.map_err(|e| format!("请求失败: {}", e))?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+
+    let json: serde_json::Value = resp.json().await.map_err(|e| format!("解析失败: {}", e))?;
+
+    // OpenAI-compatible format: { "object": "list", "data": [{ "id": "model-name", ... }, ...] }
+    let models: Vec<String> = json["data"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m["id"].as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if models.is_empty() {
+        return Err("未发现模型 — 响应格式可能不兼容".into());
+    }
+    Ok(models)
 }
 
 #[tauri::command]

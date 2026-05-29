@@ -1004,6 +1004,8 @@ export async function runAgentLoop(
   convId?: string,
   maxTokensOverride?: number,
   abortRef?: { current: boolean },
+  thinkingStyle?: string,
+  baseUrl?: string,
 ) {
   const MAX_RECOVERY = 3;
   let turns = 0;
@@ -1239,6 +1241,8 @@ export async function runAgentLoop(
           maxTokens,
           reasoningEffort: reasoningEffort || null,
           conversationId: convId || null,
+          thinkingStyle: thinkingStyle || null,
+          baseUrl: baseUrl || null,
         });
 
         // Wait for stream to complete, with a safety timeout.

@@ -1076,6 +1076,7 @@ export async function runAgentLoop(
             callbacks.onToolUse(event.id || "", event.name || "", (event.input || {}) as Record<string, unknown>);
             break;
           case "usage":
+            console.log("[agent-loop] usage event:", event.input_tokens, event.output_tokens);
             // Track billed tokens for cost estimation
             useStore.getState().addTokens(event.input_tokens ?? 0, event.output_tokens ?? 0, convId);
             // Hybrid context count: anchor API's real token count, add rough

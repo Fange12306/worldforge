@@ -51,7 +51,10 @@ pub async fn test_connection(
         .filter(|url| !url.trim().is_empty())
         .unwrap_or(default_api_url);
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
     if provider == "anthropic" {
         let body = serde_json::json!({
@@ -113,7 +116,10 @@ pub async fn single_chat(
     let api_key = crate::commands::api_key::get_api_key(provider.clone())
         .map_err(|e| format!("未配置 API Key: {}", e))?;
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
     let default_api_url = match provider.as_str() {
         "anthropic" => "https://api.anthropic.com/v1/messages",
         "openai" => "https://api.openai.com/v1/chat/completions",
@@ -264,7 +270,10 @@ async fn stream_anthropic(
     reasoning_effort: Option<String>,
     conversation_id: Option<String>,
 ) -> Result<(), String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
     // Convert tools to Anthropic format
     let anthropic_tools: Vec<Value> = tools
@@ -450,7 +459,10 @@ async fn stream_openai_compatible(
     reasoning_effort: Option<String>,
     conversation_id: Option<String>,
 ) -> Result<(), String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
     let mut msgs = Vec::new();
     if !system_prompt.is_empty() {
@@ -508,10 +520,14 @@ async fn stream_openai_compatible(
         }
     }
 
-    let response = client
+    let key_trimmed = api_key.trim().to_string();
+    let mut req = client
         .post(api_url)
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("Content-Type", "application/json")
+        .header("Content-Type", "application/json");
+    if !key_trimmed.is_empty() {
+        req = req.header("Authorization", format!("Bearer {}", key_trimmed));
+    }
+    let response = req
         .json(&body)
         .send()
         .await
@@ -526,6 +542,10 @@ async fn stream_openai_compatible(
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut tool_call_buffers: std::collections::HashMap<u64, (String, String, String)> = std::collections::HashMap::new();
+    let mut stream_end_reason: Option<String> = None;
+    let mut has_usage = false;
+    let mut usage_input_tokens: u64 = 0;
+    let mut usage_output_tokens: u64 = 0;
 
     'stream_loop: while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("流读取错误: {}", e))?;
@@ -538,13 +558,20 @@ async fn stream_openai_compatible(
             if line.is_empty() { continue; }
 
             if let Some(data) = line.strip_prefix("data: ") {
-                if data == "[DONE]" { continue; }
+                // [DONE] with pending finish → stop reading more chunks
+                if data == "[DONE]" {
+                    if stream_end_reason.is_some() {
+                        break 'stream_loop;
+                    }
+                    continue;
+                }
                 if let Ok(event) = serde_json::from_str::<Value>(data) {
                     // Extract usage if present (final chunk with stream_options.include_usage)
+                    // Some servers (LM Studio) send usage in a separate chunk after finish_reason
                     if let Some(usage) = event["usage"].as_object() {
-                        let input_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let output_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                        let _ = app.emit("stream-event", StreamEvent::Usage { input_tokens, output_tokens, conversation_id: conversation_id.clone() });
+                        has_usage = true;
+                        usage_input_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                        usage_output_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                     }
                     if let Some(choices) = event["choices"].as_array() {
                         for choice in choices {
@@ -573,6 +600,10 @@ async fn stream_openai_compatible(
                                 }
                             }
                             if let Some(finish) = choice["finish_reason"].as_str() {
+                                // Store finish reason, flush tools, but DON'T break yet —
+                                // LM Studio may send usage in a separate chunk after this.
+                                // StreamEnd is emitted after the loop when [DONE] arrives or TCP closes.
+                                stream_end_reason = Some(finish.to_string());
                                 // Flush all tool call buffers (sorted by index for deterministic order)
                                 let mut indices: Vec<u64> = tool_call_buffers.keys().copied().collect();
                                 indices.sort();
@@ -583,15 +614,23 @@ async fn stream_openai_compatible(
                                         }
                                     }
                                 }
-                                let _ = app.emit("stream-event", StreamEvent::StreamEnd { stop_reason: finish.to_string(), conversation_id: conversation_id.clone() });
-                                // Stream is complete — break immediately
-                                break 'stream_loop;
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    // Emit pending usage then StreamEnd after the loop exits.
+    // This catches usage from servers (LM Studio) that send usage in a
+    // separate chunk after finish_reason, while preserving backward
+    // compatibility with OpenAI/DeepSeek that include it in the same chunk.
+    if let Some(reason) = stream_end_reason {
+        if has_usage {
+            let _ = app.emit("stream-event", StreamEvent::Usage { input_tokens: usage_input_tokens, output_tokens: usage_output_tokens, conversation_id: conversation_id.clone() });
+        }
+        let _ = app.emit("stream-event", StreamEvent::StreamEnd { stop_reason: reason, conversation_id: conversation_id.clone() });
     }
     Ok(())
 }

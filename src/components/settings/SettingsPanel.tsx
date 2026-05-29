@@ -23,6 +23,7 @@ const PRESET_PROVIDERS: ProviderConfig[] = [
   { id: "", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1/chat/completions", thinkingStyle: "deepseek" },
   { id: "", name: "Anthropic", baseUrl: "https://api.anthropic.com/v1/messages", thinkingStyle: "anthropic" },
   { id: "", name: "OpenAI", baseUrl: "https://api.openai.com/v1/chat/completions", thinkingStyle: "none" },
+  { id: "", name: "LM Studio", baseUrl: "", thinkingStyle: "none" },
 ];
 
 function newProviderId(): string {
@@ -250,10 +251,8 @@ function ModelSection() {
   };
 
   const handleRemoveProvider = (id: string) => {
-    if (providers.length <= 1) return;
     const updated = providers.filter((p) => p.id !== id);
     setProviders(updated);
-    // Remove models belonging to this provider
     setModels((prev) => prev.filter((m) => m.providerId !== id));
     if (editingProviderId === id) {
       setEditingProviderId(updated[0]?.id || "");
@@ -379,7 +378,14 @@ function ModelSection() {
               <div className="flex items-center gap-2">
                 <select
                   value={editingProviderId}
-                  onChange={(e) => setEditingProviderId(e.target.value)}
+                  onChange={(e) => {
+                    const newId = e.target.value;
+                    setEditingProviderId(newId);
+                    const newModels = models.filter((m) => m.providerId === newId);
+                    if (!newModels.some((m) => m.name === activeModel) && newModels.length > 0) {
+                      setActiveModel(newModels[0].name);
+                    }
+                  }}
                   className="flex-1 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2.5 outline-none focus:border-brand-500/30 transition-colors"
                 >
                   {providers.map((p) => (
@@ -393,15 +399,13 @@ function ModelSection() {
                 >
                   <Plus className="w-4 h-4" />
                 </button>
-                {providers.length > 1 && (
-                  <button
-                    onClick={() => handleRemoveProvider(editingProviderId)}
-                    className="h-8 w-8 flex items-center justify-center rounded-md border border-edge text-ink-muted hover:text-error hover:bg-surface-900 transition-colors"
-                    title={t.model.deleteModel}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+                <button
+                  onClick={() => handleRemoveProvider(editingProviderId)}
+                  className="h-8 w-8 flex items-center justify-center rounded-md border border-edge text-ink-muted hover:text-error hover:bg-surface-900 transition-colors"
+                  title={t.model.deleteModel}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               </div>
 
               {/* Add Provider Panel */}
@@ -409,12 +413,12 @@ function ModelSection() {
                 <div className="rounded-lg border border-edge bg-surface-900/50 p-3 space-y-2">
                   <p className="text-xs font-medium text-ink">{t.model.addProvider}</p>
                   {/* Presets */}
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {PRESET_PROVIDERS.map((preset, idx) => (
                       <button
                         key={preset.name}
                         onClick={() => handleSelectPreset(idx)}
-                        className="px-3 py-1.5 text-xs rounded-md border border-edge text-ink-secondary hover:text-ink hover:bg-surface-800 transition-colors"
+                        className="px-3 py-1.5 text-xs rounded-md border border-edge text-ink-secondary hover:text-ink hover:bg-surface-800 transition-colors whitespace-nowrap"
                       >
                         {preset.name}
                       </button>

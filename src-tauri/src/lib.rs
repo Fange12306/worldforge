@@ -2,6 +2,7 @@ mod commands;
 mod models;
 mod services;
 mod utils;
+#[cfg(target_os = "macos")]
 mod tray_icon_data;
 
 use commands::api_key;
@@ -23,7 +24,9 @@ use commands::world_init;
 use tauri::image::Image;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{Manager, RunEvent};
+use tauri::Manager;
+#[cfg(target_os = "macos")]
+use tauri::RunEvent;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -170,13 +173,11 @@ pub fn run() {
             );
             #[cfg(not(target_os = "macos"))]
             let tray_icon = app.default_window_icon().unwrap().clone();
-            let mut tray_builder = TrayIconBuilder::new()
+            let tray_builder = TrayIconBuilder::new()
                 .icon(tray_icon)
                 .menu(&menu);
             #[cfg(target_os = "macos")]
-            {
-                tray_builder = tray_builder.icon_as_template(true);
-            }
+            let tray_builder = tray_builder.icon_as_template(true);
             let _tray = tray_builder
                 .tooltip("WorldForge")
                 .on_menu_event(|app, event| {
@@ -220,10 +221,10 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
+        .run(|_app_handle, _event| {
             #[cfg(target_os = "macos")]
-            if let RunEvent::Reopen { .. } = &event {
-                let _ = app_handle.show();
+            if let RunEvent::Reopen { .. } = &_event {
+                let _ = _app_handle.show();
                 if let Some(window) = app_handle.get_webview_window("main") {
                     let _ = window.show();
                     let _ = window.set_focus();

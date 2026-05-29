@@ -120,7 +120,10 @@ pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<Strin
         .replace("/messages", "");  // Anthropic format
     let models_url = format!("{}/models", base);
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .build()
+        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
     let mut req = client.get(&models_url);
     if !api_key.is_empty() {
         req = req.header("Authorization", format!("Bearer {}", api_key));

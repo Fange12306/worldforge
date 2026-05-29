@@ -2,7 +2,7 @@
 name = "worldforge"
 # ⚠️ 发版时只需改此处版本号。prebuild 脚本会自动同步到:
 #    package.json / tauri.conf.json / README.md
-version = "0.6.6"
+version = "0.6.7"
 description = "AI-powered worldbuilding and storytelling assistant"
 authors = ["WorldForge"]
 edition = "2021"

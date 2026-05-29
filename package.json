@@ -1,10 +1,11 @@
 {
   "name": "worldforge",
   "private": true,
-  "version": "0.6.5",
+  "version": "0.6.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node scripts/sync-version.cjs",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri"

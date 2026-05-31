@@ -90,6 +90,13 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
             {message.toolCalls && message.toolCalls.length > 0 && (
               <ToolCallsSummary calls={message.toolCalls} expanded={toolsExpanded} active={isStreaming && isToolRunning} onToggle={() => setToolsExpanded(!toolsExpanded)} />
             )}
+            {/* Writing indicator — pulsing dot during text generation phase */}
+            {isStreaming && !isThinking && !isToolRunning && message.content && (
+              <span className="inline-flex items-center gap-1 text-xs text-ink-muted">
+                <span className="w-1.5 h-1.5 rounded-full bg-ink-muted pulse-dot" />
+                Writing
+              </span>
+            )}
             {isAssistant && message.content && (
               <div className={`prose prose-sm max-w-none ${theme === "dark" ? "prose-invert" : ""}`}>
                 <MarkdownContent content={message.content} isStreaming={isStreaming} />

@@ -108,9 +108,9 @@ const zh = {
     presetAnthropic: "Anthropic",
     presetOpenai: "OpenAI",
     searchTitle: "搜索",
-    searchApiKeyLabel: "Bing Search API Key",
-    searchApiKeyPlaceholder: "免费层 1000次/月，portal.azure.com 创建 Bing Search 资源获取",
-    searchApiKeyHint: "Bing Web Search API v7，免费层每月 1000 次调用。不填则使用内置搜索。",
+    searchApiKeyLabel: "Tavily API Key",
+    searchApiKeyPlaceholder: "tvly-xxx，获取地址：https://app.tavily.com",
+    searchApiKeyHint: "Tavily 专为 AI Agent 设计的搜索 API。不填则搜索功能不可用。",
   },
 
   // Settings — personalization
@@ -189,6 +189,8 @@ const zh = {
     createFailed: (err: unknown) => `创建失败: ${err}`,
     contextTooltip: (used: string, total: string, pct: string) => `上下文: ${used} / ${total} (${pct}%)`,
     contextEmpty: "发送第一条消息后显示详情",
+    cacheHitRate: (pct: string) => `缓存 ${pct}`,
+    cacheEmpty: "发送消息后显示缓存统计",
 
     // Context compression
     compression: {
@@ -198,6 +200,8 @@ const zh = {
     },
     compressing: "正在压缩上下文...",
     compressNow: "立即压缩",
+    modeAsk: "询问",
+    modeEdit: "编辑",
   },
 
   // Command palette
@@ -597,9 +601,9 @@ const en: typeof zh = {
     presetAnthropic: "Anthropic",
     presetOpenai: "OpenAI",
     searchTitle: "Search",
-    searchApiKeyLabel: "Bing Search API Key",
-    searchApiKeyPlaceholder: "Free tier 1000 calls/month. Create a Bing Search resource at portal.azure.com",
-    searchApiKeyHint: "Bing Web Search API v7, free tier 1000 calls per month. Leave empty to use built-in search.",
+    searchApiKeyLabel: "Tavily API Key",
+    searchApiKeyPlaceholder: "tvly-xxx, get one at https://app.tavily.com",
+    searchApiKeyHint: "Tavily — a search API designed for AI agents. Required for the WebSearch tool.",
   },
 
   personalization: {
@@ -676,6 +680,8 @@ const en: typeof zh = {
     createFailed: (err: unknown) => `Create failed: ${err}`,
     contextTooltip: (used: string, total: string, pct: string) => `Context: ${used} / ${total} (${pct}%)`,
     contextEmpty: "Details appear after the first message",
+    cacheHitRate: (pct: string) => `Cache ${pct}`,
+    cacheEmpty: "Cache stats appear after sending messages",
 
     // Context compression
     compression: {
@@ -685,6 +691,8 @@ const en: typeof zh = {
     },
     compressing: "Compressing context...",
     compressNow: "Compress now",
+    modeAsk: "Ask",
+    modeEdit: "Edit",
   },
 
   commands: {

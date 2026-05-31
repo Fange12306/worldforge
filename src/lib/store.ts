@@ -39,6 +39,9 @@ export type Conversation = {
   compressedAt?: number;
   compressedSummary?: string;
   compressedTokenSavings?: number;
+  // DeepSeek KV cache tracking (automatic disk cache)
+  cacheHitTokens: number;
+  cacheMissTokens: number;
 };
 
 export type ToolCall = {
@@ -148,6 +151,8 @@ type AppStore = {
 
   // Token usage (per-conversation, from API usage fields)
   addTokens: (input: number, output: number, convId?: string) => void;
+  addCacheStats: (hitTokens: number, missTokens: number, convId?: string) => void;
+  resetCacheStats: (convId?: string) => void;
 
   // Context window tracking
   contextWindowSize: number;
@@ -183,6 +188,10 @@ type AppStore = {
 
   // ID counter sync — call after hydrating from disk to prevent ID reuse
   syncIdCounter: (existingIds: string[]) => void;
+
+  // Mode: "ask" = permission prompts for writes, "edit" = auto-approve all writes
+  mode: "ask" | "edit";
+  setMode: (mode: "ask" | "edit") => void;
 };
 
 // ── Helpers ────────────────────────────────────────
@@ -262,6 +271,8 @@ export const useStore = create<AppStore>((set, get) => ({
                   contextUsed: 0,
                   contextBreakdown: null,
                   createdAt: Date.now(),
+                  cacheHitTokens: 0,
+                  cacheMissTokens: 0,
                 }));
                 if (!firstConvId && convs.length > 0) firstConvId = convs[0].id;
                 return {
@@ -284,6 +295,9 @@ export const useStore = create<AppStore>((set, get) => ({
   syncIdCounter: (_existingIds) => {
     // No-op: crypto.randomUUID() prevents collisions naturally
   },
+
+  mode: "ask",
+  setMode: (mode) => set({ mode }),
 
   addStory: (worldId, title, storyId) => {
     const id = storyId || nextId();
@@ -365,6 +379,8 @@ export const useStore = create<AppStore>((set, get) => ({
                     contextUsed: 0,
                     contextBreakdown: null,
                     createdAt: Date.now(),
+                    cacheHitTokens: 0,
+                    cacheMissTokens: 0,
                   },
                 ],
               }
@@ -600,6 +616,60 @@ export const useStore = create<AppStore>((set, get) => ({
         })),
       })),
     }));
+  },
+
+  addCacheStats: (hitTokens, missTokens, convId?) => {
+    const state = get();
+    const cid = convId ?? state.activeConversationId;
+    const world = state.worlds.find((w) => w.id === state.activeWorldId);
+    // Read current values from state for accumulation
+    const currentConv = state.worlds
+      .find((w) => w.id === state.activeWorldId)
+      ?.stories.flatMap((s) => s.conversations)
+      .find((c) => c.id === cid);
+    const curHit = currentConv?.cacheHitTokens ?? 0;
+    const curMiss = currentConv?.cacheMissTokens ?? 0;
+    const newHit = curHit + hitTokens;
+    const newMiss = curMiss + missTokens;
+    set((s) => ({
+      worlds: s.worlds.map((w) => ({
+        ...w,
+        stories: w.stories.map((st) => ({
+          ...st,
+          conversations: st.conversations.map((c) =>
+            c.id === cid
+              ? { ...c, cacheHitTokens: newHit, cacheMissTokens: newMiss }
+              : c,
+          ),
+        })),
+      })),
+    }));
+    // Persist to disk (fire-and-forget)
+    if (world && cid) {
+      invoke("save_session_cache_stats", { worldPath: world.path, sessionId: cid, hitTokens: newHit, missTokens: newMiss }).catch(() => {});
+    }
+  },
+
+  resetCacheStats: (convId?) => {
+    const state = get();
+    const cid = convId ?? state.activeConversationId;
+    const world = state.worlds.find((w) => w.id === state.activeWorldId);
+    set((s) => ({
+      worlds: s.worlds.map((w) => ({
+        ...w,
+        stories: w.stories.map((st) => ({
+          ...st,
+          conversations: st.conversations.map((c) =>
+            c.id === cid
+              ? { ...c, cacheHitTokens: 0, cacheMissTokens: 0 }
+              : c,
+          ),
+        })),
+      })),
+    }));
+    if (world && cid) {
+      invoke("save_session_cache_stats", { worldPath: world.path, sessionId: cid, hitTokens: 0, missTokens: 0 }).catch(() => {});
+    }
   },
 
   isStreaming: false,

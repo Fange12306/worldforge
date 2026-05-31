@@ -41,6 +41,12 @@ export function StatusBar() {
   );
   const msgCount = activeConv ? countVisibleMessages(activeConv.messages) : 0;
   const totalTokens = activeConv?.totalTokens ?? 0;
+  const cacheHitTokens = activeConv?.cacheHitTokens ?? 0;
+  const cacheMissTokens = activeConv?.cacheMissTokens ?? 0;
+  const totalCacheTokens = cacheHitTokens + cacheMissTokens;
+  const cacheHitPct = totalCacheTokens > 0
+    ? ((cacheHitTokens / totalCacheTokens) * 100).toFixed(0)
+    : null;
 
   const fmtTokens = (n: number): string => {
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -63,6 +69,11 @@ export function StatusBar() {
         <span>{streamingHere ? t.chat.streaming : t.chat.ready}</span>
         {activeConv && <span>{msgCount} {t.chat.messages}</span>}
         {totalTokens > 0 && <span>{fmtTokens(totalTokens)} tokens</span>}
+        {totalCacheTokens > 0 && cacheHitPct && (
+          <span title={`Hit: ${fmtTokens(cacheHitTokens)}, Miss: ${fmtTokens(cacheMissTokens)}`}>
+            {t.chat.cacheHitRate(`${cacheHitPct}%`)}
+          </span>
+        )}
       </div>
       <div className="flex items-center gap-3">
         {activeWorld && (

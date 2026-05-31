@@ -186,7 +186,7 @@ pub fn delete_session(world_path: String, session_id: String) -> Result<(), Stri
         .lock()
         .map_err(|_| "session 写入锁已损坏".to_string())?;
     let dir = PathBuf::from(&world_path).join("sessions");
-    for ext in &["jsonl", "tokens"] {
+    for ext in &["jsonl", "tokens", "state.json", "cache_stats"] {
         let filepath = dir.join(format!("{}.{}", session_id, ext));
         if filepath.exists() {
             fs::remove_file(&filepath)
@@ -241,4 +241,48 @@ pub fn load_session_state(world_path: String, session_id: String) -> Result<Stri
     }
     fs::read_to_string(&filepath)
         .map_err(|e| format!("读取状态失败: {}", e))
+}
+
+/// Persist DeepSeek KV cache statistics for a conversation
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CacheStats {
+    pub hit_tokens: u64,
+    pub miss_tokens: u64,
+}
+
+#[tauri::command]
+pub fn save_session_cache_stats(
+    world_path: String,
+    session_id: String,
+    hit_tokens: u64,
+    miss_tokens: u64,
+) -> Result<(), String> {
+    let filepath = PathBuf::from(&world_path)
+        .join("sessions")
+        .join(format!("{}.cache_stats", session_id));
+    let stats = CacheStats {
+        hit_tokens,
+        miss_tokens,
+    };
+    let json = serde_json::to_string(&stats)
+        .map_err(|e| format!("序列化缓存统计失败: {}", e))?;
+    fs::write(&filepath, json)
+        .map_err(|e| format!("写入缓存统计失败: {}", e))
+}
+
+#[tauri::command]
+pub fn load_session_cache_stats(
+    world_path: String,
+    session_id: String,
+) -> Result<CacheStats, String> {
+    let filepath = PathBuf::from(&world_path)
+        .join("sessions")
+        .join(format!("{}.cache_stats", session_id));
+    if !filepath.exists() {
+        return Ok(CacheStats { hit_tokens: 0, miss_tokens: 0 });
+    }
+    let s = fs::read_to_string(&filepath)
+        .map_err(|e| format!("读取缓存统计失败: {}", e))?;
+    serde_json::from_str(&s)
+        .map_err(|e| format!("解析缓存统计失败: {}", e))
 }

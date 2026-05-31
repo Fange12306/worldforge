@@ -184,12 +184,12 @@ function ModelSection() {
     }
   }, [providers]);
 
-  // Bing search key
-  const [bingApiKey, setBingApiKey] = useState("");
-  const [showBingKey, setShowBingKey] = useState(false);
+  // Tavily search key
+  const [tavilyApiKey, setTavilyApiKey] = useState("");
+  const [showTavilyKey, setShowTavilyKey] = useState(false);
   useEffect(() => {
-    invoke<string>("get_api_key", { provider: "bing_search" })
-      .then((key) => { if (key) setBingApiKey(key); })
+    invoke<string>("get_api_key", { provider: "tavily" })
+      .then((key) => { if (key) setTavilyApiKey(key); })
       .catch(() => {});
   }, []);
 
@@ -322,8 +322,8 @@ function ModelSection() {
         try { await invoke("save_api_key", { provider: providerId, key }); } catch {}
       }
     }
-    if (bingApiKey) {
-      try { await invoke("save_api_key", { provider: "bing_search", key: bingApiKey }); } catch {}
+    if (tavilyApiKey) {
+      try { await invoke("save_api_key", { provider: "tavily", key: tavilyApiKey }); } catch {}
     }
 
     const cleanedModels = normalizeModels(models);
@@ -700,24 +700,24 @@ function ModelSection() {
           </>
         )}
 
-        {/* Bing Search Key (independent of provider) */}
+        {/* Tavily API Key (independent of provider) */}
         <div>
           <h3 className="text-sm font-medium text-ink mb-3">{t.model.searchTitle}</h3>
           <div className="flex items-start gap-6 min-h-9">
             <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.searchApiKeyLabel}</label>
             <div className="relative w-96">
               <input
-                type={showBingKey ? "text" : "password"}
-                value={bingApiKey}
-                onChange={(e) => setBingApiKey(e.target.value)}
+                type={showTavilyKey ? "text" : "password"}
+                value={tavilyApiKey}
+                onChange={(e) => setTavilyApiKey(e.target.value)}
                 placeholder={t.model.searchApiKeyPlaceholder}
                 className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 pr-9 outline-none focus:border-brand-500/30 transition-colors font-mono"
               />
               <button
-                onClick={() => setShowBingKey(!showBingKey)}
+                onClick={() => setShowTavilyKey(!showTavilyKey)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
               >
-                {showBingKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                {showTavilyKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
             </div>
           </div>

@@ -42,60 +42,59 @@ fn remove_scripts_and_styles(html: &str) -> String {
     text
 }
 
-/// Web search via Bing Web Search API.
-/// Free tier: 1000 calls/month. Requires API key in settings.
+/// Web search via Tavily API (https://tavily.com).
+/// Designed for AI agents — simple REST API, no monthly hard cap.
 #[tauri::command]
 pub async fn web_search(query: String, count: Option<usize>) -> Result<Vec<SearchResult>, String> {
     let limit = count.unwrap_or(5).min(10);
 
-    let api_key = crate::commands::api_key::get_api_key("bing_search".to_string())
-        .map_err(|_| "未配置 Bing Search API Key，请在设置中填入。获取地址：https://portal.azure.com → 创建 Bing Search 资源（免费层 1000次/月）".to_string())?;
-
-    let url = format!(
-        "https://api.bing.microsoft.com/v7.0/search?q={}&count={}&mkt=zh-CN",
-        urlencode(&query),
-        limit
-    );
+    let api_key = crate::commands::api_key::get_api_key("tavily".to_string())
+        .map_err(|_| "未配置 Tavily API Key，请在设置中填入。获取地址：https://app.tavily.com".to_string())?;
 
     let client = reqwest::Client::builder()
         .user_agent("WorldForge/0.6")
-        .timeout(std::time::Duration::from_secs(8))
+        .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| format!("构建客户端失败: {}", e))?;
 
-    let body = client
-        .get(&url)
-        .header("Ocp-Apim-Subscription-Key", &api_key)
+    let body = serde_json::json!({
+        "query": query,
+        "search_depth": "basic",
+        "max_results": limit,
+    });
+
+    let resp = client
+        .post("https://api.tavily.com/search")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Bing API 请求失败: {}", e))?
-        .text()
-        .await
-        .map_err(|e| format!("读取响应失败: {}", e))?;
+        .map_err(|e| format!("Tavily API 请求失败: {}", e))?;
 
-    let parsed = serde_json::from_str::<serde_json::Value>(&body)
-        .map_err(|e| format!("Bing API 响应解析失败: {}. 原始响应: {}", e, &body[..body.len().min(200)]))?;
-
-    if let Some(error) = parsed["error"].as_object() {
-        let msg = error.get("message").and_then(|v| v.as_str()).unwrap_or("未知错误");
-        return Err(format!("Bing API 错误: {}", msg));
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("Tavily API 错误 {}: {}", status, text));
     }
 
-    let results: Vec<SearchResult> = parsed["webPages"]["value"]
+    let json: serde_json::Value = resp.json().await
+        .map_err(|e| format!("Tavily API 响应解析失败: {}", e))?;
+
+    let results: Vec<SearchResult> = json["results"]
         .as_array()
         .unwrap_or(&vec![])
         .iter()
-        .take(limit)
         .map(|r| SearchResult {
-            title: r["name"].as_str().unwrap_or("").to_string(),
+            title: r["title"].as_str().unwrap_or("").to_string(),
             url: r["url"].as_str().unwrap_or("").to_string(),
-            snippet: r["snippet"].as_str().unwrap_or("").to_string(),
+            snippet: r["content"].as_str().unwrap_or("").to_string(),
         })
         .filter(|r| !r.title.is_empty() && !r.url.is_empty())
         .collect();
 
     if results.is_empty() {
-        Err("Bing 未返回任何搜索结果".to_string())
+        Err("Tavily 未返回任何搜索结果".to_string())
     } else {
         Ok(results)
     }
@@ -118,26 +117,6 @@ async fn fetch_page(url: &str) -> Result<String, String> {
         .text()
         .await
         .map_err(|e| format!("读取响应失败: {}", e))
-}
-
-// ── URL encoding ──
-
-fn urlencode(s: &str) -> String {
-    let mut result = String::new();
-    for byte in s.as_bytes() {
-        match *byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                result.push(*byte as char);
-            }
-            b' ' => {
-                result.push('+');
-            }
-            _ => {
-                result.push_str(&format!("%{:02X}", byte));
-            }
-        }
-    }
-    result
 }
 
 fn strip_html(s: &str) -> String {

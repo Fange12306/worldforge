@@ -1,12 +1,35 @@
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
+use tokio::sync::watch;
+
+static CANCEL_MAP: OnceLock<Mutex<HashMap<String, watch::Sender<bool>>>> = OnceLock::new();
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCallMsg>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ToolCallMsg {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub function: ToolCallFunction,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ToolCallFunction {
+    pub name: String,
+    pub arguments: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -30,7 +53,17 @@ pub enum StreamEvent {
     #[serde(rename = "stream_end")]
     StreamEnd { stop_reason: String, conversation_id: Option<String> },
     #[serde(rename = "usage")]
-    Usage { input_tokens: u64, output_tokens: u64, conversation_id: Option<String> },
+    Usage { input_tokens: u64, output_tokens: u64, cache_hit_tokens: Option<u64>, cache_miss_tokens: Option<u64>, conversation_id: Option<String> },
+}
+
+/// Cancel an in-flight streaming request. The HTTP connection is dropped immediately.
+#[tauri::command]
+pub fn cancel_stream(conversation_id: String) -> Result<(), String> {
+    if let Some(tx) = CANCEL_MAP.get_or_init(|| Mutex::new(HashMap::new()))
+        .lock().unwrap().remove(&conversation_id) {
+        let _ = tx.send(true);
+    }
+    Ok(())
 }
 
 /// Quick connectivity test — sends a single message, returns "ok" or error
@@ -348,8 +381,28 @@ async fn stream_anthropic(
     let mut input_tokens: u64 = 0;
     let mut output_tokens: u64 = 0;
 
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("流读取错误: {}", e))?;
+    // Register cancellation channel
+    let cid_key = conversation_id.clone().unwrap_or_default();
+    let (cancel_tx, mut cancel_rx) = watch::channel(false);
+    CANCEL_MAP.get_or_init(|| Mutex::new(HashMap::new()))
+        .lock().unwrap()
+        .insert(cid_key.clone(), cancel_tx);
+
+    'stream_loop: loop {
+        let chunk = tokio::select! {
+            result = stream.next() => match result {
+                Some(Ok(c)) => c,
+                Some(Err(e)) => {
+                    CANCEL_MAP.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().remove(&cid_key);
+                    return Err(format!("流读取错误: {}", e));
+                }
+                None => break 'stream_loop,
+            },
+            _ = cancel_rx.changed() => {
+                if *cancel_rx.borrow_and_update() { break 'stream_loop; }
+                continue;
+            }
+        };
         let text = String::from_utf8_lossy(&chunk);
         buffer.push_str(&text);
 
@@ -430,6 +483,8 @@ async fn stream_anthropic(
                             let _ = app.emit("stream-event", StreamEvent::Usage {
                                 input_tokens,
                                 output_tokens,
+                                cache_hit_tokens: None,
+                                cache_miss_tokens: None,
                                 conversation_id: conversation_id.clone(),
                             });
                             // Stream is complete — break immediately instead of waiting for TCP close.
@@ -442,6 +497,9 @@ async fn stream_anthropic(
             }
         }
     }
+
+    // Clean up cancellation channel
+    CANCEL_MAP.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().remove(&cid_key);
 
     Ok(())
 }
@@ -469,7 +527,20 @@ async fn stream_openai_compatible(
         msgs.push(serde_json::json!({"role": "system", "content": system_prompt}));
     }
     for m in &messages {
-        msgs.push(serde_json::json!({"role": m.role, "content": m.content}));
+        if let Some(ref id) = m.tool_call_id {
+            let content = m.content.splitn(2, '\n').nth(1).unwrap_or(&m.content);
+            msgs.push(serde_json::json!({
+                "role": "tool",
+                "content": content,
+                "tool_call_id": id,
+            }));
+        } else if let Some(ref tcs) = m.tool_calls {
+            let mut msg = serde_json::json!({"role": m.role, "content": m.content});
+            msg["tool_calls"] = serde_json::to_value(tcs).unwrap_or_default();
+            msgs.push(msg);
+        } else {
+            msgs.push(serde_json::json!({"role": m.role, "content": m.content}));
+        }
     }
 
     let oai_tools: Vec<Value> = tools.iter().map(|t| serde_json::json!({
@@ -546,9 +617,31 @@ async fn stream_openai_compatible(
     let mut has_usage = false;
     let mut usage_input_tokens: u64 = 0;
     let mut usage_output_tokens: u64 = 0;
+    let mut usage_cache_hit: Option<u64> = None;
+    let mut usage_cache_miss: Option<u64> = None;
 
-    'stream_loop: while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("流读取错误: {}", e))?;
+    // Register cancellation channel
+    let cid_key = conversation_id.clone().unwrap_or_default();
+    let (cancel_tx, mut cancel_rx) = watch::channel(false);
+    CANCEL_MAP.get_or_init(|| Mutex::new(HashMap::new()))
+        .lock().unwrap()
+        .insert(cid_key.clone(), cancel_tx);
+
+    'stream_loop: loop {
+        let chunk = tokio::select! {
+            result = stream.next() => match result {
+                Some(Ok(c)) => c,
+                Some(Err(e)) => {
+                    CANCEL_MAP.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().remove(&cid_key);
+                    return Err(format!("流读取错误: {}", e));
+                }
+                None => break 'stream_loop,
+            },
+            _ = cancel_rx.changed() => {
+                if *cancel_rx.borrow_and_update() { break 'stream_loop; }
+                continue;
+            }
+        };
         let text = String::from_utf8_lossy(&chunk);
         buffer.push_str(&text);
 
@@ -572,6 +665,12 @@ async fn stream_openai_compatible(
                         has_usage = true;
                         usage_input_tokens = usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
                         usage_output_tokens = usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let cache_hit = usage.get("prompt_cache_hit_tokens").and_then(|v| v.as_u64());
+                        let cache_miss = usage.get("prompt_cache_miss_tokens").and_then(|v| v.as_u64());
+                        usage_cache_hit = cache_hit;
+                        usage_cache_miss = cache_miss;
+                        // cache_hit/cache_miss remain Option<u64> — only DeepSeek
+                        // populates them; OpenAI / LM Studio leave them None.
                     }
                     if let Some(choices) = event["choices"].as_array() {
                         for choice in choices {
@@ -622,13 +721,16 @@ async fn stream_openai_compatible(
         }
     }
 
+    // Clean up cancellation channel
+    CANCEL_MAP.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().remove(&cid_key);
+
     // Emit pending usage then StreamEnd after the loop exits.
     // This catches usage from servers (LM Studio) that send usage in a
     // separate chunk after finish_reason, while preserving backward
     // compatibility with OpenAI/DeepSeek that include it in the same chunk.
     if let Some(reason) = stream_end_reason {
         if has_usage {
-            let _ = app.emit("stream-event", StreamEvent::Usage { input_tokens: usage_input_tokens, output_tokens: usage_output_tokens, conversation_id: conversation_id.clone() });
+            let _ = app.emit("stream-event", StreamEvent::Usage { input_tokens: usage_input_tokens, output_tokens: usage_output_tokens, cache_hit_tokens: usage_cache_hit, cache_miss_tokens: usage_cache_miss, conversation_id: conversation_id.clone() });
         }
         let _ = app.emit("stream-event", StreamEvent::StreamEnd { stop_reason: reason, conversation_id: conversation_id.clone() });
     }

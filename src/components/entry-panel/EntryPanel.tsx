@@ -119,7 +119,7 @@ export function EntryPanel({ onClose }: Props) {
               {showCreate ? (
                 <CreateEntryForm name={newName} onNameChange={setNewName} type={newType} onTypeChange={setNewType} onCreate={handleCreate} onCancel={() => { setShowCreate(false); setNewName(""); }} />
               ) : fullEntry && !loadingId ? (
-                <EntryEditor entry={fullEntry} editing={editing} onEdit={() => setEditing(true)} onCancel={() => setEditing(false)} onSave={handleSave} />
+                <EntryEditor key={fullEntry.id} entry={fullEntry} editing={editing} onEdit={() => setEditing(true)} onCancel={() => setEditing(false)} onSave={handleSave} />
               ) : (
                 <div className="h-full flex items-center justify-center text-ink-muted text-xs">{t.entry.loading}</div>
               )}

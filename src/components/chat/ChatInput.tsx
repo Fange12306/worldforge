@@ -47,6 +47,8 @@ export function ChatInput({ storyId }: { storyId: string }) {
   const activeModel = useStore((s) => s.activeModel);
   const setActiveModel = useStore((s) => s.setActiveModel);
   const addMessage = useStore((s) => s.addMessage);
+  const mode = useStore((s) => s.mode);
+  const setMode = useStore((s) => s.setMode);
   const isStreaming = useStore((s) => s.isStreaming);
   const streamingConversationId = useStore((s) => s.streamingConversationId);
   const setStreaming = useStore((s) => s.setStreaming);
@@ -75,6 +77,15 @@ export function ChatInput({ storyId }: { storyId: string }) {
   const setInput = (value: string) => {
     if (activeConversationId) setConversationDraft(activeConversationId, value);
   };
+
+  // Reset textarea height when input changes (conversation switch, retry, clear)
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = Math.min(el.scrollHeight, 200) + "px";
+    }
+  }, [input]);
 
   // Retry: replace the whole last turn. Tool results are stored as hidden
   // system messages, so removing only the assistant response leaves stale
@@ -535,8 +546,16 @@ export function ChatInput({ storyId }: { storyId: string }) {
             <div className="flex-1" />
             <ContextRing />
             {llmModels.length >= 1 && (
+              <select value={mode} onChange={(e) => setMode(e.target.value as "ask" | "edit")}
+                className="text-[0.688rem] bg-transparent text-ink-muted py-0 appearance-none outline-none text-center cursor-pointer"
+              >
+                <option value="ask">{t.chat.modeAsk}</option>
+                <option value="edit">{t.chat.modeEdit}</option>
+              </select>
+            )}
+            {llmModels.length >= 1 && (
               <select value={activeModel} onChange={(e) => setActiveModel(e.target.value)}
-                className="text-[0.688rem] bg-transparent text-ink-muted py-0 appearance-none outline-none cursor-pointer truncate max-w-[220px]"
+                className="text-[0.688rem] bg-transparent text-ink-muted py-0 appearance-none outline-none cursor-pointer text-center truncate max-w-[220px]"
               >
                 {llmModels
                   .filter((m) => m.providerId && m.providerId === llmProvider)
@@ -547,6 +566,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
               <button onClick={() => {
                   abortRef.current = true;
                   const scid = useStore.getState().streamingConversationId;
+                  if (scid) invoke("cancel_stream", { conversationId: scid }).catch(() => {});
                   if (scid !== activeConversationId) return;
                   const thinking = turnThinkingRef.current.trim() || undefined;
                   const tc = turnToolCallsRef.current;

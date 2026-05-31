@@ -47,6 +47,22 @@ export function ChatLayout() {
           }));
         }
       }).catch(() => {});
+    invoke<{ hit_tokens: number; miss_tokens: number }>("load_session_cache_stats", { worldPath: activeWorld.path, sessionId: activeConversationId })
+      .then((stats) => {
+        if (stats.hit_tokens > 0 || stats.miss_tokens > 0) {
+          useStore.setState((prev) => ({
+            worlds: prev.worlds.map((w) => w.id === activeWorldId ? {
+              ...w, stories: w.stories.map((s) => ({
+                ...s, conversations: s.conversations.map((c) => c.id === activeConversationId ? {
+                  ...c,
+                  cacheHitTokens: stats.hit_tokens,
+                  cacheMissTokens: stats.miss_tokens,
+                } : c),
+              })),
+            } : w),
+          }));
+        }
+      }).catch(() => {});
   }, [activeWorldId, activeConversationId]);
 
   // Lazy-load messages from session JSONL when switching to a conversation with no messages

@@ -56,6 +56,12 @@ function eventScopeSuffix(startId: string | null | undefined, endId: string | nu
 export type AgentMessage = {
   role: "user" | "assistant";
   content: string;
+  tool_calls?: Array<{
+    id: string;
+    type: string;
+    function: { name: string; arguments: string };
+  }>;
+  tool_call_id?: string;
 };
 
 export type ToolDef = {
@@ -100,13 +106,13 @@ function getTools(): ToolDef[] {
   },
   {
     name: "EntrySearch",
-    description: "Search entries by name/type/tag, or full-text search entry files. Pass 'pattern' for full-text grep within entry bodies; pass 'query' + optional 'entry_type' for name/type/tag lookup. Returns {id, name, type, path, tags} for name search, or {path, matches} for full-text.",
+    description: "Search entries. Pass 'pattern' to full-text grep within entry BODIES; pass 'query' + optional 'entry_type' for NAME/TYPE/TAG lookup only (does NOT search body text). Returns {id, name, type, path, tags} for name search, or {path, matches} for full-text.",
     input_schema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Search keyword for name/type/tag lookup. Leave empty to list all entries. NOTE: when 'pattern' is set, 'query' and 'entry_type' are ignored — pattern triggers full-text grep instead." },
+        pattern: { type: "string", description: "Full-text search keyword to grep within entry bodies. Use this when searching for content that might be in the body text rather than the entry name. When set, returns {path, matches} instead of entry list." },
+        query: { type: "string", description: "Search keyword for name/type/tag lookup only — does NOT search body text. Leave empty to list all entries. NOTE: when 'pattern' is set, 'query' and 'entry_type' are ignored." },
         entry_type: { type: "string", description: "Optional: filter by entry type slug (character/location/organization/system/artifact/era/concept)" },
-        pattern: { type: "string", description: "Full-text search keyword to grep within entry bodies. When set, returns {path, matches} instead of entry list." },
       },
       required: [],
     },
@@ -367,6 +373,9 @@ const DANGEROUS_TOOLS = new Set([
 ]);
 
 async function checkPermission(name: string, input: Record<string, unknown>): Promise<boolean> {
+  // Edit mode: auto-approve all write operations without prompting
+  if (useStore.getState().mode === "edit") return true;
+
   const isWrite = WRITE_TOOLS.has(name) || DANGEROUS_TOOLS.has(name);
   if (!isWrite) return true;
 
@@ -546,6 +555,30 @@ async function executeTool(
         return nl >= 0
           ? `${msg.slice(0, nl)}\n${JSON.stringify(filtered.slice(0, MAX))}\n${msg.slice(nl + 1)}`
           : `${msg}\n${JSON.stringify(filtered.slice(0, MAX))}`;
+      }
+      // Auto-fallback: name/type/tag search found nothing with a query and no type filter.
+      // The model likely searched for body text (e.g. "阶位", "英雄") rather than a name.
+      if (filtered.length === 0 && q && !type) {
+        const results = await invoke<{ path: string; matches: string[] }[]>("grep_entries", {
+          worldPath,
+          pattern: input.query as string,
+          maxResults: 20,
+        });
+        if (results.length > 0) {
+          // Enrich grep results with entry ID/name from list_entries for direct EntryRead
+          const entryPathMap = new Map<string, { id: string; name: string }>();
+          for (const e of entries) {
+            const p = (e as Record<string, unknown>).path;
+            if (typeof p === "string") {
+              entryPathMap.set(p.replace(/^\.\/entries\//, "./"), { id: e.id, name: e.name });
+            }
+          }
+          const enriched = results.map((r: { path: string; matches: string[] }) => {
+            const m = entryPathMap.get(r.path);
+            return m ? { ...r, id: m.id, name: m.name } : r;
+          });
+          return `名称搜索无匹配，正文中找到以下结果:\n${JSON.stringify(enriched, null, 2)}`;
+        }
       }
       return JSON.stringify(filtered);
     }
@@ -1109,6 +1142,13 @@ export async function runAgentLoop(
                 useStore.getState().updateContextUsage(hybridTotal, breakdown, convId);
               }
             }
+            // Track DeepSeek KV cache hit/miss stats (only populated by DeepSeek API)
+            if (event.cache_hit_tokens != null || event.cache_miss_tokens != null) {
+              useStore.getState().addCacheStats(event.cache_hit_tokens ?? 0, event.cache_miss_tokens ?? 0, convId);
+            } else {
+              // Provider doesn't report cache stats — clear stale values from previous provider
+              useStore.getState().resetCacheStats(convId);
+            }
             break;
           case "stream_end":
             streamDone = true;
@@ -1265,7 +1305,18 @@ export async function runAgentLoop(
       fullText += turnText;
 
       // Add assistant message to history (may be partial if truncated)
-      messages.push({ role: "assistant", content: turnText });
+      const assistantMsg: AgentMessage = { role: "assistant", content: turnText };
+      if (pendingToolUses.length > 0) {
+        assistantMsg.tool_calls = pendingToolUses.map((tc) => ({
+          id: tc.id,
+          type: "function",
+          function: {
+            name: tc.name,
+            arguments: JSON.stringify(tc.input),
+          },
+        }));
+      }
+      messages.push(assistantMsg);
 
       // Execute all tool calls that arrived — no artificial per-turn cap
 
@@ -1277,22 +1328,54 @@ export async function runAgentLoop(
         if (cached !== undefined) {
           const result = `${t().cacheHit}\n${cached}`;
           callbacks.onToolResult({ toolUseId: tool.id, toolName: tool.name, content: result }, tool.name);
-          messages.push({ role: "user", content: `[工具结果: ${tool.name}]\n${result}` });
+          messages.push({
+            role: "user",
+            content: `[工具结果: ${tool.name}]\n${result}`,
+            tool_call_id: tool.id,
+          });
           continue;
         }
         try {
           const result = await executeTool(tool.name, tool.input, worldPath, storyId);
           console.log("[agent-loop] tool done:", tool.name, "resultLen=", result.length);
+
+          // ── Invalidate cached reads for modified entities ──
+          // After a successful write, any cached read of that entity is now stale.
+          // Clear matching cache entries so next read hits the real file.
+          const WRITE_TOOL_IDS: Record<string, string[]> = {
+            EntryWrite: ["entry_id"],
+            EventWrite: ["event_id", "timeline_id"],
+            OutlineWrite: ["chapter_id"],
+            TimelineWrite: ["timeline_id"],
+          };
+          const idFields = WRITE_TOOL_IDS[tool.name];
+          if (idFields) {
+            const idsToClear: string[] = [];
+            for (const f of idFields) {
+              const v = tool.input[f];
+              if (typeof v === "string" && v.length > 0) idsToClear.push(v);
+            }
+            if (idsToClear.length > 0) {
+              for (const key of toolCache.keys()) {
+                if (idsToClear.some((id) => key.includes(id))) {
+                  toolCache.delete(key);
+                }
+              }
+            }
+          }
+
           toolCache.set(cacheKey, result);
           callbacks.onToolResult({ toolUseId: tool.id, toolName: tool.name, content: result }, tool.name);
           messages.push({
             role: "user",
             content: `[工具结果: ${tool.name}]\n${result}`,
+            tool_call_id: tool.id,
           });
         } catch (e: any) {
           messages.push({
             role: "user",
             content: `[工具结果: ${tool.name}]\nError: ${e}`,
+            tool_call_id: tool.id,
           });
         }
       }
@@ -1343,6 +1426,8 @@ interface StreamEventPayload {
   stop_reason?: string;
   input_tokens?: number;
   output_tokens?: number;
+  cache_hit_tokens?: number;
+  cache_miss_tokens?: number;
   conversation_id?: string;
 }
 

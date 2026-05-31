@@ -78,6 +78,10 @@ pub fn run() {
             session::load_session_tokens,
             session::save_session_state,
             session::load_session_state,
+            session::save_session_cache_stats,
+            session::load_session_cache_stats,
+            // Streaming cancellation
+            api_proxy::cancel_stream,
             // File watch
             file_watch::start_file_watch,
             // API key + config

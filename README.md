@@ -160,6 +160,7 @@ An AI-driven text RPG where the world *runs itself*. Multiple agents — each ch
 
 - [Design Doc](DESIGN.md) — Architecture decisions, phase planning, data persistence
 - [Timeline Design](TIMELINE_DESIGN.md) — Time format, event model, cascade engine, UI design
+- [Map Design](MAP_DESIGN.md) — Fantasy map generation, data model, agent tools, implementation plan
 
 ---
 

@@ -1,0 +1,27 @@
+{
+  "elevation": {
+    "avg": "0.432",
+    "max": "1.000",
+    "min": "0.000"
+  },
+  "erosion": true,
+  "height": 512,
+  "island": false,
+  "pixels": {
+    "land": 182933,
+    "ocean": 79211,
+    "total": 262144
+  },
+  "precipitation": {
+    "max": "1.000",
+    "min": "0.400"
+  },
+  "rivers": {
+    "pixels": 17601,
+    "polylines": 782,
+    "strahler_max": 3
+  },
+  "seed": 777,
+  "version": 2,
+  "width": 512
+}

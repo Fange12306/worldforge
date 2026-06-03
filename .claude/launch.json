@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "map-viewer",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8001", "--bind", "127.0.0.1"],
+      "port": 8001,
+      "cwd": "/Users/wangyufan/WorldForge/map-prototype"
+    }
+  ]
+}

@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Map Prototype Viewer</title>
+<style>
+  body { background: #1a1a2e; color: #e0e0e0; font-family: system-ui, sans-serif; margin: 0; padding: 20px; }
+  h1 { text-align: center; color: #a0d0ff; margin-bottom: 20px; font-size: 18px; }
+  .gallery { display: flex; flex-wrap: wrap; justify-content: center; gap: 16px; }
+  .card { background: #16213e; border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  .card h2 { margin: 0 0 8px 0; font-size: 14px; color: #88b0dd; text-align: center; }
+  .card img { display: block; image-rendering: auto; border-radius: 4px; max-width: 512px; height: auto; }
+  .info { max-width: 600px; margin: 20px auto; background: #16213e; border-radius: 8px; padding: 16px; font-size: 13px; line-height: 1.6; }
+  .info pre { background: #0d1b2a; padding: 8px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; margin: 2px; }
+  .controls { text-align: center; margin: 16px 0; }
+  .controls button { background: #0f3460; color: #e0e0e0; border: 1px solid #1a5276; padding: 6px 14px; border-radius: 4px; cursor: pointer; margin: 0 4px; font-size: 13px; }
+  .controls button:hover { background: #1a5276; }
+</style>
+</head>
+<body>
+
+<h1>🌍 WorldForge Map Prototype Viewer</h1>
+
+<div class="gallery">
+  <div class="card">
+    <h2>高度图 (Heightmap)</h2>
+    <img id="heightmap" src="01_heightmap.png" alt="heightmap" />
+  </div>
+  <div class="card">
+    <h2>生物群落 (Biomes)</h2>
+    <img id="biomes" src="02_biomes.png" alt="biomes" />
+  </div>
+  <div class="card">
+    <h2>生物群落 + 河流</h2>
+    <img id="rivers" src="03_biomes_rivers.png" alt="biomes+rivers" />
+  </div>
+</div>
+
+<div class="controls">
+  <button onclick="document.getElementById('heightmap').style.width='256px'">256px</button>
+  <button onclick="document.getElementById('heightmap').style.width='512px'">512px</button>
+  <button onclick="document.getElementById('heightmap').style.width='1024px'">1024px</button>
+  <button onclick="document.getElementById('biomes').style.width=document.getElementById('biomes').style.width||'256px';document.getElementById('biomes').style.width=document.getElementById('biomes').style.width==='1024px'?'256px':document.getElementById('biomes').style.width==='512px'?'1024px':'512px'">Toggle Biomes Size</button>
+</div>
+
+<script>
+  // 加载 JSON 数据显示
+  fetch('map_data.json')
+    .then(r => r.json())
+    .then(d => {
+      const info = document.getElementById('info');
+      const pct = (d.pixels.land / d.pixels.total * 100).toFixed(1);
+      info.innerHTML = `
+        <strong>🗺️ 地图概览</strong><br/>
+        Seed: ${d.seed} &nbsp;|&nbsp; 大小: ${d.width}×${d.height} &nbsp;|&nbsp; 模式: ${d.island ? '🏝️ 岛屿' : '🌍 大陆'}
+        <br/><br/>
+        <strong>📊 地形统计</strong><br/>
+        陆地: ${d.pixels.land.toLocaleString()}px (${pct}%) &nbsp;|&nbsp; 海洋: ${d.pixels.ocean.toLocaleString()}px
+        <br/>
+        海拔: avg ${d.elevation.avg} &nbsp;|&nbsp; 范围 [${d.elevation.min}, ${d.elevation.max}]
+        <br/><br/>
+        <strong>💧 河流</strong><br/>
+        河流像素: ${d.rivers.pixels.toLocaleString()} &nbsp;|&nbsp; 最大 Strahler 级: ${d.rivers.strahler_max}
+      `;
+    });
+</script>
+
+<div class="info" id="info">加载中...</div>
+
+</body>
+</html>

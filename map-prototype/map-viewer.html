@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>WorldForge Map Viewer</title>
+<style>
+  body { background: #1a1a2e; color: #eee; font-family: system-ui; margin: 0; padding: 20px; }
+  h1 { text-align: center; color: #e94560; margin-bottom: 30px; }
+  .map-container { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }
+  .map-card { background: #16213e; border-radius: 12px; padding: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+  .map-card h2 { text-align: center; margin: 0 0 12px 0; color: #0f3460; font-size: 16px; }
+  .map-card img { display: block; max-width: 512px; border-radius: 8px; }
+  .seeds { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+  .seed-group { background: #0f3460; border-radius: 12px; padding: 16px; }
+  .seed-group h2 { color: #e94560; text-align: center; margin-top: 0; }
+  .stats { font-size: 13px; color: #aaa; margin-top: 8px; text-align: center; }
+</style>
+</head>
+<body>
+<h1>🌍 WorldForge v17 — Map Output</h1>
+
+<div class="seeds">
+  <div class="seed-group">
+    <h2>🏝️ Island (seed=42)</h2>
+    <div class="map-container">
+      <div class="map-card"><h2>Heightmap</h2><img src="map-output-v17/seed42/01_heightmap.png"></div>
+      <div class="map-card"><h2>Biomes</h2><img src="map-output-v17/seed42/02_biomes.png"></div>
+      <div class="map-card"><h2>Biomes + Rivers</h2><img src="map-output-v17/seed42/03_biomes_rivers.png"></div>
+    </div>
+  </div>
+
+  <div class="seed-group">
+    <h2>🌎 Continent (seed=777)</h2>
+    <div class="map-container">
+      <div class="map-card"><h2>Heightmap</h2><img src="map-output-v17/seed777/01_heightmap.png"></div>
+      <div class="map-card"><h2>Biomes</h2><img src="map-output-v17/seed777/02_biomes.png"></div>
+      <div class="map-card"><h2>Biomes + Rivers</h2><img src="map-output-v17/seed777/03_biomes_rivers.png"></div>
+    </div>
+  </div>
+</div>
+
+<div style="text-align:center; margin-top: 20px; color: #666; font-size: 12px;">
+  Erosion: 200k drops | Rain shadow | Chaikin-smoothed polylines | 5×5 biome smoothing
+</div>
+</body>
+</html>

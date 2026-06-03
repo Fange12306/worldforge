@@ -1,0 +1,21 @@
+{
+  "elevation": {
+    "avg": "0.676",
+    "max": "1.000",
+    "min": "0.000"
+  },
+  "height": 512,
+  "island": true,
+  "pixels": {
+    "land": 146252,
+    "ocean": 115892,
+    "total": 262144
+  },
+  "rivers": {
+    "pixels": 69083,
+    "strahler_max": 2
+  },
+  "seed": 42,
+  "version": 1,
+  "width": 512
+}

@@ -163,9 +163,13 @@ type AppStore = {
   compressionThreshold: number;
   isCompressing: boolean;
   forceCompress: boolean;
+  pruneToolResults: boolean;
+  pruneKeepTurns: number;
   setCompressionThreshold: (threshold: number) => void;
   setCompressing: (v: boolean) => void;
   setForceCompress: (v: boolean) => void;
+  setPruneToolResults: (v: boolean) => void;
+  setPruneKeepTurns: (v: number) => void;
   markCompressed: (convId: string, summary: string, tokenSavings: number) => void;
   replaceMessages: (convId: string, msgs: Message[]) => void;
 
@@ -551,9 +555,13 @@ export const useStore = create<AppStore>((set, get) => ({
   compressionThreshold: 0.8,
   isCompressing: false,
   forceCompress: false,
+  pruneToolResults: false,
+  pruneKeepTurns: 3,
   setCompressionThreshold: (threshold) => set({ compressionThreshold: threshold }),
   setCompressing: (v) => set({ isCompressing: v }),
   setForceCompress: (v) => set({ forceCompress: v }),
+  setPruneToolResults: (v) => set({ pruneToolResults: v }),
+  setPruneKeepTurns: (v) => set({ pruneKeepTurns: v }),
   markCompressed: (convId, summary, tokenSavings) => {
     set((s) => ({
       worlds: s.worlds.map((w) => ({

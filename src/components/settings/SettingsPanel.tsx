@@ -123,12 +123,16 @@ function ModelSection() {
   const activeModel = useStore((s) => s.activeModel);
   const setActiveModel = useStore((s) => s.setActiveModel);
   const setCompressionThreshold = useStore((s) => s.setCompressionThreshold);
+  const setPruneToolResults = useStore((s) => s.setPruneToolResults);
+  const setPruneKeepTurns = useStore((s) => s.setPruneKeepTurns);
 
   // Local copies for editing
   const [providers, setProviders] = useState<ProviderConfig[]>(storeProviders);
   const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
   const [models, setModels] = useState<ModelConfig[]>(llmModels);
   const [compressionThresholdDraft, setCompressionThresholdDraft] = useState(useStore.getState().compressionThreshold);
+  const [pruneToolResultsDraft, setPruneToolResultsDraft] = useState(useStore.getState().pruneToolResults);
+  const [pruneKeepTurnsDraft, setPruneKeepTurnsDraft] = useState(useStore.getState().pruneKeepTurns);
 
   // Currently editing provider (defaults to active, or first)
   const [editingProviderId, setEditingProviderId] = useState<string>(
@@ -143,7 +147,7 @@ function ModelSection() {
 
   // Load persisted config
   useEffect(() => {
-    invoke<{ providers?: string; models?: Array<ModelConfig>; activeProviderId?: string; activeModel?: string; compressionThreshold?: number }>("load_config")
+    invoke<{ providers?: string; models?: Array<ModelConfig>; activeProviderId?: string; activeModel?: string; compressionThreshold?: number; pruneToolResults?: boolean; pruneKeepTurns?: number }>("load_config")
       .then((cfg) => {
         if (cfg.providers) {
           try {
@@ -169,6 +173,14 @@ function ModelSection() {
           const threshold = clampCompressionThreshold(cfg.compressionThreshold);
           setCompressionThreshold(threshold);
           setCompressionThresholdDraft(threshold);
+        }
+        if (cfg.pruneToolResults != null) {
+          setPruneToolResults(cfg.pruneToolResults);
+          setPruneToolResultsDraft(cfg.pruneToolResults);
+        }
+        if (cfg.pruneKeepTurns != null) {
+          setPruneKeepTurns(cfg.pruneKeepTurns);
+          setPruneKeepTurnsDraft(cfg.pruneKeepTurns);
         }
       })
       .catch(() => {});
@@ -340,6 +352,8 @@ function ModelSection() {
         baseUrl: currentProvider?.baseUrl || null,
         activeModel: cleanedActiveModel,
         compressionThreshold,
+        pruneToolResults: pruneToolResultsDraft,
+        pruneKeepTurns: pruneKeepTurnsDraft,
       });
 
       // Sync to store
@@ -347,6 +361,8 @@ function ModelSection() {
       setLlmModels(cleanedModels);
       setActiveProviderId(activePid);
       setCompressionThreshold(compressionThreshold);
+      setPruneToolResults(pruneToolResultsDraft);
+      setPruneKeepTurns(pruneKeepTurnsDraft);
       if (cleanedModels.length > 0) {
         const currentProviderModels = cleanedModels.filter((m) => m.providerId === activePid);
         setActiveModel(
@@ -728,6 +744,18 @@ function ModelSection() {
           value={compressionThresholdDraft}
           onChange={setCompressionThresholdDraft}
         />
+
+        <PruneToolResultsToggle
+          value={pruneToolResultsDraft}
+          onChange={setPruneToolResultsDraft}
+        />
+
+        {pruneToolResultsDraft && (
+          <PruneKeepTurnsSetting
+            value={pruneKeepTurnsDraft}
+            onChange={setPruneKeepTurnsDraft}
+          />
+        )}
 
         <div className="flex items-center gap-2 pl-[136px]">
           <button
@@ -1204,6 +1232,63 @@ function CompressionThresholdSetting({ value, onChange }: { value: number; onCha
             {t.model.compressionThresholdDesc}
           </p>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Prune Tool Results Toggle ────────────────────────
+
+function PruneToolResultsToggle({ value, onChange }: { value: boolean; onChange: (value: boolean) => void }) {
+  const { t } = useT();
+
+  return (
+    <div className="flex items-start gap-6 min-h-9">
+      <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.pruneToolResults}</label>
+      <div className="w-96 space-y-1.5">
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            checked={value}
+            onChange={(e) => onChange(e.target.checked)}
+            className="sr-only peer"
+          />
+          <div className="w-9 h-5 bg-surface-800 rounded-full peer peer-checked:bg-brand-500 peer-focus:outline-none peer-focus:ring-1 peer-focus:ring-brand-500 transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4" />
+          <span className="ml-3 text-xs text-ink-secondary">{value ? t.model.pruneToolResultsOn : t.model.pruneToolResultsOff}</span>
+        </label>
+        <p className="text-[0.625rem] text-ink-muted">
+          {t.model.pruneToolResultsDesc}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ── Prune Keep Turns Setting ──────────────────────────
+
+function PruneKeepTurnsSetting({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  const { t } = useT();
+
+  return (
+    <div className="flex items-start gap-6 min-h-9 pl-[136px]">
+      <div className="w-96 space-y-1.5">
+        <div className="flex items-center gap-3">
+          <input
+            type="range"
+            min="1"
+            max="5"
+            step="1"
+            value={value}
+            onChange={(e) => onChange(parseInt(e.target.value))}
+            className="flex-1 h-1.5 rounded-full appearance-none bg-surface-800 accent-brand-500 cursor-pointer"
+          />
+          <span className="w-6 text-right text-xs text-ink font-mono">
+            {value}
+          </span>
+        </div>
+        <p className="text-[0.625rem] text-ink-muted">
+          {t.model.pruneKeepTurnsDesc}
+        </p>
       </div>
     </div>
   );

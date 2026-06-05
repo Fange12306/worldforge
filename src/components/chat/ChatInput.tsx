@@ -4,6 +4,7 @@ import { invoke } from "@/lib/api";
 import { runAgentLoop, resetPermissions, type AgentMessage } from "@/lib/agent-loop";
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import { buildModelMessages } from "@/lib/model-context";
+import { pruneToolOutputs } from "@/lib/prune-tool-outputs";
 import { appendSessionMessage, rewriteSessionMessages, messagesToSessionLines } from "@/lib/session-writer";
 import { ArrowUp, Square, X, Paperclip, Loader2 } from "lucide-react";
 import { InlinePermission } from "./PermissionDialog";
@@ -309,6 +310,9 @@ export function ChatInput({ storyId }: { storyId: string }) {
       ?.stories.find((s) => s.id === storyId)
       ?.conversations.find((c) => c.id === activeConversationId);
     const history: AgentMessage[] = buildModelMessages(latestConv?.messages ?? []);
+    // Prune old tool results if enabled (reduces context usage between user turns)
+    const { pruneToolResults, pruneKeepTurns } = useStore.getState();
+    const prunedHistory = pruneToolResults ? pruneToolOutputs(history, pruneKeepTurns) : history;
 
     // ── Step 2: Inject file references into LLM context only (UI stays clean) ──
     if (currentFiles.length > 0) {
@@ -362,7 +366,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
       const thinkingStyle = currentProvider?.thinkingStyle;
       const baseUrl = currentProvider?.baseUrl;
 
-      await runAgentLoop(world.path, systemPrompt, history, {
+      await runAgentLoop(world.path, systemPrompt, prunedHistory, {
         onTextDelta: (t) => { if (abortRef.current) return; appendStreamText(t); finalContent += t; turnTextRef.current += t; streamStateRef.current.text = finalContent;
           setIsThinking(false); setIsToolRunning(false);
           if (prevBlock?.type === "text") { prevBlock.text += t; }

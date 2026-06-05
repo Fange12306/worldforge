@@ -46,7 +46,7 @@ fn save_store(map: &HashMap<String, String>) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_config(providers: String, models: Vec<serde_json::Value>, provider_id: String, key: String, base_url: Option<String>, active_model: Option<String>, compression_threshold: Option<f64>) -> Result<(), String> {
+pub fn save_config(providers: String, models: Vec<serde_json::Value>, provider_id: String, key: String, base_url: Option<String>, active_model: Option<String>, compression_threshold: Option<f64>, prune_tool_results: Option<bool>, prune_keep_turns: Option<u32>) -> Result<(), String> {
     let mut map = load_store();
     map.insert("providers".to_string(), providers);
     map.insert("models".to_string(), serde_json::to_string(&models).unwrap_or_default());
@@ -65,6 +65,12 @@ pub fn save_config(providers: String, models: Vec<serde_json::Value>, provider_i
     }
     if let Some(ct) = compression_threshold {
         map.insert("compression_threshold".to_string(), ct.to_string());
+    }
+    if let Some(ptr) = prune_tool_results {
+        map.insert("prune_tool_results".to_string(), if ptr { "true".to_string() } else { "false".to_string() });
+    }
+    if let Some(pkt) = prune_keep_turns {
+        map.insert("prune_keep_turns".to_string(), pkt.to_string());
     }
     save_store(&map)
 }
@@ -91,6 +97,12 @@ pub fn load_config() -> Result<serde_json::Value, String> {
     let compression_threshold = map
         .get("compression_threshold")
         .and_then(|v| v.parse::<f64>().ok());
+    let prune_tool_results = map
+        .get("prune_tool_results")
+        .and_then(|v| v.parse::<bool>().ok());
+    let prune_keep_turns = map
+        .get("prune_keep_turns")
+        .and_then(|v| v.parse::<u32>().ok());
     Ok(serde_json::json!({
         "providers": providers_str,
         "provider": provider,
@@ -99,6 +111,8 @@ pub fn load_config() -> Result<serde_json::Value, String> {
         "baseUrl": base_url,
         "activeModel": active_model,
         "compressionThreshold": compression_threshold,
+        "pruneToolResults": prune_tool_results,
+        "pruneKeepTurns": prune_keep_turns,
     }))
 }
 

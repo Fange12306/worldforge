@@ -3,6 +3,8 @@ import { invoke } from "@/lib/api";
 import { useT } from "@/lib/i18n";
 import type { TraversalResult } from "@/lib/types";
 import { ChevronDown, ChevronRight, Share2 } from "lucide-react";
+import { formatFullTime } from "@/lib/time-format";
+import type { TU } from "@/lib/time-format";
 
 interface ImplicationProps {
   worldPath: string;
@@ -17,13 +19,26 @@ interface ImplicationProps {
  * 时间线事件中的关系变化由 EntryTimelineEvents 独立展示。
  */
 export function ImplicationTrace({ worldPath, entryId, entryName, onNavigate }: ImplicationProps) {
-  const { t } = useT();
+  const { t, language } = useT();
   const [graphRelatives, setGraphRelatives] = useState<TraversalResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [graphExpanded, setGraphExpanded] = useState(true);
   const [allTls, setAllTls] = useState<any[]>([]);
   const [activeGraphTlId, setActiveGraphTlId] = useState("");
   const [entryNames, setEntryNames] = useState<Map<string, string>>(new Map());
+  const [filterTimePoint, setFilterTimePoint] = useState("");
+  const [timePoints, setTimePoints] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!worldPath) { setTimePoints([]); return; }
+    invoke<string[]>("list_distinct_time_points", { worldPath })
+      .then((pts) => {
+        const tps = Array.isArray(pts) ? pts : [];
+        setTimePoints(tps);
+        if (tps.length > 0) setFilterTimePoint(tps[tps.length - 1]);
+      })
+      .catch((e) => console.error("[ImplicationTrace] list_distinct_time_points failed", e));
+  }, [worldPath]);
 
   useEffect(() => {
     if (!worldPath) return;
@@ -57,16 +72,20 @@ export function ImplicationTrace({ worldPath, entryId, entryName, onNavigate }: 
     setLoading(true);
     const params: Record<string, unknown> = { worldPath, entityType: "entry", entityId: entryId, maxDepth: 1 };
     if (activeGraphTlId) params.timelineId = activeGraphTlId;
+    if (filterTimePoint.trim()) params.timePoint = filterTimePoint.trim();
     invoke<TraversalResult[]>("traverse_graph", params)
       .then((results) => {
         if (!cancelled) { setGraphRelatives(Array.isArray(results) ? results : []); setLoading(false); }
       })
       .catch((e) => { console.error("[ImplicationTrace] traverse_graph failed", e); if (!cancelled) { setGraphRelatives([]); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [worldPath, entryId, activeGraphTlId]);
+  }, [worldPath, entryId, activeGraphTlId, filterTimePoint]);
 
   const graphEntries = useMemo(() => graphRelatives.filter((r) => r.entity.type === "entry"), [graphRelatives]);
-  if (graphEntries.length === 0) return null;
+  const units = useMemo(() => {
+    const tl = allTls.find((t: any) => t.id === activeGraphTlId);
+    return (tl?.time_format?.units as TU[]) || [];
+  }, [allTls, activeGraphTlId]);
 
   return (
     <div className="mt-3 pt-3 border-t border-surface-700/50">
@@ -89,7 +108,18 @@ export function ImplicationTrace({ worldPath, entryId, entryName, onNavigate }: 
       </button>
       {graphExpanded && (
         <div className="mt-1 space-y-1">
-          {groupBy(graphEntries, "via_description").map(([relation, entities]) => (
+          {timePoints.length > 0 && (
+          <div className="flex items-center gap-1 px-4 mb-1">
+            <span className="text-[0.56rem] text-ink-muted/40">🕐</span>
+            <select value={filterTimePoint} onChange={e => { e.stopPropagation(); setFilterTimePoint(e.target.value); }} onClick={e => e.stopPropagation()} className="text-[0.625rem] bg-surface-800 border border-surface-700 rounded px-1.5 py-0.5 text-ink-muted min-w-[15rem]">
+              {timePoints.map(tp => <option key={tp} value={tp}>{units.length > 0 ? formatFullTime(tp, units, null, language) : tp}</option>)}
+            </select>
+            {filterTimePoint && <button onClick={e => { e.stopPropagation(); setFilterTimePoint(""); }} className="text-[0.56rem] text-ink-muted/30 hover:text-ink-muted">✕</button>}
+          </div>
+          )}
+          {graphEntries.length === 0 ? (
+            <div className="px-4 py-2 text-[0.625rem] text-ink-muted/40 italic">{t.entry.graphNoRelations}</div>
+          ) : groupBy(graphEntries, "via_description").map(([relation, entities]) => (
             <div key={relation} className="pl-4">
               <p className="text-[0.625rem] text-ink-muted/50 uppercase tracking-wider mb-0.5">{relation}</p>
               <div className="flex flex-wrap gap-1">
@@ -105,7 +135,7 @@ export function ImplicationTrace({ worldPath, entryId, entryName, onNavigate }: 
               </div>
             </div>
           ))}
-        </div>
+          </div>
       )}
     </div>
   );

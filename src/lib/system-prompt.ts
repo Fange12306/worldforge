@@ -133,7 +133,9 @@ function buildZhPrompt(
     `- 关系分为两类，都汇聚到 ExploreGraph 中：`,
     `  1) Relation — 词条之间的静态关系，跨所有时间轴成立。创建关系传 from/to/description，非对称关系必须传 reverse_description。对称关系（战友、结盟）不需要传。同两个词条可以有多条边（不同 description）。更新或删除前用 ExploreGraph 拿 relation_id。from_id/to_id 直接传词条名称即可，后端自动解析。`,
     `  2) Event 的 relationship_changes — 事件导致的关系变化，自动 upsert 到 ExploreGraph。add 标记 start_event_id，delete 标记 end_event_id。`,
-    `- 判断标准：问自己"换个世界线，这个关系还成立吗？" 成立→Relation；不一定→事件的 relationship_changes。`,
+    `- 判断标准：问自己"换个世界线，这个关系还成立吗？" 成立→Relation；不一定→事件的 relationship_changes。
+- 词条状态（state）也用 Relation，但 from_id 和 to_id 传同一个词条 ID，description 写状态名。例如 "林逸风 → 叛逃者 → 林逸风"（entry_a===entry_b）。\`start_event_id\`/\`end_event_id\` 自动关联事件时间。ExploreGraph 中 self-relation 即代表状态。
+- 判断何时用 state（self-relation）vs 正常 Relation：这个"状态"是否涉及另一个实体？"担任舰长"涉及舰船→正常 Relation；"成为大魔法师"不涉及其他实体→state。events 的 relationship_changes 同理：entry_a===entry_b 就是 state 变化。`,
     `- 写完章节后，后端 OutlineWrite 会自动建立章节↔事件的关联图边和反向填充 linked_chapters，不需要手动调 Relation。`,
     ``,
     `## 网络调研`,
@@ -266,7 +268,9 @@ function buildEnPrompt(
     `- Relationships are stored in a unified graph, accessible via ExploreGraph:`,
     `  1) Relation — static relationships between entries, valid across all timelines. Create with from/to/description. For asymmetric relations, always provide reverse_description. Symmetric relations (allies, siblings) don't need it. Same pair can have multiple edges (different description). Use ExploreGraph to get relation_id before update/delete. For from_id/to_id you can pass entry names directly — the backend resolves them automatically.`,
     `  2) Event relationship_changes — relationship changes caused by events, auto-upserted to ExploreGraph. add marks start_event_id, delete marks end_event_id.`,
-    `- Criterion: ask yourself "if we change worldlines, would this relationship still hold?" Yes → Relation; Not necessarily → event relationship_changes.`,
+    `- Criterion: ask yourself "if we change worldlines, would this relationship still hold?" Yes → Relation; Not necessarily → event relationship_changes.
+- Entry states are also Relation, but set from_id and to_id to the same entry ID (entry_a===entry_b). description is the state name. start_event_id/end_event_id are auto-linked to event times. Self-relations in ExploreGraph represent entry states.
+- How to decide state (self-relation) vs normal Relation: does the "state" involve another entity? "担任舰长" (serves as captain of a ship) → normal Relation (to the ship). "大魔法师" (archmage) → state (self-relation). Same for EventWrite.relationship_changes: entry_a===entry_b means a state change.`,
     `- After writing a chapter, the backend OutlineWrite automatically creates chapter↔event graph edges and back-fills linked_chapters — no need to manually call Relation.`,
     ``,
     `## Web Research`,

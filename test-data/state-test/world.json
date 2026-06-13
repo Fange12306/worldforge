@@ -1,0 +1,16 @@
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "State 测试（self-relation）",
+  "description": "用于测试词条状态（state = self-relation）的模板世界。林逸风在 246 年叛逃后状态从“舰长”变为“叛逃者”。",
+  "default_timeline": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+  "created_at": "2026-06-14T00:00:00+08:00",
+  "language": "zh-CN",
+  "calendar": {
+    "epochs": [
+      { "name": "战前纪元", "offset": -100 },
+      { "name": "新纪元", "offset": 0 }
+    ],
+    "era": "新纪元",
+    "description": "以人类联邦成立为新纪元元年，此前为战前纪元"
+  }
+}

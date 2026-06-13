@@ -1,0 +1,54 @@
+{
+  "edges": [
+    {
+      "id": "e0010203-0405-0607-0809-0a0b0c0d0e01",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e01" },
+      "to": { "type": "event", "id": "f0010203-0405-0607-0809-0a0b0c0d0e04" },
+      "description": "参与事件",
+      "reverse_description": null,
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "start_event_id": null,
+      "end_event_id": null
+    },
+    {
+      "id": "e0010203-0405-0607-0809-0a0b0c0d0e06-evt",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e06" },
+      "to": { "type": "event", "id": "f0010203-0405-0607-0809-0a0b0c0d0e04" },
+      "description": "参与事件",
+      "reverse_description": null,
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "start_event_id": null,
+      "end_event_id": null
+    },
+    {
+      "id": "e0010203-0405-0607-0809-0a0b0c0d0e02",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e01" },
+      "to": { "type": "event", "id": "f0010203-0405-0607-0809-0a0b0c0d0e09" },
+      "description": "参与事件",
+      "reverse_description": null,
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "start_event_id": null,
+      "end_event_id": null
+    },
+    {
+      "id": "rel-captain-of",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e01" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e06" },
+      "description": "担任舰长",
+      "reverse_description": "舰长是",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "start_event_id": "f0010203-0405-0607-0809-0a0b0c0d0e04",
+      "end_event_id": "f0010203-0405-0607-0809-0a0b0c0d0e09"
+    },
+    {
+      "id": "self-state-deserter",
+      "from": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e01" },
+      "to": { "type": "entry", "id": "e0010203-0405-0607-0809-0a0b0c0d0e01" },
+      "description": "叛逃者",
+      "reverse_description": null,
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "start_event_id": "f0010203-0405-0607-0809-0a0b0c0d0e09",
+      "end_event_id": null
+    }
+  ]
+}

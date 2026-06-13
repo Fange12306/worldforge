@@ -136,6 +136,7 @@ pub fn run() {
             timeline::delete_event,
             timeline::list_events,
             timeline::move_event,
+            timeline::list_distinct_time_points,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

@@ -550,3 +550,30 @@ pub fn move_event(
 
     Ok(updated)
 }
+
+/// Returns all distinct time_points across all events in the world, sorted.
+#[tauri::command]
+pub fn list_distinct_time_points(world_path: String) -> Result<Vec<String>, String> {
+    let root = crate::utils::expand_tilde(&world_path);
+    let tls_dir = root.join("timelines");
+    if !tls_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut points: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    if let Ok(read) = std::fs::read_dir(&tls_dir) {
+        for entry in read.flatten() {
+            let events_path = entry.path().join("events.json");
+            if !events_path.exists() { continue; }
+            if let Ok(raw) = std::fs::read_to_string(&events_path) {
+                if let Ok(el) = serde_json::from_str::<crate::models::timeline::EventList>(&raw) {
+                    for ev in &el.events {
+                        points.insert(ev.time_point.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(points.into_iter().collect())
+}

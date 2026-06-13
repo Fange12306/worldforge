@@ -319,6 +319,7 @@ pub fn traverse_graph(
     entity_id: String,
     max_depth: u32,
     timeline_id: Option<String>,
+    time_point: Option<String>,
 ) -> Result<Vec<crate::services::graph_traverse::TraversalResult>, String> {
     let et = parse_entity_type(&entity_type)?;
     let graph = graph_storage::load_graph(&world_path)?;
@@ -326,8 +327,35 @@ pub fn traverse_graph(
     let filtered: Vec<&RelationEdge> = graph.edges.iter()
         .filter(|e| RelationGraph::match_timeline_static(e, timeline_id.as_deref()))
         .collect();
-    let index = GraphIndex::build(&filtered);
-    let mut results = index.bfs(&et, &entity_id, max_depth);
+
+    // Build event_time_map: event_id -> time_point for all events across all timelines
+    let mut event_time_map: HashMap<String, String> = HashMap::new();
+    let tls_dir = PathBuf::from(&world_path).join("timelines");
+    if tls_dir.exists() {
+        if let Ok(read) = fs::read_dir(&tls_dir) {
+            for tl_entry in read.flatten() {
+                let events_path = tl_entry.path().join("events.json");
+                if !events_path.exists() { continue; }
+                if let Ok(raw) = fs::read_to_string(&events_path) {
+                    if let Ok(el) = serde_json::from_str::<serde_json::Value>(&raw) {
+                        if let Some(events) = el["events"].as_array() {
+                            for evt in events {
+                                if let (Some(eid), Some(tp)) = (
+                                    evt["id"].as_str(),
+                                    evt["time_point"].as_str(),
+                                ) {
+                                    event_time_map.insert(eid.to_string(), tp.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let index = GraphIndex::build(&filtered, event_time_map);
+    let mut results = index.bfs(&et, &entity_id, max_depth, time_point.as_deref());
     // Enrich with display names
     let mut refs: Vec<&mut EntityRef> = Vec::new();
     let mut event_ids: HashSet<String> = HashSet::new();

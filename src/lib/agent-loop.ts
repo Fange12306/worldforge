@@ -227,7 +227,7 @@ function getTools(): ToolDef[] {
   },
   {
     name: "ExploreGraph",
-    description: "Explore the unified relation graph. Returns all relations connected to an entity, including both static relations (from Relation tool) and event-driven relations (from EventWrite.relationship_changes). Each result includes start_event_id/end_event_id when applicable. Use this as the primary tool to understand entity connections.",
+    description: "Explore the unified relation graph. Returns all relations connected to an entity, including both static relations (from Relation tool) and event-driven relations (from EventWrite.relationship_changes). Self-relations (from_id === to_id) represent entry states. Each result includes start_event_id/end_event_id when applicable. Use this as the primary tool to understand entity connections.",
     input_schema: {
       type: "object",
       properties: {
@@ -242,7 +242,7 @@ function getTools(): ToolDef[] {
   },
   {
     name: "Relation",
-    description: "Create, update, or remove a static relation between entities. Use for cross-timeline facts. For event-driven changes use EventWrite.relationship_changes. Provide reverse_description for asymmetric relations. Multiple edges between the same pair are allowed with different descriptions.",
+    description: "Create, update, or remove a static relation between entities. Use for cross-timeline facts. For event-driven changes use EventWrite.relationship_changes. Provide reverse_description for asymmetric relations. Multiple edges between the same pair are allowed with different descriptions. To set an entry's state, use the same entry as both from_id and to_id with the state name as description.",
     input_schema: {
       type: "object",
       properties: {
@@ -327,7 +327,7 @@ function getTools(): ToolDef[] {
         precision: { type: "number", description: ta.eventPrecision },
         linked_entries: { type: "string", description: "JSON array of {entry_id, perspective_summary}. perspective_summary ≤400 chars each. Example: [{\"entry_id\":\"uuid\",\"perspective_summary\":\"简述\"}]" },
         linked_chapters: { type: "string", description: "JSON array of {story_id, chapter_order} objects. Example: [{\"story_id\":\"uuid\",\"chapter_order\":1}]" },
-        relationship_changes: { type: "string", description: "JSON array of {entry_a, entry_b, change_type, relation, description} objects. These are automatically synced to the relation graph (ExploreGraph). Example: [{\"entry_a\":\"uuid\",\"entry_b\":\"uuid2\",\"change_type\":\"add\",\"relation\":\"战友\",\"description\":\"共同抵御虚空入侵\"}]" },
+        relationship_changes: { type: "string", description: "JSON array of {entry_a, entry_b, change_type, relation, description} objects. These are automatically synced to the relation graph (ExploreGraph). To record an entry's state change, set entry_a === entry_b with the state name as relation. Example: [{\"entry_a\":\"uuid\",\"entry_b\":\"uuid\",\"change_type\":\"add\",\"relation\":\"舰长\",\"description\":\"晋升为星舰舰长\"}]" },
       },
       required: ["timeline_id"],
     },

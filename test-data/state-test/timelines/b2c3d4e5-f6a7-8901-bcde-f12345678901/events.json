@@ -1,0 +1,61 @@
+{
+  "events": [
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e04",
+      "name": "林逸风接管黎明号",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000235-01-10-10-00-00",
+      "precision": 4,
+      "summary": "林逸风被正式任命为黎明号舰长，成为联邦最年轻的无畏级星舰指挥官。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e01", "perspective_summary": "林逸风担任黎明号舰长" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e06", "perspective_summary": "黎明号迎来新任舰长" }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e01",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e06",
+          "change_type": "add",
+          "relation": "担任舰长",
+          "description": "林逸风被任命为黎明号舰长"
+        }
+      ],
+      "belongs_to_stories": [],
+      "created_at": "2026-06-14T00:00:00+08:00",
+      "updated_at": "2026-06-14T00:00:00+08:00"
+    },
+    {
+      "id": "f0010203-0405-0607-0809-0a0b0c0d0e09",
+      "name": "林逸风叛逃",
+      "timeline_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "time_point": "000-1-000246-03-14-02-30-00",
+      "precision": 4,
+      "summary": "林逸风拒绝执行跃迁禁令，驾驶黎明号叛逃进入深渊星云。联邦舰队追捕失败，林逸风被列为头号通缉犯。",
+      "linked_entries": [
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e01", "perspective_summary": "林逸风从联邦舰长变为叛逃者" },
+        { "entry_id": "e0010203-0405-0607-0809-0a0b0c0d0e06", "perspective_summary": "黎明号随舰长叛逃，成为联邦叛舰" }
+      ],
+      "linked_chapters": [],
+      "relationship_changes": [
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e01",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e06",
+          "change_type": "delete",
+          "relation": "担任舰长",
+          "description": "林逸风叛逃后不再担任黎明号舰长"
+        },
+        {
+          "entry_a": "e0010203-0405-0607-0809-0a0b0c0d0e01",
+          "entry_b": "e0010203-0405-0607-0809-0a0b0c0d0e01",
+          "change_type": "add",
+          "relation": "叛逃者",
+          "description": "林逸风违抗跃迁禁令叛逃，与联邦决裂"
+        }
+      ],
+      "belongs_to_stories": [],
+      "created_at": "2026-06-14T00:00:00+08:00",
+      "updated_at": "2026-06-14T00:00:00+08:00"
+    }
+  ]
+}

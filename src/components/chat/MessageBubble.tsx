@@ -2,7 +2,7 @@ import { memo, useState } from "react";
 import { useStore, type Message } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { User, FileText, Copy, Check, RefreshCw } from "lucide-react";
+import { User, FileText, Copy, Check, RefreshCw, Pencil } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { WorldForgeLogo } from "@/components/brand/WorldForgeLogo";
 
@@ -42,6 +42,10 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
     setTimeout(() => setRetrying(false), 1000);
   };
 
+  const handleEditRetry = () => {
+    window.dispatchEvent(new CustomEvent("worldforge-edit-retry", { detail: { content: message.content } }));
+  };
+
   return (
     <div className={cn("flex gap-3 animate-fade-in", isUser && "flex-row-reverse")}>
       {isUser ? (
@@ -70,8 +74,13 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
                   {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 </button>
                 {isLastUser && (
-                  <button onClick={handleRetry} className="text-[0.625rem] text-ink-muted/50 hover:text-ink-muted transition-colors">
+                  <button onClick={handleRetry} className="text-[0.625rem] text-ink-muted/50 hover:text-ink-muted transition-colors" title={t.layout.retry}>
                     <RefreshCw className={cn("w-3 h-3", retrying && "animate-spin")} />
+                  </button>
+                )}
+                {isLastUser && (
+                  <button onClick={handleEditRetry} className="text-[0.625rem] text-ink-muted/50 hover:text-ink-muted transition-colors" title={t.layout.editRetry}>
+                    <Pencil className="w-3 h-3" />
                   </button>
                 )}
               </div>

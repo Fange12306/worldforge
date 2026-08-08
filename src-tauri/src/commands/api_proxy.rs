@@ -2,11 +2,25 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::io::Write;
 use std::sync::{Mutex, OnceLock};
 use tauri::{AppHandle, Emitter};
 use tokio::sync::watch;
 
 static CANCEL_MAP: OnceLock<Mutex<HashMap<String, watch::Sender<bool>>>> = OnceLock::new();
+
+/// Diagnostic log for the streaming tool-call path. Writes to both stderr
+/// (visible in `npm run tauri dev` terminal) and a file under the OS temp dir
+/// so it can be inspected even when the dev terminal is unavailable.
+fn log_stream(msg: &str) {
+    eprintln!("[api_proxy] {}", msg);
+    if let Some(dir) = std::env::temp_dir().to_str().map(String::from) {
+        let path = std::path::Path::new(&dir).join("worldforge_stream.log");
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+            let _ = writeln!(f, "{} {}", chrono::Local::now().format("%H:%M:%S%.3f"), msg);
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
@@ -651,12 +665,16 @@ async fn stream_openai_compatible(
             if line.is_empty() { continue; }
 
             if let Some(data) = line.strip_prefix("data: ") {
-                // [DONE] with pending finish → stop reading more chunks
+                // [DONE] — end of stream. Flush any pending tool buffers now
+                // (finish_reason may not always precede [DONE], and buffers must
+                // not be silently dropped when they do).
                 if data == "[DONE]" {
-                    if stream_end_reason.is_some() {
-                        break 'stream_loop;
+                    log_stream(&format!("stream reached [DONE], stream_end_reason={:?}", stream_end_reason));
+                    flush_tool_buffers(&mut tool_call_buffers, &app, conversation_id.clone());
+                    if stream_end_reason.is_none() {
+                        stream_end_reason = Some("stop".to_string());
                     }
-                    continue;
+                    break 'stream_loop;
                 }
                 if let Ok(event) = serde_json::from_str::<Value>(data) {
                     // Extract usage if present (final chunk with stream_options.include_usage)
@@ -687,6 +705,7 @@ async fn stream_openai_compatible(
                             }
                             // Tool calls (OpenAI format) — use per-index buffers to support parallel calls
                             if let Some(tool_calls) = choice["delta"].get("tool_calls") {
+                                log_stream(&format!("stream: got tool_calls delta, count={}", tool_calls.as_array().map(|a| a.len()).unwrap_or(0)));
                                 for tc in tool_calls.as_array().unwrap_or(&vec![]) {
                                     let idx = tc["index"].as_u64().unwrap_or(0);
                                     if let Some(id) = tc["id"].as_str() {
@@ -703,16 +722,8 @@ async fn stream_openai_compatible(
                                 // LM Studio may send usage in a separate chunk after this.
                                 // StreamEnd is emitted after the loop when [DONE] arrives or TCP closes.
                                 stream_end_reason = Some(finish.to_string());
-                                // Flush all tool call buffers (sorted by index for deterministic order)
-                                let mut indices: Vec<u64> = tool_call_buffers.keys().copied().collect();
-                                indices.sort();
-                                for idx in indices {
-                                    if let Some((id, name, args)) = tool_call_buffers.remove(&idx) {
-                                        if let Ok(input) = serde_json::from_str::<Value>(&args) {
-                                            let _ = app.emit("stream-event", StreamEvent::ToolUse { id, name, input, conversation_id: conversation_id.clone() });
-                                        }
-                                    }
-                                }
+                                log_stream(&format!("finish_reason={finish}, flushing tool buffers"));
+                                flush_tool_buffers(&mut tool_call_buffers, &app, conversation_id.clone());
                             }
                         }
                     }
@@ -724,15 +735,46 @@ async fn stream_openai_compatible(
     // Clean up cancellation channel
     CANCEL_MAP.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().remove(&cid_key);
 
+    // Flush any tool call buffers that were never flushed (stream ended via
+    // TCP close / cancel without finish_reason or [DONE] arriving). Without
+    // this, a partially-received tool call is silently dropped and the agent
+    // appears to "want to call a tool" but never does.
+    log_stream(&format!("stream loop ended, stream_end_reason={:?}, final flush", stream_end_reason));
+    flush_tool_buffers(&mut tool_call_buffers, &app, conversation_id.clone());
+
     // Emit pending usage then StreamEnd after the loop exits.
     // This catches usage from servers (LM Studio) that send usage in a
     // separate chunk after finish_reason, while preserving backward
     // compatibility with OpenAI/DeepSeek that include it in the same chunk.
-    if let Some(reason) = stream_end_reason {
-        if has_usage {
-            let _ = app.emit("stream-event", StreamEvent::Usage { input_tokens: usage_input_tokens, output_tokens: usage_output_tokens, cache_hit_tokens: usage_cache_hit, cache_miss_tokens: usage_cache_miss, conversation_id: conversation_id.clone() });
-        }
-        let _ = app.emit("stream-event", StreamEvent::StreamEnd { stop_reason: reason, conversation_id: conversation_id.clone() });
+    let reason = stream_end_reason.unwrap_or_else(|| "stop".to_string());
+    if has_usage {
+        let _ = app.emit("stream-event", StreamEvent::Usage { input_tokens: usage_input_tokens, output_tokens: usage_output_tokens, cache_hit_tokens: usage_cache_hit, cache_miss_tokens: usage_cache_miss, conversation_id: conversation_id.clone() });
     }
+    let _ = app.emit("stream-event", StreamEvent::StreamEnd { stop_reason: reason, conversation_id: conversation_id.clone() });
     Ok(())
+}
+
+/// Emit any accumulated tool call buffers as ToolUse events, then clear them.
+/// Sorted by index so parallel tool calls come out in deterministic order.
+fn flush_tool_buffers(
+    buffers: &mut std::collections::HashMap<u64, (String, String, String)>,
+    app: &AppHandle,
+    conversation_id: Option<String>,
+) {
+    log_stream(&format!("flush_tool_buffers: {} buffered tool call(s)", buffers.len()));
+    let mut indices: Vec<u64> = buffers.keys().copied().collect();
+    indices.sort();
+    for idx in indices {
+        if let Some((id, name, args)) = buffers.remove(&idx) {
+            log_stream(&format!("flushing tool idx={idx} name={name} id={id} args_len={}", args.len()));
+            match serde_json::from_str::<Value>(&args) {
+                Ok(input) => {
+                    let _ = app.emit("stream-event", StreamEvent::ToolUse { id, name, input, conversation_id: conversation_id.clone() });
+                }
+                Err(e) => {
+                    log_stream(&format!("failed to parse tool args for {name} (id {id}): {e}"));
+                }
+            }
+        }
+    }
 }

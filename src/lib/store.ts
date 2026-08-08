@@ -3,6 +3,7 @@ import { invoke } from "./api";
 import { getT } from "./i18n";
 import type { ContextBreakdown } from "./context-window";
 import { getContextWindowSize } from "./context-window";
+import { rewriteSessionMessages, messagesToSessionLines } from "./session-writer";
 
 export type UploadedFile = { name: string; storedName: string; content: string };
 
@@ -115,6 +116,15 @@ type AppStore = {
   setConversationDraft: (convId: string, draft: string) => void;
   conversationFiles: Record<string, UploadedFile[]>;
   setConversationFiles: (convId: string, files: UploadedFile[]) => void;
+
+  // Edit-retry rollback: snapshot of the full message list captured when the
+  // user enters edit-retry. While set, the conversation is in "editing" state;
+  // if the user navigates away without sending, restoreRetrySnapshotIfPending
+  // undoes the truncation.
+  retrySnapshot: { convId: string; messages: Message[] } | null;
+  setRetrySnapshot: (convId: string, messages: Message[]) => void;
+  clearRetrySnapshot: () => void;
+  restoreRetrySnapshotIfPending: () => void;
 
   // Messages
   addMessage: (storyId: string, msg: Omit<Message, "id" | "timestamp"> & { toolCalls?: ToolCall[] }, convId?: string) => void;
@@ -521,6 +531,38 @@ export const useStore = create<AppStore>((set, get) => ({
     set((s) => ({
       conversationFiles: { ...s.conversationFiles, [convId]: files },
     })),
+
+  // Edit-retry rollback state
+  retrySnapshot: null,
+  setRetrySnapshot: (convId, messages) =>
+    set((s) => {
+      // Only capture if no snapshot exists or it belongs to a different
+      // conversation. Preserves the earliest full message list so a second
+      // edit-retry doesn't overwrite the rollback target with truncated data.
+      if (s.retrySnapshot && s.retrySnapshot.convId === convId) return s;
+      return { retrySnapshot: { convId, messages } };
+    }),
+  clearRetrySnapshot: () => set({ retrySnapshot: null }),
+  restoreRetrySnapshotIfPending: () => {
+    const s = get();
+    const snap = s.retrySnapshot;
+    if (!snap) return;
+    // Locate the conversation (convId is globally unique). If it no longer
+    // exists (deleted / world closed), just drop the snapshot.
+    const world = s.worlds.find((w) =>
+      w.stories.some((st) => st.conversations.some((c) => c.id === snap.convId)),
+    );
+    if (!world) {
+      set({ retrySnapshot: null });
+      return;
+    }
+    // Restore messages into store (synchronous) + rewrite session file (async, best-effort).
+    s.replaceMessages(snap.convId, snap.messages);
+    const drafts = { ...s.conversationDrafts };
+    delete drafts[snap.convId];
+    set({ retrySnapshot: null, conversationDrafts: drafts });
+    rewriteSessionMessages(world.path, snap.convId, messagesToSessionLines(snap.messages)).catch(() => {});
+  },
 
   // Context window tracking
   contextWindowSize: 128_000,

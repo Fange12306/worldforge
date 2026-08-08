@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1920" height="1080" viewBox="0 0 1920 1080" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="grid" width="92" height="92" patternUnits="userSpaceOnUse">
+      <path d="M92 0H0V92" stroke="#E7ECEF" stroke-width="1" stroke-dasharray="3 7"/>
+    </pattern>
+    <radialGradient id="coreGlow" cx="50%" cy="50%" r="54%">
+      <stop offset="0%" stop-color="#FFF7D6"/>
+      <stop offset="48%" stop-color="#CFF5EA"/>
+      <stop offset="100%" stop-color="#3CB7A6"/>
+    </radialGradient>
+    <linearGradient id="tealWash" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#ECFDF5"/>
+    </linearGradient>
+    <linearGradient id="amberWash" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#FFF7ED"/>
+    </linearGradient>
+    <linearGradient id="blueWash" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#EFF6FF"/>
+    </linearGradient>
+    <linearGradient id="violetWash" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F5F3FF"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="13" flood-color="#0F172A" flood-opacity="0.12"/>
+    </filter>
+    <filter id="coreShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#0F766E" flood-opacity="0.28"/>
+    </filter>
+    <marker id="arrowTeal" markerWidth="14" markerHeight="14" refX="11" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0L11 5L0 10Z" fill="#0F766E"/>
+    </marker>
+    <marker id="arrowAmber" markerWidth="14" markerHeight="14" refX="11" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0L11 5L0 10Z" fill="#B45309"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="14" markerHeight="14" refX="11" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0L11 5L0 10Z" fill="#1D4ED8"/>
+    </marker>
+    <marker id="arrowSlate" markerWidth="14" markerHeight="14" refX="11" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0 0L11 5L0 10Z" fill="#64748B"/>
+    </marker>
+    <style>
+      .font { font-family: "Inter", "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif; }
+      .title { font-size: 36px; font-weight: 800; fill: #0F172A; letter-spacing: 0; }
+      .subtitle { font-size: 17px; font-weight: 600; fill: #64748B; letter-spacing: 0; }
+      .section { font-size: 23px; font-weight: 800; fill: #0F172A; letter-spacing: 0; }
+      .label { font-size: 19px; font-weight: 760; fill: #0F172A; letter-spacing: 0; }
+      .label-teal { font-size: 19px; font-weight: 760; fill: #0F766E; letter-spacing: 0; }
+      .label-blue { font-size: 18px; font-weight: 760; fill: #1D4ED8; letter-spacing: 0; }
+      .label-amber { font-size: 18px; font-weight: 760; fill: #B45309; letter-spacing: 0; }
+      .label-violet { font-size: 18px; font-weight: 760; fill: #4C1D95; letter-spacing: 0; }
+      .small { font-size: 15px; font-weight: 600; fill: #475569; letter-spacing: 0; }
+      .tiny { font-size: 13px; font-weight: 600; fill: #64748B; letter-spacing: 0; }
+      .mono { font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace; font-size: 14px; font-weight: 650; fill: #334155; letter-spacing: 0; }
+      .card { fill: url(#tealWash); stroke: #0F766E; stroke-width: 1.8; }
+      .blue-card { fill: url(#blueWash); stroke: #2563EB; stroke-width: 1.6; }
+      .amber-card { fill: url(#amberWash); stroke: #D97706; stroke-width: 1.8; }
+      .violet-card { fill: url(#violetWash); stroke: #7C3AED; stroke-width: 1.55; }
+      .panel { fill: rgba(255,255,255,0.88); stroke: #CBD5E1; stroke-width: 1.6; }
+      .teal-line { stroke: #0F766E; stroke-width: 4; marker-end: url(#arrowTeal); }
+      .blue-line { stroke: #1D4ED8; stroke-width: 4; marker-end: url(#arrowBlue); }
+      .amber-line { stroke: #B45309; stroke-width: 4; marker-end: url(#arrowAmber); }
+      .slate-line { stroke: #64748B; stroke-width: 3; marker-end: url(#arrowSlate); }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="#FBFCFB"/>
+  <rect width="1920" height="1080" fill="url(#grid)" opacity="0.76"/>
+
+  <!-- Header -->
+  <g class="font">
+    <circle cx="72" cy="70" r="30" fill="#0F172A"/>
+    <path d="M56 70C63 45 92 47 90 71C88 92 62 95 56 70Z" fill="#F59E0B"/>
+    <path d="M65 60L83 69L66 82L72 70Z" fill="#FEF3C7"/>
+    <text x="122" y="63" class="title">WorldForge 技术架构图</text>
+    <text x="123" y="92" class="subtitle">AI Worldbuilding Workstation · 文件即数据库 · 事件驱动世界一致性</text>
+  </g>
+
+  <!-- Structured world memory -->
+  <g filter="url(#softShadow)" class="font">
+    <rect x="520" y="88" width="820" height="166" rx="18" class="panel"/>
+    <text x="930" y="125" text-anchor="middle" class="section">结构化世界记忆</text>
+    <text x="930" y="151" text-anchor="middle" class="tiny">每次创作前装配上下文，每次落盘后反向更新世界状态</text>
+
+    <rect x="555" y="171" width="135" height="62" rx="12" class="card"/>
+    <circle cx="582" cy="202" r="16" stroke="#0F766E" stroke-width="3"/>
+    <text x="615" y="197" class="label-teal">7 类词条</text>
+    <text x="615" y="218" class="tiny">人/地/组织/系统...</text>
+
+    <rect x="705" y="171" width="135" height="62" rx="12" class="card"/>
+    <path d="M733 203L760 189L786 205L760 219Z" stroke="#0F766E" stroke-width="3"/>
+    <circle cx="733" cy="203" r="5" fill="#0F766E"/>
+    <circle cx="760" cy="189" r="5" fill="#0F766E"/>
+    <circle cx="786" cy="205" r="5" fill="#0F766E"/>
+    <text x="806" y="197" class="label-teal" text-anchor="end">关系图谱</text>
+    <text x="806" y="218" class="tiny" text-anchor="end">BFS 影响追踪</text>
+
+    <rect x="855" y="171" width="135" height="62" rx="12" class="amber-card"/>
+    <path d="M881 191V217M869 204H895" stroke="#B45309" stroke-width="3" stroke-linecap="round"/>
+    <path d="M904 191H967M904 204H956M904 217H939" stroke="#B45309" stroke-width="3" stroke-linecap="round"/>
+    <text x="958" y="197" class="label-amber" text-anchor="end">时间线事件</text>
+    <text x="958" y="218" class="tiny" text-anchor="end">因果变化挂接</text>
+
+    <rect x="1005" y="171" width="135" height="62" rx="12" class="blue-card"/>
+    <path d="M1031 188L1054 202L1031 216L1021 202Z" stroke="#1D4ED8" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M1063 190H1111M1063 203H1100M1063 216H1086" stroke="#1D4ED8" stroke-width="3" stroke-linecap="round"/>
+    <text x="1110" y="197" class="label-blue" text-anchor="end">约束规则</text>
+    <text x="1110" y="218" class="tiny" text-anchor="end">hard / soft</text>
+
+    <rect x="1155" y="171" width="145" height="62" rx="12" class="violet-card"/>
+    <path d="M1181 188H1230C1238 188 1243 194 1243 202C1243 211 1238 217 1230 217H1181Z" stroke="#4C1D95" stroke-width="3"/>
+    <path d="M1181 188C1191 191 1192 214 1181 217" stroke="#4C1D95" stroke-width="3"/>
+    <text x="1272" y="197" class="label-violet" text-anchor="end">世界记忆</text>
+    <text x="1272" y="218" class="tiny" text-anchor="end">memory/*.md</text>
+  </g>
+
+  <!-- Input surfaces -->
+  <g class="font" filter="url(#softShadow)">
+    <rect x="50" y="265" width="190" height="94" rx="13" fill="white" stroke="#CBD5E1" stroke-width="1.7"/>
+    <rect x="75" y="293" width="52" height="40" rx="4" stroke="#0F766E" stroke-width="3"/>
+    <path d="M75 304H127" stroke="#0F766E" stroke-width="3"/>
+    <circle cx="84" cy="299" r="2" fill="#0F766E"/>
+    <circle cx="93" cy="299" r="2" fill="#0F766E"/>
+    <text x="145" y="318" class="label">桌面 UI</text>
+
+    <rect x="50" y="389" width="190" height="94" rx="13" fill="white" stroke="#CBD5E1" stroke-width="1.7"/>
+    <rect x="76" y="415" width="52" height="42" rx="7" fill="#0F766E"/>
+    <path d="M87 428L98 439L87 450" stroke="white" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M104 450H119" stroke="white" stroke-width="4" stroke-linecap="round"/>
+    <text x="145" y="442" class="label">Chat / 指令</text>
+
+    <rect x="50" y="513" width="190" height="94" rx="13" fill="white" stroke="#CBD5E1" stroke-width="1.7"/>
+    <circle cx="90" cy="559" r="22" stroke="#0F766E" stroke-width="3"/>
+    <path d="M90 537V581M68 559H112" stroke="#0F766E" stroke-width="3" stroke-linecap="round"/>
+    <text x="145" y="554" class="label">词条 / 时间线</text>
+    <text x="145" y="577" class="tiny">Entry &amp; Timeline</text>
+
+    <rect x="50" y="637" width="190" height="94" rx="13" fill="white" stroke="#CBD5E1" stroke-width="1.7"/>
+    <path d="M91 659L123 677L91 703L59 677Z" stroke="#0F766E" stroke-width="3"/>
+    <path d="M91 659V703M59 677L91 686L123 677" stroke="#0F766E" stroke-width="3"/>
+    <text x="145" y="677" class="label">Markdown</text>
+    <text x="145" y="700" class="tiny">Obsidian 兼容</text>
+  </g>
+  <path d="M240 312H298C321 312 333 330 333 352V682C333 704 321 684 298 684H252" stroke="#0F766E" stroke-width="4" fill="none"/>
+  <path d="M240 436H301" stroke="#0F766E" stroke-width="4"/>
+  <path d="M240 560H301" stroke="#0F766E" stroke-width="4"/>
+  <path d="M240 684H301" stroke="#0F766E" stroke-width="4"/>
+  <path d="M333 501H404" class="teal-line"/>
+
+  <!-- Context loop -->
+  <g class="font" filter="url(#softShadow)">
+    <rect x="395" y="306" width="248" height="72" rx="12" class="card"/>
+    <text x="519" y="335" text-anchor="middle" class="label-teal">Phase A</text>
+    <text x="519" y="360" text-anchor="middle" class="small">世界上下文装配</text>
+  </g>
+  <path d="M398 505C398 418 480 394 609 414" stroke="#0F766E" stroke-width="4" fill="none" marker-end="url(#arrowTeal)"/>
+  <path d="M608 629C486 653 400 613 398 524" stroke="#0F766E" stroke-width="4" stroke-dasharray="18 15" fill="none" marker-end="url(#arrowTeal)"/>
+  <path d="M602 414C675 423 693 467 660 505" stroke="#0F766E" stroke-width="4" stroke-dasharray="16 14" fill="none" marker-end="url(#arrowTeal)"/>
+
+  <g class="font">
+    <circle cx="583" cy="525" r="49" fill="white" stroke="#0F766E" stroke-width="3" filter="url(#softShadow)"/>
+    <rect x="562" y="505" width="43" height="30" rx="8" stroke="#0F766E" stroke-width="3"/>
+    <path d="M574 535L568 546L586 535" stroke="#0F766E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="576" cy="520" r="2.8" fill="#0F766E"/>
+    <circle cx="588" cy="520" r="2.8" fill="#0F766E"/>
+    <circle cx="600" cy="520" r="2.8" fill="#0F766E"/>
+    <text x="583" y="605" text-anchor="middle" class="label">Context Builder</text>
+    <text x="583" y="628" text-anchor="middle" class="tiny">搜索词条 · 图遍历 · 事件窗口</text>
+  </g>
+  <path d="M635 525H670" stroke="#0F766E" stroke-width="4" marker-end="url(#arrowTeal)"/>
+
+  <!-- Agent core -->
+  <g class="font" filter="url(#coreShadow)">
+    <circle cx="812" cy="525" r="130" fill="#E6FFFA" stroke="#B2F5EA" stroke-width="14" opacity="0.75"/>
+    <circle cx="812" cy="525" r="106" fill="url(#coreGlow)" stroke="#0F766E" stroke-width="2"/>
+    <circle cx="812" cy="525" r="86" fill="white" opacity="0.32"/>
+    <path d="M727 527C756 480 822 456 885 485" stroke="white" stroke-opacity="0.42" stroke-width="2"/>
+    <path d="M746 590C786 621 851 616 886 572" stroke="white" stroke-opacity="0.36" stroke-width="2"/>
+    <text x="812" y="504" text-anchor="middle" font-size="30" font-weight="850" fill="#0F172A">WorldForge</text>
+    <text x="812" y="541" text-anchor="middle" font-size="30" font-weight="850" fill="#0F172A">Agent Core</text>
+    <text x="812" y="575" text-anchor="middle" font-size="16" font-weight="750" fill="#0F766E">创作 · 推理 · 工具闭环</text>
+  </g>
+  <circle cx="672" cy="525" r="8" fill="#0F766E"/>
+  <circle cx="690" cy="525" r="8" fill="#0F766E"/>
+  <circle cx="942" cy="525" r="8" fill="#0F766E"/>
+  <circle cx="960" cy="525" r="8" fill="#0F766E"/>
+
+  <path d="M812 386V266" stroke="#0F766E" stroke-width="3" stroke-dasharray="9 11" marker-end="url(#arrowTeal)"/>
+  <path d="M812 266V386" stroke="#0F766E" stroke-width="3" stroke-dasharray="9 11" marker-end="url(#arrowTeal)"/>
+
+  <!-- LLM providers -->
+  <g class="font" filter="url(#softShadow)">
+    <rect x="625" y="694" width="375" height="78" rx="14" class="panel"/>
+    <text x="812" y="724" text-anchor="middle" class="label">LLM Provider Adapters</text>
+    <text x="812" y="750" text-anchor="middle" class="tiny">Anthropic · OpenAI · DeepSeek · Custom API Base URL</text>
+  </g>
+  <path d="M812 656V694" class="slate-line"/>
+
+  <!-- Write / verify loop -->
+  <g class="font" filter="url(#softShadow)">
+    <rect x="955" y="306" width="248" height="72" rx="12" class="amber-card"/>
+    <text x="1079" y="335" text-anchor="middle" class="label-amber">Phase B</text>
+    <text x="1079" y="360" text-anchor="middle" class="small">生成 · 落盘 · 校验</text>
+  </g>
+  <path d="M962 525H1004" stroke="#B45309" stroke-width="4" marker-end="url(#arrowAmber)"/>
+  <path d="M1005 414C1128 390 1214 431 1216 521" stroke="#B45309" stroke-width="4" fill="none" marker-end="url(#arrowAmber)"/>
+  <path d="M1215 544C1210 625 1123 657 1004 631" stroke="#B45309" stroke-width="4" stroke-dasharray="18 15" fill="none" marker-end="url(#arrowAmber)"/>
+  <path d="M1003 631C936 616 922 570 963 536" stroke="#B45309" stroke-width="4" stroke-dasharray="16 14" fill="none" marker-end="url(#arrowAmber)"/>
+
+  <g class="font">
+    <circle cx="1089" cy="525" r="49" fill="white" stroke="#D97706" stroke-width="3" filter="url(#softShadow)"/>
+    <path d="M1067 544L1078 533M1100 511L1112 499" stroke="#B45309" stroke-width="4" stroke-linecap="round"/>
+    <path d="M1071 498L1114 541" stroke="#B45309" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="1073" cy="501" r="8" stroke="#B45309" stroke-width="3"/>
+    <circle cx="1112" cy="540" r="8" stroke="#B45309" stroke-width="3"/>
+    <text x="1089" y="605" text-anchor="middle" class="label">Tool Router</text>
+    <text x="1089" y="628" text-anchor="middle" class="tiny">工具选择 · 权限 · 结果回喂</text>
+  </g>
+
+  <!-- Tauri IPC bus -->
+  <g class="font" filter="url(#softShadow)">
+    <rect x="1225" y="285" width="135" height="482" rx="16" fill="#F8FBFF" stroke="#2563EB" stroke-width="1.8"/>
+    <text x="1292" y="323" text-anchor="middle" class="label-blue">Tauri IPC</text>
+    <text x="1292" y="347" text-anchor="middle" class="tiny">invoke()</text>
+
+    <circle cx="1292" cy="417" r="36" fill="white" stroke="#60A5FA" stroke-width="2"/>
+    <path d="M1275 417H1309M1292 400V434" stroke="#1D4ED8" stroke-width="3" stroke-linecap="round"/>
+    <text x="1292" y="471" text-anchor="middle" class="tiny">Command Bus</text>
+
+    <circle cx="1292" cy="548" r="36" fill="white" stroke="#60A5FA" stroke-width="2"/>
+    <path d="M1275 538H1310M1275 548H1301M1275 558H1314" stroke="#1D4ED8" stroke-width="3" stroke-linecap="round"/>
+    <text x="1292" y="602" text-anchor="middle" class="tiny">Streaming</text>
+
+    <circle cx="1292" cy="679" r="36" fill="white" stroke="#60A5FA" stroke-width="2"/>
+    <path d="M1280 682L1290 692L1308 668" stroke="#1D4ED8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1292" y="733" text-anchor="middle" class="tiny">Permissioned IO</text>
+  </g>
+  <path d="M1138 525C1172 525 1188 417 1225 417" stroke="#1D4ED8" stroke-width="3" stroke-dasharray="8 9" marker-end="url(#arrowBlue)"/>
+  <path d="M1138 525H1225" class="blue-line"/>
+  <path d="M1138 525C1172 525 1188 679 1225 679" stroke="#1D4ED8" stroke-width="3" stroke-dasharray="8 9" marker-end="url(#arrowBlue)"/>
+
+  <!-- Rust services and tools -->
+  <g class="font" filter="url(#softShadow)">
+    <rect x="1400" y="232" width="312" height="598" rx="18" fill="#FFFFFF" stroke="#7C3AED" stroke-width="1.5"/>
+    <text x="1556" y="272" text-anchor="middle" class="section">Rust Tool &amp; Service Layer</text>
+    <text x="1556" y="298" text-anchor="middle" class="tiny">命令持久化到磁盘，前端 store 只做运行时缓存</text>
+
+    <rect x="1432" y="326" width="248" height="58" rx="12" class="violet-card"/>
+    <path d="M1459 344H1490M1459 356H1510M1459 368H1501" stroke="#4C1D95" stroke-width="3" stroke-linecap="round"/>
+    <text x="1520" y="355" class="label-violet">Entry Search / Read / Write</text>
+    <text x="1520" y="375" class="tiny">Markdown + YAML frontmatter</text>
+
+    <rect x="1432" y="407" width="248" height="58" rx="12" class="blue-card"/>
+    <circle cx="1466" cy="436" r="16" stroke="#1D4ED8" stroke-width="3"/>
+    <path d="M1466 420V452M1450 436H1482M1477 447L1490 459" stroke="#1D4ED8" stroke-width="3" stroke-linecap="round"/>
+    <text x="1520" y="436" class="label-blue">Relation Graph BFS</text>
+    <text x="1520" y="456" class="tiny">关联路径与影响解释</text>
+
+    <rect x="1432" y="488" width="248" height="58" rx="12" class="amber-card"/>
+    <path d="M1454 520H1491M1459 506L1454 520L1459 534M1486 506L1491 520L1486 534" stroke="#B45309" stroke-width="3" stroke-linecap="round"/>
+    <text x="1520" y="517" class="label-amber">Timeline + Event Cascade</text>
+    <text x="1520" y="537" class="tiny">事件同步词条/章节/关系</text>
+
+    <rect x="1432" y="569" width="248" height="58" rx="12" class="card"/>
+    <path d="M1452 598L1465 611L1491 584" stroke="#0F766E" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1520" y="598" class="label-teal">Consistency Check</text>
+    <text x="1520" y="618" class="tiny">静态候选 + LLM 语义复核</text>
+
+    <rect x="1432" y="650" width="248" height="58" rx="12" class="blue-card"/>
+    <path d="M1454 670H1490V698H1454Z" stroke="#1D4ED8" stroke-width="3"/>
+    <path d="M1462 680H1482M1462 689H1475" stroke="#1D4ED8" stroke-width="3" stroke-linecap="round"/>
+    <text x="1520" y="679" class="label-blue">Outline / Scene Analyze</text>
+    <text x="1520" y="699" class="tiny">章节绑定事件，写作反馈</text>
+
+    <rect x="1432" y="731" width="248" height="58" rx="12" class="violet-card"/>
+    <path d="M1456 759C1465 743 1485 744 1494 759C1484 770 1466 770 1456 759Z" stroke="#4C1D95" stroke-width="3"/>
+    <path d="M1461 758H1489" stroke="#4C1D95" stroke-width="3" stroke-linecap="round"/>
+    <text x="1520" y="760" class="label-violet">Web / Memory / File</text>
+    <text x="1520" y="780" class="tiny">外部资料与长文件分页</text>
+  </g>
+  <path d="M1360 417H1432" class="blue-line"/>
+  <path d="M1360 548H1432" class="blue-line"/>
+  <path d="M1360 679H1432" class="blue-line"/>
+
+  <!-- Differentiated outputs -->
+  <g class="font" filter="url(#softShadow)">
+    <rect x="1750" y="260" width="135" height="558" rx="17" fill="#F8FEFC" stroke="#0F766E" stroke-width="1.8"/>
+    <text x="1817" y="301" text-anchor="middle" class="label-teal">差异化输出</text>
+
+    <rect x="1768" y="333" width="99" height="92" rx="11" fill="white" stroke="#A7F3D0" stroke-width="1.4"/>
+    <path d="M1785 389H1850M1790 375L1808 360L1825 373L1844 350" stroke="#0F766E" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="1790" cy="375" r="5" fill="white" stroke="#0F766E" stroke-width="3"/>
+    <circle cx="1808" cy="360" r="5" fill="white" stroke="#0F766E" stroke-width="3"/>
+    <circle cx="1825" cy="373" r="5" fill="white" stroke="#0F766E" stroke-width="3"/>
+    <circle cx="1844" cy="350" r="5" fill="white" stroke="#0F766E" stroke-width="3"/>
+    <text x="1817" y="413" text-anchor="middle" class="tiny">因果时间线</text>
+
+    <rect x="1768" y="452" width="99" height="92" rx="11" fill="white" stroke="#BFDBFE" stroke-width="1.4"/>
+    <path d="M1796 480H1840M1796 499H1830M1796 518H1848" stroke="#1D4ED8" stroke-width="3" stroke-linecap="round"/>
+    <path d="M1784 480L1789 485L1795 474M1784 499L1789 504L1795 493M1784 518L1789 523L1795 512" stroke="#1D4ED8" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1817" y="532" text-anchor="middle" class="tiny">一致性报告</text>
+
+    <rect x="1768" y="571" width="99" height="92" rx="11" fill="white" stroke="#DDD6FE" stroke-width="1.4"/>
+    <circle cx="1817" cy="606" r="17" stroke="#4C1D95" stroke-width="3"/>
+    <path d="M1805 619L1791 638M1828 619L1845 638" stroke="#4C1D95" stroke-width="3" stroke-linecap="round"/>
+    <text x="1817" y="651" text-anchor="middle" class="tiny">影响追踪</text>
+
+    <rect x="1768" y="690" width="99" height="92" rx="11" fill="white" stroke="#FCD34D" stroke-width="1.4"/>
+    <path d="M1790 711H1844V752H1790Z" stroke="#B45309" stroke-width="3"/>
+    <path d="M1799 723H1834M1799 735H1825M1799 747H1838" stroke="#B45309" stroke-width="3" stroke-linecap="round"/>
+    <text x="1817" y="770" text-anchor="middle" class="tiny">JSONL 会话</text>
+  </g>
+  <path d="M1680 355C1710 355 1719 379 1748 379" stroke="#0F766E" stroke-width="3" stroke-dasharray="8 9" marker-end="url(#arrowTeal)"/>
+  <path d="M1680 436C1710 436 1719 498 1748 498" stroke="#1D4ED8" stroke-width="3" stroke-dasharray="8 9" marker-end="url(#arrowBlue)"/>
+  <path d="M1680 517C1710 517 1719 617 1748 617" stroke="#4C1D95" stroke-width="3" stroke-dasharray="8 9"/>
+  <path d="M1680 760C1710 760 1719 736 1748 736" stroke="#B45309" stroke-width="3" stroke-dasharray="8 9" marker-end="url(#arrowAmber)"/>
+
+  <!-- File-native workspace -->
+  <g class="font" filter="url(#softShadow)">
+    <rect x="410" y="865" width="1030" height="130" rx="16" fill="#FFFFFF" stroke="#2563EB" stroke-width="1.8"/>
+    <path d="M455 917H507C517 917 524 923 524 933V951C524 960 517 966 507 966H455C445 966 438 960 438 951V905C438 897 445 891 455 891H479L492 904H507C517 904 524 910 524 920" stroke="#1D4ED8" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="900" y="910" text-anchor="middle" font-size="24" font-weight="850" fill="#0F172A">File-native World Workspace</text>
+    <text x="900" y="941" text-anchor="middle" class="small">本地优先，无数据库：世界观可以被人类直接阅读、版本管理、Obsidian 打开</text>
+    <text x="610" y="970" class="mono">entries/*.md</text>
+    <text x="775" y="970" class="mono">timelines/*.json</text>
+    <text x="980" y="970" class="mono">relations/index.json</text>
+    <text x="1210" y="970" class="mono">outline/*.md</text>
+    <text x="1340" y="970" class="mono">sessions/*.jsonl</text>
+  </g>
+  <path d="M812 772V865" stroke="#1D4ED8" stroke-width="3" stroke-dasharray="8 10" marker-end="url(#arrowBlue)"/>
+  <path d="M1556 830C1510 868 1486 930 1440 930" stroke="#1D4ED8" stroke-width="3" stroke-dasharray="8 10" marker-end="url(#arrowBlue)"/>
+  <path d="M410 930C295 930 155 865 145 731" stroke="#1D4ED8" stroke-width="3" stroke-dasharray="8 10" marker-end="url(#arrowBlue)"/>
+  <path d="M1440 930C1595 930 1762 908 1817 818" stroke="#1D4ED8" stroke-width="3" stroke-dasharray="8 10" marker-end="url(#arrowBlue)"/>
+
+  <!-- Differentiation chips -->
+  <g class="font">
+    <rect x="420" y="780" width="148" height="36" rx="18" fill="#ECFDF5" stroke="#0F766E" stroke-width="1.4"/>
+    <text x="494" y="804" text-anchor="middle" class="tiny" fill="#0F766E">本地离线优先</text>
+    <rect x="586" y="780" width="178" height="36" rx="18" fill="#EFF6FF" stroke="#1D4ED8" stroke-width="1.4"/>
+    <text x="675" y="804" text-anchor="middle" class="tiny" fill="#1D4ED8">关系 + 时间统一图谱</text>
+    <rect x="782" y="780" width="185" height="36" rx="18" fill="#FFF7ED" stroke="#D97706" stroke-width="1.4"/>
+    <text x="875" y="804" text-anchor="middle" class="tiny" fill="#B45309">写作后自动一致性检查</text>
+    <rect x="986" y="780" width="178" height="36" rx="18" fill="#F5F3FF" stroke="#7C3AED" stroke-width="1.4"/>
+    <text x="1075" y="804" text-anchor="middle" class="tiny" fill="#4C1D95">创作数据可迁移</text>
+  </g>
+</svg>

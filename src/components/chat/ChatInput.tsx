@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type KeyboardEvent } from "react";
+import { useState, useEffect, useRef, useCallback, type KeyboardEvent } from "react";
 import { useStore, type Message, type ToolCall, type TimelineBlock, type UploadedFile } from "@/lib/store";
 import { invoke } from "@/lib/api";
 import { runAgentLoop, resetPermissions, type AgentMessage } from "@/lib/agent-loop";
@@ -88,53 +88,96 @@ export function ChatInput({ storyId }: { storyId: string }) {
     }
   }, [input]);
 
-  // Retry: replace the whole last turn. Tool results are stored as hidden
-  // system messages, so removing only the assistant response leaves stale
-  // context in the next request.
+  // Retry / edit-retry: replace the whole last turn. Tool results are stored
+  // as hidden system messages, so removing only the assistant response leaves
+  // stale context in the next request. We truncate to before the last user
+  // message, then either resend it immediately (retry) or put it back in the
+  // input for editing (edit-retry).
+  const truncateForRetry = useCallback(async (fallbackContent: string, captureSnapshot = false) => {
+    const w = useStore.getState().worlds.find((x) => x.id === activeWorldId);
+    const s = w?.stories.find((x) => x.id === storyId);
+    const c = s?.conversations.find((x) => x.id === activeConversationId);
+    if (!w || !c) return false;
+
+    const msgs = [...c.messages];
+    let lastUserIdx = -1;
+    for (let i = msgs.length - 1; i >= 0; i -= 1) {
+      if (msgs[i].role === "user") {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    const retryContent = lastUserIdx >= 0 ? msgs[lastUserIdx].content : fallbackContent;
+    if (!retryContent) return false;
+
+    // Edit-retry captures a rollback snapshot of the full message list before
+    // truncation, so navigating away without sending can restore the original
+    // conversation. Plain retry (auto-send) does not enter this editing state.
+    if (captureSnapshot) {
+      useStore.getState().setRetrySnapshot(activeConversationId!, msgs);
+    }
+
+    const nextMessages = lastUserIdx >= 0 ? msgs.slice(0, lastUserIdx) : msgs;
+    useStore.setState((prev) => ({
+      worlds: prev.worlds.map((ww) => ww.id === activeWorldId ? {
+        ...ww,
+        stories: ww.stories.map((ss) => ss.id === storyId ? {
+          ...ss,
+          conversations: ss.conversations.map((cc) => cc.id === activeConversationId ? {
+            ...cc,
+            messages: nextMessages,
+          } : cc),
+        } : ss),
+      } : ww),
+    }));
+    try {
+      await rewriteSessionMessages(w.path, c.id, messagesToSessionLines(nextMessages));
+    } catch {}
+
+    clearStreamText();
+    setConversationDraft(activeConversationId!, retryContent);
+    return true;
+  }, [activeWorldId, storyId, activeConversationId, clearStreamText, setConversationDraft]);
+
   useEffect(() => {
     const handler = async (e: Event) => {
       const fallbackContent = (e as CustomEvent).detail.content as string;
       if (isStreaming) return;
-      const w = useStore.getState().worlds.find((x) => x.id === activeWorldId);
-      const s = w?.stories.find((x) => x.id === storyId);
-      const c = s?.conversations.find((x) => x.id === activeConversationId);
-      if (!w || !c) return;
-
-      const msgs = [...c.messages];
-      let lastUserIdx = -1;
-      for (let i = msgs.length - 1; i >= 0; i -= 1) {
-        if (msgs[i].role === "user") {
-          lastUserIdx = i;
-          break;
-        }
-      }
-      const retryContent = lastUserIdx >= 0 ? msgs[lastUserIdx].content : fallbackContent;
-      if (!retryContent) return;
-
-      const nextMessages = lastUserIdx >= 0 ? msgs.slice(0, lastUserIdx) : msgs;
-      useStore.setState((prev) => ({
-        worlds: prev.worlds.map((ww) => ww.id === activeWorldId ? {
-          ...ww,
-          stories: ww.stories.map((ss) => ss.id === storyId ? {
-            ...ss,
-            conversations: ss.conversations.map((cc) => cc.id === activeConversationId ? {
-              ...cc,
-              messages: nextMessages,
-            } : cc),
-          } : ss),
-        } : ww),
-      }));
-      try {
-        await rewriteSessionMessages(w.path, c.id, messagesToSessionLines(nextMessages));
-      } catch {}
-
-      clearStreamText();
-      setConversationDraft(activeConversationId!, retryContent);
+      const ok = await truncateForRetry(fallbackContent, false);
+      if (!ok) return;
       handleSendRef.current();
     };
     window.addEventListener("worldforge-retry", handler);
     return () => window.removeEventListener("worldforge-retry", handler);
-  }, [isStreaming, activeWorldId, storyId, activeConversationId, clearStreamText, setConversationDraft]);
+  }, [isStreaming, truncateForRetry]);
+
+  // Edit-retry: truncate + put the original text back into the input, but do
+  // NOT auto-send — the user edits it first, then sends manually. Captures a
+  // rollback snapshot so navigating away without sending restores the original
+  // conversation.
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const fallbackContent = (e as CustomEvent).detail.content as string;
+      if (isStreaming) return;
+      await truncateForRetry(fallbackContent, true);
+      // Focus the input so the user can start editing immediately.
+      textareaRef.current?.focus();
+    };
+    window.addEventListener("worldforge-edit-retry", handler);
+    return () => window.removeEventListener("worldforge-edit-retry", handler);
+  }, [isStreaming, truncateForRetry, textareaRef]);
+
+  // Rollback guard: if the user entered edit-retry but navigates away without
+  // sending, restore the pre-edit conversation. This covers both switching to
+  // a different conversation (snapshot.convId !== activeConversationId) and
+  // ChatInput unmounting (settings/detail view replacing ChatLayout).
+  useEffect(() => {
+    const snap = useStore.getState().retrySnapshot;
+    if (snap && snap.convId !== activeConversationId) {
+      useStore.getState().restoreRetrySnapshotIfPending();
+    }
+    return () => useStore.getState().restoreRetrySnapshotIfPending();
+  }, [activeConversationId]);
 
   // Listen for command palette selections
   useEffect(() => {
@@ -197,6 +240,10 @@ export function ChatInput({ storyId }: { storyId: string }) {
     const text = (useStore.getState().conversationDrafts[activeConversationId!] || input).trim();
     if ((!text && files.length === 0) || isStreaming || !world || !story) return;
     const convId = activeConversationId!; // Lock to this conversation for the entire send
+
+    // Sending commits the edit — clear the rollback snapshot so navigating away
+    // later does not restore the pre-edit conversation.
+    useStore.getState().clearRetrySnapshot();
 
     // ── Handle slash commands ──
     const persistCmd = (cmd: string, result: string) => {

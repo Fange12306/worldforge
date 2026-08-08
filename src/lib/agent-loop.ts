@@ -51,6 +51,20 @@ function eventScopeSuffix(startId: string | null | undefined, endId: string | nu
   return parts.length > 0 ? ` (${parts.join(", ")})` : "";
 }
 
+/**
+ * Normalize a memory file name from raw LLM input: trim, strip path separators,
+ * replace illegal filename chars, and guarantee the .md extension.
+ * Prevents duplicate files from `编年史` vs `编年史.md` style inconsistencies.
+ */
+function normalizeMemFileName(raw: string): string {
+  let name = (raw || "").trim();
+  name = name.replace(/^[\\/]+/, "").replace(/\.\.\//g, "");
+  name = name.replace(/[\\/:：*?"<>|·]/g, "-");
+  name = name.replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  if (!name) return "";
+  return /\.md$/i.test(name) ? name : name + ".md";
+}
+
 // ── Types ──
 
 export type AgentMessage = {
@@ -119,15 +133,18 @@ function getTools(): ToolDef[] {
   },
   {
     name: "EntryWrite",
-    description: "Create, update, or delete a setting entry. CRITICAL: when creating (no entry_id) or updating, you MUST put all generated content into the 'body' parameter as markdown — anything said in chat or thinking is NOT saved to the file.",
+    description: "Create, update, or delete a setting entry. CRITICAL: when creating (no entry_id) or updating with 'body', you MUST put all generated content into the 'body' parameter as markdown — anything said in chat or thinking is NOT saved to the file. For surgical edits on an existing entry, use 'find'+'replace' (replaces FIRST occurrence) or 'append' (adds a section) instead of rewriting the whole 'body'. You may also update only name/type/constraints without passing 'body' — the existing body is preserved.",
     input_schema: {
       type: "object",
       properties: {
         entry_id: { type: "string", description: "Existing entry ID. Omit to create new. Required when deleting." },
         delete: { type: "boolean", description: "Set to true to DELETE this entry (requires entry_id). Irreversible." },
-        name: { type: "string", description: "Entry display name" },
+        name: { type: "string", description: "Entry display name. Omit on update to keep the current name." },
         entry_type: { type: "string", description: "Entry type slug (character/location/organization/system/artifact/era/concept). Required for new entries; can also be used to change an existing entry's type." },
-        body: { type: "string", description: "MANDATORY: the entry's full markdown body content. If you don't pass this, the file will be empty. Anything you want to save must go here." },
+        body: { type: "string", description: "The entry's full markdown body content. Omit to preserve the existing body (on update). For small changes prefer find/replace/append over resending the whole body." },
+        find: { type: "string", description: "Exact substring to locate for a surgical body edit. Replaces the FIRST occurrence. Requires 'replace'. On update only." },
+        replace: { type: "string", description: "Replacement text for the matched 'find' substring. Requires 'find'." },
+        append: { type: "string", description: "Text appended to the END of the entry body (preceded by a newline). For adding a section without rewriting. On update only." },
         constraints: { type: "array", items: { type: "object", properties: { rule: { type: "string", description: "The constraint rule text" }, severity: { type: "string", enum: ["hard", "soft"], description: "hard = must pass (blocks write), soft = reminder only" }, timeline_id: { type: "string", description: "Optional timeline ID to scope this constraint" } }, required: ["rule", "severity"] }, description: "Optional list of consistency constraints for this entry. Omit to keep existing (on update) or leave empty (on create). Pass [] to clear existing constraints." },
       },
       required: ["name"],
@@ -213,13 +230,16 @@ function getTools(): ToolDef[] {
   },
   {
     name: "Memory",
-    description: "List, read, write, or delete a world memory file. Omit 'file_name' and 'content' to list all (returns name + description). Omit 'content' to read a specific file; pass 'content' to create or update; pass delete:true to delete. REQUIRES PERMISSION for write/delete.",
+    description: "List, read, write, patch, or delete a world memory file. file_name is auto-normalized (always stored with .md extension; you may pass with or without it). Omit file_name and content to list all (returns name + description). Omit content to read a file. Pass content to create or update (full overwrite). For surgical edits, pass find + replace (replaces FIRST occurrence) or append (adds text at end) instead of content — you do NOT need to rewrite the whole file. Pass delete:true to delete. REQUIRES PERMISSION for write/patch/delete.",
     input_schema: {
       type: "object",
       properties: {
-        file_name: { type: "string", description: "Memory file name (kebab-case Chinese, e.g., '暗月教设定决策'). Include .md extension. Omit to list all memories." },
-        content: { type: "string", description: "Full markdown content. Omit to read the file. Pass to create/update." },
-        description: { type: "string", description: "One-line summary for the MEMORY.md index. Only needed when writing new files." },
+        file_name: { type: "string", description: "Memory file name (kebab-case Chinese, e.g., '暗月教设定决策'). .md extension optional — it is normalized automatically. Omit to list all memories." },
+        content: { type: "string", description: "Full markdown content. Omit to read the file, or use find/replace/append instead. Pass to create/update (overwrites entire file)." },
+        find: { type: "string", description: "Exact substring to locate for a surgical edit. Must be unique enough; replaces the FIRST occurrence. Used with 'replace'." },
+        replace: { type: "string", description: "Replacement text for the matched 'find' substring. Requires 'find'." },
+        append: { type: "string", description: "Text appended to the END of the file (with a preceding newline). For adding a section without rewriting." },
+        description: { type: "string", description: "One-line summary for the MEMORY.md index. Only needed when creating new files." },
         delete: { type: "boolean", description: "Set to true to DELETE this memory file. Irreversible. REQUIRES PERMISSION." },
       },
       required: [],
@@ -591,10 +611,36 @@ async function executeTool(
         await invoke("delete_entry", { worldPath, entryId: eId });
         return t().entryDeleted(eId);
       }
+
+      // Resolve body from local edit (find/replace/append) against the current entry body.
+      // Requires reading the existing entry first. Only applies to updates.
+      let resolvedBody = eBody;
+      if (eId && !input.body && (input.find !== undefined || input.append !== undefined)) {
+        if (input.find !== undefined && input.replace === undefined) {
+          return t().entryReplaceNeeded;
+        }
+        const existing = await invoke<Entry>("read_entry", { worldPath, entryId: eId });
+        const currentBody = existing.body || "";
+        if (input.append !== undefined) {
+          const tail = (input.append as string).replace(/^\n+/, "");
+          resolvedBody = currentBody.replace(/\s*$/, "") + "\n\n" + tail;
+        } else if (input.find !== undefined) {
+          const find = input.find as string;
+          const idx = currentBody.indexOf(find);
+          if (idx === -1) {
+            return t().entryFindNotFound(existing.name, find);
+          }
+          resolvedBody = currentBody.slice(0, idx) + (input.replace as string) + currentBody.slice(idx + find.length);
+        }
+        if (resolvedBody === currentBody) {
+          return t().entryNoChange;
+        }
+      }
+
       // Consistency check before write (only for updates — new entries have no graph context)
       let ccResult: { hard: string[]; soft: string[] } | null = null;
       if (eId) {
-        ccResult = await runConsistencyCheck(worldPath, eBody, "entry", eId);
+        ccResult = await runConsistencyCheck(worldPath, resolvedBody, "entry", eId);
         if (ccResult && ccResult.hard.length > 0) {
           return t().hardConstraintBlock(ccResult.hard.join("\n\n"));
         }
@@ -603,13 +649,15 @@ async function executeTool(
         const updateParams: Record<string, unknown> = {
           worldPath,
           entryId: input.entry_id as string,
-          name: input.name as string,
-          body: eBody,
+          name: (input.name as string) || "",
+          body: resolvedBody,
         };
         if (input.entry_type) updateParams.entryType = input.entry_type;
         if (input.constraints !== undefined) updateParams.constraints = input.constraints;
         await invoke("update_entry", updateParams);
-        let msg = t().entryUpdated(input.name as string);
+        let msg = (input.find !== undefined || input.append !== undefined)
+          ? t().entryPatched((input.name as string) || eId!)
+          : t().entryUpdated((input.name as string) || eId!);
         if (ccResult && ccResult.soft.length > 0) {
           msg += `\n\n${t().softConstraintReminder(ccResult.soft.join("\n"))}`;
         }
@@ -734,25 +782,55 @@ async function executeTool(
       return await invoke<string>("read_file", params);
     }
     case "Memory": {
-      const memFile = input.file_name as string | undefined;
-      // Delete path
-      if (input.delete === true) {
-        if (!memFile) return t().deleteNeedsId;
-        await invoke("delete_memory", { worldPath, fileName: memFile });
-        return t().memoryDeleted(memFile);
-      }
-      // List path: no file_name + no content
-      if (!memFile && !input.content) {
+      const rawFile = input.file_name as string | undefined;
+      // Delete path must be checked before listing, so delete-without-name errors instead of listing
+      if (input.delete === true && !rawFile) return t().deleteNeedsId;
+      // List path: no file_name — normalize not applicable
+      if (!rawFile && !input.content && !input.find && !input.append && input.delete !== true) {
         const entries = await invoke<Array<{ name: string; description: string }>>("list_memories", { worldPath });
         if (entries.length === 0) return t().memoryEmpty;
         return entries.map((e) => `- ${e.name}${e.description ? ` — ${e.description}` : ""}`).join("\n");
+      }
+      const memFile = normalizeMemFileName(rawFile || "");
+      if (!memFile) return t().deleteNeedsId;
+      // Delete path
+      if (input.delete === true) {
+        await invoke("delete_memory", { worldPath, fileName: memFile });
+        return t().memoryDeleted(memFile);
+      }
+      // Patch paths (surgical edit without full rewrite) — resolve against current file content
+      const patch = (input.find as string | undefined) || (input.append as string | undefined);
+      if (patch) {
+        // find without replace would silently delete the matched text — refuse
+        if (input.find !== undefined && input.replace === undefined) {
+          return t().memoryReplaceNeeded;
+        }
+        const current = await invoke<string>("read_memory", { worldPath, fileName: memFile });
+        let next = current;
+        if (input.append) {
+          const tail = (input.append as string).replace(/^\n+/, "");
+          next = current.replace(/\s*$/, "") + "\n\n" + tail;
+        } else if (input.find !== undefined) {
+          const find = input.find as string;
+          const idx = next.indexOf(find);
+          if (idx === -1) {
+            return t().memoryFindNotFound(memFile, find);
+          }
+          next = next.slice(0, idx) + (input.replace as string) + next.slice(idx + find.length);
+        }
+        if (next === current) {
+          return t().memoryNoChange;
+        }
+        const memParams: Record<string, unknown> = { worldPath, fileName: memFile, content: next };
+        if (input.description) memParams.description = input.description;
+        await invoke("write_memory", memParams);
+        return t().memoryPatched(memFile);
       }
       // Read path: file_name provided, no content
       if (memFile && !input.content) {
         return await invoke<string>("read_memory", { worldPath, fileName: memFile });
       }
-      // Write path
-      if (!memFile) return t().deleteNeedsId;
+      // Write path (full overwrite)
       const memParams: Record<string, unknown> = {
         worldPath,
         fileName: memFile,
@@ -1347,6 +1425,7 @@ export async function runAgentLoop(
             EventWrite: ["event_id", "timeline_id"],
             OutlineWrite: ["chapter_id"],
             TimelineWrite: ["timeline_id"],
+            Memory: ["file_name"],
           };
           const idFields = WRITE_TOOL_IDS[tool.name];
           if (idFields) {
@@ -1354,6 +1433,17 @@ export async function runAgentLoop(
             for (const f of idFields) {
               const v = tool.input[f];
               if (typeof v === "string" && v.length > 0) idsToClear.push(v);
+            }
+            // Memory writes use a normalized file name; also invalidate the
+            // cache entry under the bare name (without .md) since the LLM may
+            // read it either way. Otherwise a write to "编年史" leaves a stale
+            // cached read of "编年史.md" — the agent never sees its own edit.
+            if (tool.name === "Memory") {
+              const bare = normalizeMemFileName(idsToClear[0] || "");
+              if (bare) {
+                idsToClear.push(bare);
+                idsToClear.push(bare.replace(/\.md$/i, ""));
+              }
             }
             if (idsToClear.length > 0) {
               for (const key of toolCache.keys()) {
@@ -1372,9 +1462,14 @@ export async function runAgentLoop(
             tool_call_id: tool.id,
           });
         } catch (e: any) {
+          const errText = `Error: ${e}`;
+          // Surface the failure to the UI + session log so it's not invisible.
+          // Previously only the in-memory messages array was updated and the
+          // model would see it, but the user/UI never did.
+          callbacks.onToolResult({ toolUseId: tool.id, toolName: tool.name, content: errText }, tool.name);
           messages.push({
             role: "user",
-            content: `[工具结果: ${tool.name}]\nError: ${e}`,
+            content: `[工具结果: ${tool.name}]\n${errText}`,
             tool_call_id: tool.id,
           });
         }

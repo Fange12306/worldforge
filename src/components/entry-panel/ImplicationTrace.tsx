@@ -114,11 +114,10 @@ export function ImplicationTrace({ worldPath, entryId, entryName, onNavigate }: 
             <select value={filterTimePoint} onChange={e => { e.stopPropagation(); setFilterTimePoint(e.target.value); }} onClick={e => e.stopPropagation()} className="text-[0.625rem] bg-surface-800 border border-surface-700 rounded px-1.5 py-0.5 text-ink-muted min-w-[15rem]">
               {timePoints.map(tp => <option key={tp} value={tp}>{units.length > 0 ? formatFullTime(tp, units, null, language) : tp}</option>)}
             </select>
-            {filterTimePoint && <button onClick={e => { e.stopPropagation(); setFilterTimePoint(""); }} className="text-[0.56rem] text-ink-muted/30 hover:text-ink-muted">✕</button>}
           </div>
           )}
           {graphEntries.length === 0 ? (
-            <div className="px-4 py-2 text-[0.625rem] text-ink-muted/40 italic">{t.entry.graphNoRelations}</div>
+            <div className="px-4 py-2 text-[0.625rem] text-ink-muted/40 italic">{t.entry.graphEmpty}</div>
           ) : groupBy(graphEntries, "via_description").map(([relation, entities]) => (
             <div key={relation} className="pl-4">
               <p className="text-[0.625rem] text-ink-muted/50 uppercase tracking-wider mb-0.5">{relation}</p>

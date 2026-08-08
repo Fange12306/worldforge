@@ -61,6 +61,9 @@ export function AppShell() {
     window.addEventListener("worldforge-data-changed", handler);
     // Clear last session on quit so reopen always starts fresh
     const unloadHandler = () => {
+      // If an edit-retry is pending (truncated but not sent), restore the
+      // original conversation before quitting so it survives a reopen.
+      useStore.getState().restoreRetrySnapshotIfPending();
       invoke("save_last_session", { worldPath: "", storyId: "", conversationId: "" }).catch(() => {});
     };
     window.addEventListener("beforeunload", unloadHandler);

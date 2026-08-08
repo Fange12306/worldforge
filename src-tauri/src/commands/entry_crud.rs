@@ -331,10 +331,13 @@ pub fn update_entry(
     let final_constraints = constraints.unwrap_or(existing.constraints);
     let constraints_yaml = format_constraints(&final_constraints);
 
+    // Keep existing name if none provided (enables body-only / constraint-only edits)
+    let final_name = if name.trim().is_empty() { existing.name.clone() } else { name };
+
     // Build new frontmatter
     let fm = format!(
         "id: {}\nname: {}\ntype: {}\ncreated_at: {}\nupdated_at: {}\ntags: [{}]\n{}",
-        existing.id, name, entry_type_str(&new_type),
+        existing.id, final_name, entry_type_str(&new_type),
         existing.created_at.to_rfc3339(), Utc::now().to_rfc3339(),
         existing.tags.join(", "),
         constraints_yaml

@@ -123,7 +123,7 @@ export type RelationChange = {
 
 export type WorldEvent = {  // "Event" conflicts with DOM Event — use WorldEvent
   id: string;
-  name: string; // human-readable slug, unique within timeline (e.g. "着陆失败-黎明号")
+  name: string; // human-readable slug, unique within timeline (e.g. "大战-东境")
   timeline_id: string;
   time_point: string;
   precision?: number;          // unit index in time_format.units; null = full precision

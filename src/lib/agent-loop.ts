@@ -347,7 +347,7 @@ function getTools(): ToolDef[] {
         precision: { type: "number", description: ta.eventPrecision },
         linked_entries: { type: "string", description: "JSON array of {entry_id, perspective_summary}. perspective_summary ≤400 chars each. Example: [{\"entry_id\":\"uuid\",\"perspective_summary\":\"简述\"}]" },
         linked_chapters: { type: "string", description: "JSON array of {story_id, chapter_order} objects. Example: [{\"story_id\":\"uuid\",\"chapter_order\":1}]" },
-        relationship_changes: { type: "string", description: "JSON array of {entry_a, entry_b, change_type, relation, description} objects. These are automatically synced to the relation graph (ExploreGraph). To record an entry's state change, set entry_a === entry_b with the state name as relation. Example: [{\"entry_a\":\"uuid\",\"entry_b\":\"uuid\",\"change_type\":\"add\",\"relation\":\"舰长\",\"description\":\"晋升为星舰舰长\"}]" },
+        relationship_changes: { type: "string", description: "JSON array of {entry_a, entry_b, change_type, relation, description} objects. These are automatically synced to the relation graph (ExploreGraph). To record an entry's state change, set entry_a === entry_b with the state name as relation. Example: [{\"entry_a\":\"uuid\",\"entry_b\":\"uuid\",\"change_type\":\"add\",\"relation\":\"首领\",\"description\":\"当选为新任首领\"}]" },
       },
       required: ["timeline_id"],
     },

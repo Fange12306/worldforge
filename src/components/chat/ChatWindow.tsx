@@ -125,7 +125,7 @@ export function ChatWindow({ messages }: { storyId: string; messages: Message[] 
             return <CompressedContextBanner key={msg.id} summary={summary} />;
           }
           const isLastUser = msg.role === "user" && msg.id === lastUserMsgId;
-          return <MessageBubble key={msg.id} message={msg} isLastUser={isLastUser} theme={theme} />;
+          return <MessageBubble key={msg.id} message={msg} isLastUser={isLastUser} theme={theme} globalStreaming={isStreamingHere} />;
         })}
         {isStreamingHere && (
           <MessageBubble

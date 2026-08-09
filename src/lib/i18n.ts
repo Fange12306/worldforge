@@ -418,11 +418,11 @@ const zh = {
     // EventWrite
     eventWriteDesc: "创建、更新或删除时间轴上的事件。事件连接词条和大纲章。更新/删除已有事件时必须使用 event_id。创建和更新时都可传 summary（事件描述，2-3句话为佳）和 linked_entries（含 perspective_summary，每条≤400字）。删除时传 delete:true。",
     eventId: "事件 UUID。更新/删除时优先使用 ListEvents 返回的 id。",
-    eventName: "事件可读 slug。创建时可指定；更新时可用于重命名事件。例如 '着陆失败-黎明号'",
+    eventName: "事件可读 slug。创建时可指定；更新时可用于重命名事件。例如 '大战-东境'",
     eventSummary: "事件概况",
     eventTimePoint: "零填充时间字符串，段数 = 1 + 时间单位数。第 0 段固定为 '000'。示例 — 4 单位: '000-003000-000300-08-15'；7 单位: '000-003-000300-08-15-14-30-00'。precision 只控制展示截断，不要缩短 time_point。",
     eventPrecision: "可选：展示精度索引 (0=纪元, 1=年, 2=月, 3=日, 4=时, 5=分, 6=秒)。只影响显示截断，不改变 time_point 长度。",
-    eventLinkedEntries: "Comma-separated list. Each item: '词条ID|该词条视角的简述'. Example: '黎明号|着陆失败暴露了暗物质侵蚀的后遗症,赵远航|下令返航'",
+    eventLinkedEntries: "Comma-separated list. Each item: '词条ID|该词条视角的简述'. Example: '东境|大战的主要战场,王储|下令出征'",
     eventLinkedChapters: "逗号分隔的章节序号",
     eventRelationshipChanges: "Relationship changes format: entry_a|entry_b|add|relation_type|描述",
     eventDelete: "设为true删除事件",

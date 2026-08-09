@@ -134,8 +134,8 @@ function buildZhPrompt(
     `  1) Relation — 词条之间的静态关系，跨所有时间轴成立。创建关系传 from/to/description，非对称关系必须传 reverse_description。对称关系（战友、结盟）不需要传。同两个词条可以有多条边（不同 description）。更新或删除前用 ExploreGraph 拿 relation_id。from_id/to_id 直接传词条名称即可，后端自动解析。`,
     `  2) Event 的 relationship_changes — 事件导致的关系变化，自动 upsert 到 ExploreGraph。add 标记 start_event_id，delete 标记 end_event_id。`,
     `- 判断标准：问自己"换个世界线，这个关系还成立吗？" 成立→Relation；不一定→事件的 relationship_changes。
-- 词条状态（state）也用 Relation，但 from_id 和 to_id 传同一个词条 ID，description 写状态名。例如 "林逸风 → 叛逃者 → 林逸风"（entry_a===entry_b）。\`start_event_id\`/\`end_event_id\` 自动关联事件时间。ExploreGraph 中 self-relation 即代表状态。
-- 判断何时用 state（self-relation）vs 正常 Relation：这个"状态"是否涉及另一个实体？"担任舰长"涉及舰船→正常 Relation；"成为大魔法师"不涉及其他实体→state。events 的 relationship_changes 同理：entry_a===entry_b 就是 state 变化。`,
+- 词条状态（state）也用 Relation，但 from_id 和 to_id 传同一个词条 ID，description 写状态名。例如 "某角色 → 流亡者 → 某角色"（entry_a===entry_b）。\`start_event_id\`/\`end_event_id\` 自动关联事件时间。ExploreGraph 中 self-relation 即代表状态。
+- 判断何时用 state（self-relation）vs 正常 Relation：这个"状态"是否涉及另一个实体？"担任某组织首领"涉及该组织→正常 Relation；"成为大魔法师"不涉及其他实体→state。events 的 relationship_changes 同理：entry_a===entry_b 就是 state 变化。`,
     `- 写完章节后，后端 OutlineWrite 会自动建立章节↔事件的关联图边和反向填充 linked_chapters，不需要手动调 Relation。`,
     ``,
     `## 网络调研`,
@@ -177,9 +177,9 @@ function buildZhPrompt(
     `- 事件连接词条和大纲。一个事件坐落在时间轴的唯一时间点上，可关联多个词条和多个大纲章。同一词条可能在不同时间轴上参与不同事件——这意味着只看词条本身的属性不足以了解它的完整历史。`,
     `- 新世界没有时间轴时，先问用户该世界的时间体系：有哪些时间单位（纪元？年？月？日？时？），各单位的最大值（如"每月30天、每年12个月"）。确认后用 TimelineWrite 传入 time_format_json。用户说"默认"/"标准"就用默认纪元格式。`,
     `- 用户描述了一个时间点发生的事情后，主动提出创建事件。`,
-    `- 创建事件前确认两件事：① 时间（如"5月3日"→默认当前纪元年份，precision=3；"327年3月"→precision=2）；② 概况和名称（可读 slug，如"着陆失败-黎明号"）。时间含混时先问。`,
+    `- 创建事件前确认两件事：① 时间（如"5月3日"→默认当前纪元年份，precision=3；"327年3月"→precision=2）；② 概况和名称（可读 slug，如"大战-东境"）。时间含混时先问。`,
     `- linked_entries 格式：每个词条用"词条ID|该词条视角简述"，多个词条用逗号分隔。视角简述必须自包含——在词条页独立展示时能独立理解。`,
-    `- 确认时间+概况后，先列出你打算关联的词条及理由（如"这次着陆失败涉及黎明号（舰船）、赵远航（舰长决策）、暗物质异常区（可能的外部原因）"），让用户确认/调整，再调用 EventWrite。`,
+    `- 确认时间+概况后，先列出你打算关联的词条及理由（如"这次大战涉及东境（地区）、王储（决策者）、边境要塞（可能的外部原因）"），让用户确认/调整，再调用 EventWrite。`,
     `- linked_chapters 一般留空——它由写大纲章时 OutlineWrite 的 linked_events 参数反向填充。`,
     `- relationship_changes 为 JSON 数组（格式参考 EventWrite 工具参数）。方向 entry_a → relation → entry_b。add 自动同步到 ExploreGraph，delete 标记 end_event_id。只有事件确实改变了词条间关系时才用。`,
     `- 同两个词条在同一时间段可以有多个关联（不同 description 即为不同边），ExploreGraph 会分组展示。`,
@@ -270,7 +270,7 @@ function buildEnPrompt(
     `  2) Event relationship_changes — relationship changes caused by events, auto-upserted to ExploreGraph. add marks start_event_id, delete marks end_event_id.`,
     `- Criterion: ask yourself "if we change worldlines, would this relationship still hold?" Yes → Relation; Not necessarily → event relationship_changes.
 - Entry states are also Relation, but set from_id and to_id to the same entry ID (entry_a===entry_b). description is the state name. start_event_id/end_event_id are auto-linked to event times. Self-relations in ExploreGraph represent entry states.
-- How to decide state (self-relation) vs normal Relation: does the "state" involve another entity? "担任舰长" (serves as captain of a ship) → normal Relation (to the ship). "大魔法师" (archmage) → state (self-relation). Same for EventWrite.relationship_changes: entry_a===entry_b means a state change.`,
+- How to decide state (self-relation) vs normal Relation: does the "state" involve another entity? "leads an organization" → normal Relation (to the organization). "becomes an archmage" → state (self-relation). Same for EventWrite.relationship_changes: entry_a===entry_b means a state change.`,
     `- After writing a chapter, the backend OutlineWrite automatically creates chapter↔event graph edges and back-fills linked_chapters — no need to manually call Relation.`,
     ``,
     `## Web Research`,

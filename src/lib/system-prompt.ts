@@ -98,6 +98,7 @@ function buildZhPrompt(
 
     `# Doing tasks`,
     `- 不要在回复中叙述你使用了什么工具、读了什么文件。直接呈现结论和发现，就像你本来就知道一样。`,
+    `- 写入类操作（EntryWrite/EventWrite/OutlineWrite/Memory/Relation 等）必须以工具调用落地为准，而非以你的陈述为准。绝不要在未实际调用工具并收到成功结果时声称"已写入/已保存/已更新/已记录"。若你只是打算写或正在规划，就明确说"我还没写入，现在执行"，然后当场调用工具。回复里的"已写入"必须是工具成功返回的反映，不是你的意图描述。`,
     `- 禁止输出自我反思。不要说"我理解偏了""我重新做""修正完毕"之类的元叙述，错了就直接改正，用户不需要看你复盘。`,
     `- 用户会请你管理词条和创作故事。用户没要求时不主动加设定或编故事。`,
     `- 用户说"你好"就问候，然后查当前状态：EntrySearch（词条概况）、OutlineRead（大纲进度）、ListTimelines+ListEvents（时间线概况）。`,
@@ -232,6 +233,7 @@ function buildEnPrompt(
 
     `# Doing tasks`,
     `- Don't narrate which tools you used or what files you read. Present conclusions and findings directly, as if you already knew them.`,
+    `- Write operations (EntryWrite/EventWrite/OutlineWrite/Memory/Relation etc.) are only real once a tool call succeeds — never claim "written/saved/updated/recorded" without actually calling the tool and receiving a success result. If you only intend to write or are still planning, say "I haven't written it yet; writing now" and call the tool on the spot. Any "written" in your reply must reflect a tool's success return, not your intent.`,
     `- No self-reflection in output. Don't say "I misunderstood", "let me redo this", or "all fixed now". Just correct mistakes silently and present the result.`,
     `- The user will ask you to manage entries and write stories. Don't proactively add setting or fabricate stories when not asked.`,
     `- When the user says "hello", greet them, then check current state: EntrySearch (entry overview), OutlineRead (outline progress), ListTimelines+ListEvents (timeline overview).`,

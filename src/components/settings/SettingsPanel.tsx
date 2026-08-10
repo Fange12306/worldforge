@@ -196,12 +196,19 @@ function ModelSection() {
     }
   }, [providers]);
 
-  // Tavily search key
-  const [tavilyApiKey, setTavilyApiKey] = useState("");
-  const [showTavilyKey, setShowTavilyKey] = useState(false);
+  // SearXNG URL (optional search fallback)
+  const [searxngUrl, setSearxngUrl] = useState("");
   useEffect(() => {
-    invoke<string>("get_api_key", { provider: "tavily" })
-      .then((key) => { if (key) setTavilyApiKey(key); })
+    invoke<string>("get_api_key", { provider: "searxng_url" })
+      .then((key) => { if (key) setSearxngUrl(key); })
+      .catch(() => {});
+  }, []);
+
+  // Tavily API Key (optional primary search provider)
+  const [tavilyKey, setTavilyKey] = useState("");
+  useEffect(() => {
+    invoke<string>("get_api_key", { provider: "tavily_api_key" })
+      .then((key) => { if (key) setTavilyKey(key); })
       .catch(() => {});
   }, []);
 
@@ -334,8 +341,11 @@ function ModelSection() {
         try { await invoke("save_api_key", { provider: providerId, key }); } catch {}
       }
     }
-    if (tavilyApiKey) {
-      try { await invoke("save_api_key", { provider: "tavily", key: tavilyApiKey }); } catch {}
+    if (searxngUrl) {
+      try { await invoke("save_api_key", { provider: "searxng_url", key: searxngUrl }); } catch {}
+    }
+    if (tavilyKey) {
+      try { await invoke("save_api_key", { provider: "tavily_api_key", key: tavilyKey }); } catch {}
     }
 
     const cleanedModels = normalizeModels(models);
@@ -716,25 +726,32 @@ function ModelSection() {
           </>
         )}
 
-        {/* Tavily API Key (independent of provider) */}
+        {/* 搜索源设置：Tavily（主源）+ SearXNG（自建回退），独立于模型供应商 */}
         <div>
           <h3 className="text-sm font-medium text-ink mb-3">{t.model.searchTitle}</h3>
           <div className="flex items-start gap-6 min-h-9">
+            <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.tavilyApiKeyLabel}</label>
+            <div className="relative w-96">
+              <input
+                type="password"
+                value={tavilyKey}
+                onChange={(e) => setTavilyKey(e.target.value)}
+                placeholder={t.model.tavilyApiKeyPlaceholder}
+                className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
+              />
+            </div>
+          </div>
+          <p className="pl-[136px] text-[0.625rem] text-ink-muted mt-1">{t.model.tavilyApiKeyHint}</p>
+          <div className="flex items-start gap-6 min-h-9 mt-2">
             <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.searchApiKeyLabel}</label>
             <div className="relative w-96">
               <input
-                type={showTavilyKey ? "text" : "password"}
-                value={tavilyApiKey}
-                onChange={(e) => setTavilyApiKey(e.target.value)}
+                type="text"
+                value={searxngUrl}
+                onChange={(e) => setSearxngUrl(e.target.value)}
                 placeholder={t.model.searchApiKeyPlaceholder}
-                className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 pr-9 outline-none focus:border-brand-500/30 transition-colors font-mono"
+                className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
               />
-              <button
-                onClick={() => setShowTavilyKey(!showTavilyKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 flex items-center justify-center rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors"
-              >
-                {showTavilyKey ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              </button>
             </div>
           </div>
           <p className="pl-[136px] text-[0.625rem] text-ink-muted mt-1">{t.model.searchApiKeyHint}</p>

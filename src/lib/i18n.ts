@@ -113,9 +113,12 @@ const zh = {
     presetAnthropic: "Anthropic",
     presetOpenai: "OpenAI",
     searchTitle: "搜索",
-    searchApiKeyLabel: "Tavily API Key",
-    searchApiKeyPlaceholder: "tvly-xxx，获取地址：https://app.tavily.com",
-    searchApiKeyHint: "Tavily 专为 AI Agent 设计的搜索 API。不填则搜索功能不可用。",
+    tavilyApiKeyLabel: "Tavily API Key（可选）",
+    tavilyApiKeyPlaceholder: "tvly-...",
+    tavilyApiKeyHint: "配置后搜索优先走 Tavily（精准、专为 AI 设计）。留空则回退 SearXNG / 免费搜索源。",
+    searchApiKeyLabel: "SearXNG URL（可选）",
+    searchApiKeyPlaceholder: "如 http://localhost:8888",
+    searchApiKeyHint: "未配置 Tavily 时，可用自建 SearXNG 实例作为搜索源（需开启 JSON API）。",
   },
 
   // Settings — personalization
@@ -622,9 +625,12 @@ const en: typeof zh = {
     presetAnthropic: "Anthropic",
     presetOpenai: "OpenAI",
     searchTitle: "Search",
-    searchApiKeyLabel: "Tavily API Key",
-    searchApiKeyPlaceholder: "tvly-xxx, get one at https://app.tavily.com",
-    searchApiKeyHint: "Tavily — a search API designed for AI agents. Required for the WebSearch tool.",
+    tavilyApiKeyLabel: "Tavily API Key (optional)",
+    tavilyApiKeyPlaceholder: "tvly-...",
+    tavilyApiKeyHint: "When set, search uses Tavily first (accurate, built for AI). Falls back to SearXNG / free sources when empty.",
+    searchApiKeyLabel: "SearXNG URL (optional)",
+    searchApiKeyPlaceholder: "e.g. http://localhost:8888",
+    searchApiKeyHint: "When no Tavily key is set, uses a self-hosted SearXNG instance (requires JSON API enabled).",
   },
 
   personalization: {

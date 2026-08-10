@@ -388,7 +388,10 @@ async fn stream_anthropic(
     }
 
     let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
+    // 字节缓冲：SSE 流按 TCP chunk 到达，多字节 UTF-8 字符可能被切在 chunk 边界。
+    // 必须累积原始字节、按 \n 切出完整行后再解码，否则 from_utf8_lossy 会把
+    // 切半的字符替换成 U+FFFD（乱码），且后续字节到达后也无法恢复。
+    let mut buffer: Vec<u8> = Vec::new();
     let mut current_tool_id: Option<String> = None;
     let mut current_tool_name = String::new();
     let mut current_tool_input = String::new();
@@ -417,13 +420,12 @@ async fn stream_anthropic(
                 continue;
             }
         };
-        let text = String::from_utf8_lossy(&chunk);
-        buffer.push_str(&text);
+        buffer.extend_from_slice(&chunk);
 
-        // Process SSE events
-        while let Some(line_end) = buffer.find('\n') {
-            let line = buffer[..line_end].trim().to_string();
-            buffer = buffer[line_end + 1..].to_string();
+        // Process SSE events: 按 \n 切出完整行后统一解码，行内字节是完整的 UTF-8
+        while let Some(line_end) = buffer.iter().position(|&b| b == b'\n') {
+            let line_bytes: Vec<u8> = buffer.drain(..=line_end).collect();
+            let line = String::from_utf8_lossy(&line_bytes).trim().to_string();
 
             if line.is_empty() || line.starts_with(':') {
                 continue;
@@ -625,7 +627,9 @@ async fn stream_openai_compatible(
     }
 
     let mut stream = response.bytes_stream();
-    let mut buffer = String::new();
+    // 字节缓冲：见 stream_anthropic 注释——chunk 边界可能切在多字节 UTF-8 字符中间，
+    // 必须按 \n 切出完整行后再解码，否则产生 U+FFFD 乱码。
+    let mut buffer: Vec<u8> = Vec::new();
     let mut tool_call_buffers: std::collections::HashMap<u64, (String, String, String)> = std::collections::HashMap::new();
     let mut stream_end_reason: Option<String> = None;
     let mut has_usage = false;
@@ -656,12 +660,11 @@ async fn stream_openai_compatible(
                 continue;
             }
         };
-        let text = String::from_utf8_lossy(&chunk);
-        buffer.push_str(&text);
+        buffer.extend_from_slice(&chunk);
 
-        while let Some(line_end) = buffer.find('\n') {
-            let line = buffer[..line_end].trim().to_string();
-            buffer = buffer[line_end + 1..].to_string();
+        while let Some(line_end) = buffer.iter().position(|&b| b == b'\n') {
+            let line_bytes: Vec<u8> = buffer.drain(..=line_end).collect();
+            let line = String::from_utf8_lossy(&line_bytes).trim().to_string();
             if line.is_empty() { continue; }
 
             if let Some(data) = line.strip_prefix("data: ") {
@@ -776,5 +779,53 @@ fn flush_tool_buffers(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// 回归：SSE 流 chunk 边界切在多字节 UTF-8 字符中间时，不能产生乱码。
+    /// 旧的 from_utf8_lossy(每 chunk) 实现会输出 U+FFFD；字节缓冲按 \n 切行则安全。
+    #[test]
+    fn sse_line_parsing_survives_utf8_boundary_split() {
+        let full = "data: {\"delta\":{\"content\":\"核心要点\"}}\n"
+            .as_bytes()
+            .to_vec();
+        // "核心要点" = 核(27-29) 心(30-32) 要(33-35) 点(36-38)
+        // 在"心"的字节中间切断：第一个 chunk 只含 E5，后两个字节在第二个 chunk
+        let split_at = 31;
+
+        let mut buffer: Vec<u8> = Vec::new();
+        let mut lines = Vec::new();
+        for chunk in [&full[..split_at], &full[split_at..]] {
+            buffer.extend_from_slice(chunk);
+            while let Some(line_end) = buffer.iter().position(|&b| b == b'\n') {
+                let line_bytes: Vec<u8> = buffer.drain(..=line_end).collect();
+                let line = String::from_utf8_lossy(&line_bytes).trim().to_string();
+                lines.push(line);
+            }
+        }
+
+        assert_eq!(lines.len(), 1);
+        assert!(
+            lines[0].contains("核心要点"),
+            "chunk 边界切分后不应有乱码: {:?}",
+            lines[0]
+        );
+        assert!(
+            !lines[0].contains('\u{FFFD}'),
+            "不应出现 U+FFFD 替换字符: {:?}",
+            lines[0]
+        );
+
+        // 对比：旧实现（每 chunk 单独 from_utf8_lossy）确实会产生乱码，证明修复是必要的
+        let part1 = String::from_utf8_lossy(&full[..split_at]).to_string();
+        let part2 = String::from_utf8_lossy(&full[split_at..]).to_string();
+        let joined = format!("{}{}", part1, part2);
+        assert!(
+            joined.contains('\u{FFFD}'),
+            "旧实现应产生乱码（证明此 bug 存在）: {:?}",
+            joined
+        );
     }
 }

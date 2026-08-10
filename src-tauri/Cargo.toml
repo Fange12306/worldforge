@@ -33,6 +33,11 @@ futures = "0.3"
 tokio-stream = "0.1"
 eventsource-stream = "0.2"
 pdf-extract = "0.7"
+# 网页抓取与正文提取（WebFetch/WebSearch）
+readability = { version = "0.3", default-features = false }  # Readability 提取正文（MIT，关闭自带 reqwest）
+mdka = { version = "2", default-features = false }  # HTML → Markdown（Apache-2.0，关闭 rayon）
+scraper = "0.27"             # HTML 解析（DuckDuckGo 结果解析）
+url = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 notify = { version = "7", features = ["macos_kqueue"] }

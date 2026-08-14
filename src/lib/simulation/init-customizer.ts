@@ -353,7 +353,15 @@ ${COMMON_RULES}
 
 本层只输出**顶层大陆/海洋**(layer 0, parent 为 null) + 法则 + 尺度。**子区划和实体在后续步骤生成, 本层不做。**
 - laws: 从原文推导 rules(硬规则)/narrative(风格价值观)/ontology(本体设定)。
-- measurement: 必填。从用户描述推导世界尺度（类地行星/地球大小 → 行星尺度; 大陆世界 → 大陆尺度; 小世界 → 小尺度）。**一切从用户描述推导, 不自造数值。**
+- measurement: 必填。从用户描述推导世界尺度。**换算锚点（真实地球数据, 一切缩放以它为基准）**: 地球直径≈12742 公里, 地球表面积≈5.1 亿 km², 地球陆地面积≈1.5 亿 km²。
+  **语义换算规则（严格按面积/倍率换算, 不得偷懒忽略缩放）**:
+  - "地球一半大/只有地球一半" = 面积减半 → 直径 ×√0.5≈×0.707（≈9000 km）;
+  - "陆地面积是地球大陆的 1/N" = 陆地面积 = 1.5亿/N km²;
+  - "行星比地球大 2 倍/3 倍" = 面积 ×2/×3 → 直径 ×√2/×√3;
+  - "大陆宽 X 公里/方圆 X" = 直接用。
+  - worldWidth/worldHeight 是行星/大陆的尺寸（宽×高）, 乘积 ≈ 推算的面积（含海洋的投影面）; **不同尺度必须给出不同数值**——地球级≈12742, 一半≈9000, 陆地1/5 的世界总投影≈5400, 陆地1/10≈3870, 大陆世界 2000-5000, 微型世界 <1000。禁止所有尺度都写 12742。
+  - **用户给出大陆面积时按大陆算**: "一块大陆, 面积约 X 平方公里" → 世界尺寸由该大陆反推: 若单大陆世界, worldWidth ≈ √(X ÷ 陆地占比)（陆地占比按用户描述, 无描述默认 ~0.3 陆地 0.7 海洋; 全陆地世界占比 1）。例: 大陆 300 万 km² → 单大陆世界 ≈ 3873×3873（若占比 0.2）或 1732×1732（若全陆地）。**禁止把"大陆 300 万"写成行星级 12742**。
+  - **世界越小, 顶层区域越少**: 地球级=多大陆+多海洋; 半地球级=2-4 大陆+海洋; 陆地1/5~1/10=1-3 块大陆(可单大陆+沿海); 微型=单大陆或群岛。陆地/海洋比例也从用户描述推导。
 - regions: 只输出 layer0(大陆/海洋), 每个含 id/name/biome/share/shape/position/connections/borders_land。多大陆之间用海洋隔开。**陆地与海洋的比例、大陆的数量与大小, 完全从用户描述推导并自洽**——若用户说"类地行星、地球大小", 应参考真实地球的陆地海洋比例与大陆尺度; 若用户说"单块大陆", 则无海洋或仅沿海。
 
 输出严格 JSON 对象, 不要 markdown 包裹。示例:
@@ -381,7 +389,10 @@ const ENTITIES_SYSTEM = `你是架空世界的缔造者。用户给出世界种�
 ${COMMON_RULES}
 
 - **用户原文中明确提到的物种必须全部出现**（用户说"演化出人类、精灵、兽人、矮人", 这四个物种就都要出现在最终实体里, species 用原文物种名）。**实体数量、每个实体在哪块区域, 完全从用户描述与文明规模推导**——不预设个数, 不机械复制, 一切从用户输入出发。**若顶层区域列表为空但原文提到物种, 也必须从原文恢复这些物种为实体**。
-- **发源地分离(关键合理性)**: 不同物种/文明的发源地**不得重叠**——每个实体绑定**不同的顶层区域**, 且发源地之间应有合理间距（如四个类人亚种 → 分布在大陆的不同方向/不同大区, 不挤在一起）。**仅当用户原文明确说共居/同源一城时**才可共享区域。
+- **"林立/诸国/列国/群雄/并存/若干/多个王国"是实体拆分信号(关键)**: 用户说"多个王国与帝国林立""诸国并立""众多城邦", 就必须**拆成多个实体**——每个政权/城邦/王国一个实体（如"北境王国""河间帝国""南方城邦联盟"）, 每个实体有自己的 name/population/topRegionId/realm_area。**禁止**合并成一个 form="多个封建王国"的实体。政权数量从用户描述推断（"多个"=3-6 个,"众多"=5-10 个）。
+- **发源地分离(关键合理性, 分两层)**:
+  - 不同物种: 发源地应**分离**——每个物种绑定不同的顶层区域（四个类人亚种 → 分布在大陆的不同方向/不同大区）;**仅当用户原文明确说共居/同源一城时**才可共享。
+  - 同物种的多个政权（如多个人类王国）: **可以同顶层区域甚至相邻**——"河间帝国"与"北境王国"同在一块大陆上完全合理, 只是应分布在不同的子区划（由细化步骤处理）。**不要为了分离而把同一大陆的多个政权拆到不同大陆。**
 - **环境适配(关键合理性)**: 实体绑定的顶层区域环境必须与其生活方式相配——矮人/矿工→多山多矿的区域, 精灵→森林, 兽人/游牧→草原/荒野, 人类→平原/海岸, 海洋文明→群岛/海岸带。**用户原文指定了环境则以用户为准**（用户说"精灵住在沙漠"就按沙漠）。同时结合**世界法则**: 魔法世界的高魔力区域、真气世界的灵脉福地, 更可能孕育相应文明。
 - **时代同步(关键合理性)**: 同一世界的初始实体处于**同一时代**(era 一致或相近)。仅当用户明确说明存在发展差异时才可错开（如"偏远地区仍处于部落时代"）。
 - **每个实体推断时代 era**(自由文本: "部落时代"/"青铜时代"/"古典城邦时代"/"中世纪王国"/"魔法纪元"…): 从用户原文推断; 原文没提时代时, 从文明形态与描述反推（部落联盟→部落时代; 城邦→古典时代; 帝国→古代帝国时代...）。
@@ -755,6 +766,35 @@ function depthReferenceFor(
 }
 
 /**
+ * §: 初始人口兜底估算（LLM 漏给 population 时用, 不再抛错）:
+ * 有 realm_area → 面积 × 时代密度(与 estimateRealmArea 同一密度表, 反向自洽);
+ * 否则按时代典型人口。
+ */
+function estimateInitialPopulation(e: { era?: string; realm_area?: number }): number {
+  const eraText = e.era ?? "";
+  const density = estimateEraDensity(eraText);
+  if (e.realm_area && e.realm_area > 0) {
+    return Math.max(1000, Math.round(e.realm_area * density));
+  }
+  if (eraText.includes("部落") || eraText.includes("石器") || eraText.includes("史前") || eraText.includes("狩猎")) return 50000;
+  if (eraText.includes("城邦") || eraText.includes("古典")) return 200000;
+  if (eraText.includes("王国") || eraText.includes("中世纪") || eraText.includes("封建")) return 800000;
+  if (eraText.includes("帝国") || eraText.includes("近代") || eraText.includes("工业")) return 2000000;
+  if (eraText.includes("魔法") || eraText.includes("真气") || eraText.includes("修真")) return 100000;
+  return 50000;
+}
+
+/** 时代密度（与 estimateRealmArea 同一张表） */
+function estimateEraDensity(eraText: string): number {
+  if (eraText.includes("部落") || eraText.includes("原始") || eraText.includes("史前") || eraText.includes("狩猎")) return 3;
+  if (eraText.includes("城邦") || eraText.includes("古典")) return 15;
+  if (eraText.includes("王国") || eraText.includes("中世纪") || eraText.includes("封建")) return 30;
+  if (eraText.includes("帝国") || eraText.includes("近代") || eraText.includes("工业")) return 60;
+  if (eraText.includes("魔法") || eraText.includes("真气") || eraText.includes("修真")) return 8;
+  return 10;
+}
+
+/**
  * §: realm_area 确定性估算（LLM 未给出地盘面积时兜底）: 人口 ÷ 时代密度。
  * 密度参考: 部落(粗放农业/游牧) ~3 人/km²; 城邦 ~15; 王国 ~30; 帝国 ~60; 未知 ~10。
  * 只作层级深度计算输入, 不写入实体卡片。
@@ -915,7 +955,10 @@ function mergeEntities(
   // 优先: completed 实体(LLM 完整版)按 species 吸收用户字段
   for (const e of compList) {
     const existing = [...userList].find((u) =>
-      u.name === e.name || (u.species && e.species && u.species === e.species),
+      // 同名 / 同物种 / 近似名(一个 name 包含另一个, 如"沙族"⊂"沙族游牧联盟")都算同一实体——
+      // 防 LLM 把同一实体拆成"沙族"+"沙族游牧联盟"两个、其中一个缺 population 导致初始化崩溃
+      u.name === e.name || (u.species && e.species && u.species === e.species)
+      || (u.name && e.name && (u.name.includes(e.name) || e.name.includes(u.name))),
     );
     used.add(existing?.name ?? e.name);
     if (existing) {
@@ -940,9 +983,13 @@ function mergeEntities(
       out.push(e);
     }
   }
-  // 未被 completed 覆盖的用户实体(LLM 没生成该物种)→ 保留(可能缺 population, 由后续补)
+  // 未被 completed 覆盖的用户实体(LLM 没生成该物种)→ 保留(可能缺 population, 由后续补)。
+  // 近似名去重: 已合并实体的 name 包含该用户实体名(或反之, 如"沙族"⊂"沙族游牧联盟")→ 视为同一实体, 不补漏
   for (const u of userList) {
-    if (!used.has(u.name)) out.push(u);
+    if (used.has(u.name)) continue;
+    const approx = [...used].some((n) => n.includes(u.name) || u.name.includes(n));
+    if (approx) continue;
+    out.push(u);
   }
   return out;
 }
@@ -1040,11 +1087,11 @@ export function initialStateToSession(
     const rid = e.regionId && validRegionIds.has(e.regionId) ? e.regionId
       : (e.topRegionId && validRegionIds.has(e.topRegionId) ? e.topRegionId : pickFallback());
     const region = regions[rid];
-    // 初始人口: 必须由 LLM 给出(结合时代/区域/文明规模综合判断)。引擎不做任何兜底公式——
-    // 缺失则报错, 强制 LLM 补全, 不允许引擎猜。
+    // 初始人口: 优先 LLM 给出(结合时代/区域/文明规模综合判断); 缺失时按时代兜底估算——
+    // LLM 波动(拆分/合并/漏字段)不应让整个初始化崩溃, 用户要求适配任意指令
     const startPop = typeof e.population === "number" && Number.isFinite(e.population) && e.population > 0
       ? Math.round(e.population)
-      : (() => { throw new Error(`LLM 补全的实体「${e.name}」缺少有效的 population——不允许引擎兜底推断, 请 LLM 明确给出初始人口`); })();
+      : estimateInitialPopulation(e);
     const metrics = { population: startPop, food: 500, military: 400, legitimacy: 60, stability: 60 };
     // species 优先用 LLM 给的种族名; 缺省时: 若实体名明显是组织名(氏族/部落/王国/联盟/国/公国 等词缀),
     // 说明实体名是文明名而非物种名, 回退"人类"(通用); 否则实体名本身就是物种名(如"精灵"), 用之。
@@ -1094,12 +1141,18 @@ export function initialStateToSession(
   }
   for (const e of entities) {
     const nbrIds = new Set<string>();
-    for (const nid of regions[e.geography.region]?.neighbors ?? []) {
+    // 邻居候选: 区域邻接 ∪ 同父级兄弟区域 ∪ 父级邻居 ∪ 同顶层其他区域——
+    // LLM 常不给子区划填 neighbors, 若无兜底, 同一大陆的多个政权/文明会互不相邻(封建世界"多个王国"错成孤岛)
+    const candidateRegionIds = neighborCandidates(e.geography.region, regions);
+    for (const nid of candidateRegionIds) {
       for (const nbr of byRegion.get(nid) ?? []) {
         if (nbr.id === e.id) continue;
-        // 与 relations 同阈值: 感知 < 0.15 → 不相邻(尚未接触)
+        // 同顶层(同一大陆)实体默认互为邻居——初始化阶段区域邻接/距离信息常缺失
+        //（dimensions 在 createSession 才派生, awareness 无距离可判会返回 0 → 同大陆文明错成孤岛）;
+        // 跨顶层(不同大陆)才过 awareness 距离过滤(远隔重洋互不相知, 部落时代跨洲不相邻)。
         const aw = computeAwareness(e, nbr.id, entities, regions, baseLaws);
-        if (aw >= 0.15) nbrIds.add(nbr.id);
+        const sameTop = sameTopRegionId(e.geography.region, nbr.geography.region, regions);
+        if (sameTop || aw >= 0.15) nbrIds.add(nbr.id);
       }
     }
     e.geography.neighbors = [...nbrIds];
@@ -1226,6 +1279,56 @@ export function initialStateToSession(
     userSpecified,
     conflicts: [],
   };
+}
+
+/**
+ * §: 邻居候选区域集合（含兜底）——区域邻接 ∪ 同父级兄弟 ∪ 父级邻居 ∪ 同顶层其他区域。
+ * LLM 生成的子区划常缺 neighbors; 兜底保证同一大陆的实体默认互为邻居候选（最终由 awareness 过滤）。
+ */
+function neighborCandidates(regionId: string, regions: Record<string, SpaceRegion>): string[] {
+  const my = regions[regionId];
+  if (!my) return [];
+  const out = new Set<string>(my.neighbors ?? []);
+  // 父链回溯: 同父兄弟 + 父级邻居
+  let parentId: string | undefined = my.parent;
+  let guard = new Set<string>();
+  while (parentId && regions[parentId] && !guard.has(parentId)) {
+    guard.add(parentId);
+    const parent = regions[parentId];
+    for (const nid of parent.neighbors ?? []) out.add(nid);
+    for (const r of Object.values(regions)) {
+      if (r.id !== regionId && r.parent === parentId) out.add(r.id);
+    }
+    parentId = parent.parent;
+  }
+  // 顶层兜底: 同顶层区域（父链回溯到顶层后, 该顶层下的所有区域）
+  let topId = regionId;
+  guard = new Set<string>();
+  while (regions[topId]?.parent && !guard.has(topId)) { guard.add(topId); topId = regions[topId].parent!; }
+  if (topId !== regionId) {
+    for (const r of Object.values(regions)) {
+      let p = r.parent;
+      const g = new Set<string>();
+      while (p && regions[p] && !g.has(p)) {
+        g.add(p);
+        if (p === topId) { out.add(r.id); break; }
+        p = regions[p].parent;
+      }
+    }
+  }
+  return [...out];
+}
+
+/** 两个区域是否同属一个顶层区域（父链回溯到顶层比较）——同顶层 = 同一大陆 */
+function sameTopRegionId(a: string, b: string, regions: Record<string, SpaceRegion>): boolean {
+  if (!a || !b || !regions[a] || !regions[b]) return false;
+  const topOf = (id: string): string => {
+    let cur = id;
+    const guard = new Set<string>();
+    while (regions[cur]?.parent && !guard.has(cur)) { guard.add(cur); cur = regions[cur].parent!; }
+    return cur;
+  };
+  return topOf(a) === topOf(b);
 }
 
 /** 计算 A 对 B 的感知强度（空间传递性, 供关系过滤） */

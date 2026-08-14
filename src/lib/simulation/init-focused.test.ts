@@ -8,6 +8,52 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+describe("任意指令适配 — 永不因 LLM 波动崩溃", () => {
+  test("缺 population 的实体不再抛错, 按时代兜底估算", () => {
+    const completed = {
+      laws: { rules: [], narrative: [], ontology: [] },
+      regions: [{ id: "r", name: "平原", biome: "plains" }],
+      entities: [
+        { name: "部落", species: "人类", regionId: "r", era: "部落时代" },            // 无 population
+        { name: "王国", species: "人类", regionId: "r", era: "封建时代", realm_area: 50000 },
+      ],
+    };
+    const res = initialStateToSession(completed, createRng(1), EARTH_LAWS);
+    const tribe = res.entities.find((e) => e.name === "部落")!;
+    const kingdom = res.entities.find((e) => e.name === "王国")!;
+    assert.ok(tribe.metrics.population > 0, "缺 population 按时代兜底: " + tribe.metrics.population);
+    assert.equal(tribe.metrics.population, 50000, "部落时代典型人口 5 万");
+    // realm_area × 封建密度 30 ≈ 150 万
+    assert.ok(kingdom.metrics.population > 1_000_000, "realm_area×密度反推: " + kingdom.metrics.population);
+  });
+
+  test("近似名实体合并: '沙族' 与 '沙族游牧联盟' 合并为一个, 保留有 population 的", async () => {
+    // 复现真实崩溃场景: LLM 同时给出"沙族游牧联盟"(有 pop)与"沙族"(无 pop)
+    const mock = createMockLLM(() => JSON.stringify({
+      laws: { rules: [], narrative: [], ontology: [] },
+      regions: [{ id: "desert", name: "荒漠", biome: "desert" }],
+      entities: [
+        { name: "沙族游牧联盟", species: "沙族", regionId: "desert", politicalForm: "游牧联盟", population: 800000, era: "古典时代" },
+      ],
+    }));
+    const parsed = {
+      laws: { rules: [], narrative: [], ontology: [] },
+      regions: [{ id: "desert", name: "荒漠", biome: "desert" }],
+      entities: [
+        { name: "沙族游牧联盟", species: "沙族", regionId: "desert" },
+        { name: "沙族", species: "人类", regionId: "desert" },
+      ],
+    };
+    const completed = await completeInitialState(parsed, mock, "南部荒漠中有'沙族'游牧联盟,人口80万");
+    // 合并后应只有一个"沙族游牧联盟"(带 population), 不应有缺 population 的"沙族"
+    assert.equal(completed.entities.length, 1, "近似名合并为一个: " + completed.entities.map((e) => e.name).join(","));
+    assert.ok(completed.entities[0].population === 800000, "保留有 population 的版本");
+    // 不抛错
+    const res = initialStateToSession(completed, createRng(1), EARTH_LAWS);
+    assert.equal(res.entities.length, 1);
+  });
+});
+
 
 describe("区域命名铁律（纯自然地理名）", () => {
   test("政权词/种族词/方位泛称 → 违规; 纯地理名 → 合规", async () => {

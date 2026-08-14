@@ -328,8 +328,18 @@ function ruleContradicts(a: string, b: string): boolean {
 const COMMON_RULES = `**用户原文是唯一权威输入。** 用户明确指定的内容（物种、大陆、尺度、时代、法则）必须**原样保留、不得替换、不得丢弃、不得凭空新增替代品**。
 一切从用户原文推导, 推出来的世界必须彼此自洽、与原文一致。
 **区域 id 用英文 slug, name 用中文**（如 {id: "silverbirch-forest", name: "银桦森林"}）。**禁用中文 id**。
-**区域 name 用纯自然地理名, 禁止政治/政权含义**: 叫"银桦森林""恒河平原", 不叫"北境王国"。
-**name 用具体地理名, 禁用"平原腹地/东域"这类泛称**。
+**区域 name 用纯自然地理名——铁律: 禁止任何政权/种族/文明含义**:
+  - 禁政权词: 王国/帝国/公国/共和国/王朝/部落/联盟/氏族/城邦/联邦/汗国/酋长国/国——叫"银桦森林""恒河平原", 绝不叫"矮人王国大陆""精灵联盟""兽人部落平原"。
+  - 禁种族词: 矮人/精灵/兽人/人类/龙裔/侏儒等——"精灵森林"也不行, 用该森林本身的自然名(如"银桦森林")。
+  - 区域名只描述"这片土地是什么"(地形/水文/植被/气候/方位所指的专名), 不描述"谁住在这里"。
+**name 用具体专名, 禁用"平原腹地/东域/中央低地/东部海岸"这类方位+地形的泛称**——用真实地名式命名(如"华北平原""黄河流域""巴尔干半岛"): 即使架空, 名字也要像"一个真实存在的地方"。
+**层级命名体现地理层级概念**(每级都有与层级相称的命名模式):
+  - 顶层大陆(layer 0): "XX大陆"或大陆级地名(如"奥雷利亚大陆");
+  - 次大陆级(layer 1): "XX次大陆" / "XX半岛" / "XX高原" / "XX大区"(如"东亚次大陆""中南半岛""青藏高原");
+  - 大区级(layer 2): "XX地区" / "XX盆地" / "XX平原" / "XX山脉"(如"华北平原""四川盆地");
+  - 地区级(layer 3): "XX流域" / "XX谷地" / "XX丘陵" / "XX三角洲"(如"黄河流域""汾河谷地");
+  - 核心级(layer 4+): 具体小地名(如"中游河湾""出山口""冲积扇")。
+  **禁止**用"中央/东部/北部+地形"这类以方位为主体的命名——方位可以出现在 position 字段, 不进入 name。
 **character 一句话描述内部地形混合**(自由文本, 禁百分比): "主体冲积平原, 东北丘陵, 沿河沼泽"。
 **share 给相对父级的占比(0-1)**: 顶层给占世界的比例, 有父给占父级比例, 父子自洽(子 share 和 ≤ 1, 顶层含海洋全部区域 share 和 = 1)。**share 从用户描述推导**——海洋占世界的比例、大陆的大小、文明占据区划的份额, 都从用户描述与文明规模推导, 不自造数值。
 **shape 一句大概形状**; **position 位于父级何处**; **connections 记录相邻区域方位与连接通道**。
@@ -414,6 +424,8 @@ async function verifyLayer<T>(
   llm: LLMBindings,
   schemaHint: string,
   onTrace?: InitTraceCb,
+  /** 额外提示(如命名违规清单): 追加到校验输入, 让 LLM 针对性修正 */
+  extraNotes?: string,
 ): Promise<T> {
   const verifySystem = `你是架空世界的自洽校验者。用户给出世界种子, 并已生成某一层（${schemaHint}）。你**对照用户原文, 检查该层输出是否自洽**, 若发现问题就修正。
 
@@ -429,9 +441,10 @@ async function verifyLayer<T>(
 - 允许修正: 数值(population/share 不合理)、缺失字段的补全(如 realm_area 按时代密度估算)、引用调整、多余的同名实体合并。
 - **若无问题, 原样输出。** 不要解释, 只输出 JSON。`;
 
+  const extraBlock = extraNotes ? `\n\n# 需修正的问题（逐条处理, 只修这些, 其余保持原样）\n${extraNotes}` : "";
   const response = await safeCall(llm, {
     systemPrompt: verifySystem,
-    userMessage: `# 用户原文（权威, 一切以其为准）\n${seedText}\n\n# 该层输出（检查是否自洽, 修正则输出修正版）\n${JSON.stringify(layerOutput, null, 2)}`,
+    userMessage: `# 用户原文（权威, 一切以其为准）\n${seedText}\n\n# 该层输出（检查是否自洽, 修正则输出修正版）\n${JSON.stringify(layerOutput, null, 2)}${extraBlock}`,
     maxTokens: 4000,
     json: true,
   });
@@ -585,36 +598,84 @@ export async function completeInitialState(
 
   // Step 3: 聚焦区域细化（§: 有的放矢——只细化实体占据的顶层区域, 其余保持概略, 推演中动态细化）
   // 输出 regions(实体区域下的子区划) + entities(每个实体的最终 regionId 绑定回填)
+  // 实现: 按顶层区域分组, 每组独立调用(每次只生成一条层级链, 输出小不截断、指令聚焦——LLM 单次大输出常截断/敷衍成 1 级)
   onProgress?.("③ 聚焦区域细化（只细化文明所在区域）...");
   let subregions: NonNullable<ParsedInitialState["regions"]> = [];
   if (topRegions.length > 0 && entities.length > 0) {
-    // §: 面积比 → 层级深度参考（确定性计算: 顶层面积/实体地盘面积 → 建议层级数, 注入 LLM 参考）
-    const areaRef = buildAreaDepthReference(topRegions, entities, measurement);
-    const subRaw = await safeCall(llm, { systemPrompt: SUBREGIONS_SYSTEM, userMessage: `${seedBlock}\n\n# 世界尺度\n${JSON.stringify(measurement ?? {}, null, 2)}\n\n# 面积与层级参考（建议层级深度 = 顶层面积/地盘面积, 生成层级链时以此为参考）\n${areaRef}\n\n# 已生成的大陆/海洋（parent 只能从这里选）\n${JSON.stringify(topRegions, null, 2)}\n\n# 文明实体（只细化它们 topRegionId 指向的顶层区域; 并给每个实体回填最终 regionId; realm_area 为地盘面积）\n${JSON.stringify(entities.map((e) => ({ name: e.name, species: e.species, era: e.era, realm_scale: e.realm_scale, realm_area: e.realm_area, topRegionId: e.topRegionId, population: e.population })), null, 2)}`, maxTokens: 4000, json: true });
-    onTrace?.({
-      step: "complete-subregions",
-      time: new Date().toISOString(), ok: !!subRaw, calledLLM: true,
-      inputExcerpt: `topRegions: ${topRegions.length}, entities: ${entities.length}`, responseExcerpt: subRaw?.slice(0, 1200) ?? "(无返回)", error: subRaw ? undefined : "LLM 无返回",
-    });
-    if (subRaw) {
-      try {
-        const p = parseJSONFromLLM<{ regions: NonNullable<ParsedInitialState["regions"]>; entities?: Array<{ name: string; regionId?: string }> }>(subRaw);
-        subregions = p.regions ?? [];
-        // 实体绑定回填: 细化步骤把每个实体绑定到最细子区划（regionId 只指向已存在区域）
-        const bindMap = new Map((p.entities ?? []).map((b) => [b.name, b.regionId]));
-        const validSubIds = new Set([...topRegions.map((r) => r.id), ...subregions.map((r) => r.id)]);
-        for (const e of entities) {
-          const rid = bindMap.get(e.name);
-          if (rid && validSubIds.has(rid)) e.regionId = rid;
+    const entitiesByTop = new Map<string, NonNullable<ParsedInitialState["entities"]>>();
+    for (const e of entities) {
+      const top = e.topRegionId ?? "";
+      if (!entitiesByTop.has(top)) entitiesByTop.set(top, []);
+      entitiesByTop.get(top)!.push(e);
+    }
+    const topById = new Map(topRegions.map((r) => [r.id, r]));
+    const bindMap = new Map<string, string>(); // 实体名 → 最细 regionId
+    let groupIdx = 0;
+    for (const [topId, group] of entitiesByTop) {
+      const top = topById.get(topId);
+      if (!top) continue;
+      groupIdx += 1;
+      // §: 面积比 → 层级深度参考（确定性计算: 顶层面积/实体地盘面积 → 建议层级数）
+      const areaRef = buildAreaDepthReference([top], group, measurement);
+      const subRaw = await safeCall(llm, { systemPrompt: SUBREGIONS_SYSTEM, userMessage: `${seedBlock}\n\n# 世界尺度\n${JSON.stringify(measurement ?? {}, null, 2)}\n\n# 面积与层级参考（建议层级深度 = 顶层面积/地盘面积, 生成层级链时以此为参考）\n${areaRef}\n\n# 本组顶层区域（parent 只能从这里选, 只细化这一块）\n${JSON.stringify([top], null, 2)}\n\n# 本组文明实体（为每个实体生成完整层级链并回填最终 regionId; realm_area 为地盘面积）\n${JSON.stringify(group.map((e) => ({ name: e.name, species: e.species, era: e.era, realm_scale: e.realm_scale, realm_area: e.realm_area, topRegionId: e.topRegionId, population: e.population })), null, 2)}`, maxTokens: 6000, json: true });
+      onTrace?.({
+        step: "complete-subregions",
+        time: new Date().toISOString(), ok: !!subRaw, calledLLM: true,
+        inputExcerpt: `group ${groupIdx}/${entitiesByTop.size}: top=${topId}, entities=${group.length}`, responseExcerpt: subRaw?.slice(0, 1200) ?? "(无返回)", error: subRaw ? undefined : "LLM 无返回",
+      });
+      if (subRaw) {
+        try {
+          const p = parseJSONFromLLM<{ regions: NonNullable<ParsedInitialState["regions"]>; entities?: Array<{ name: string; regionId?: string }> }>(subRaw);
+          const newRegions = (p.regions ?? []).filter((r) => !subregions.some((x) => x.id === r.id));
+          subregions.push(...newRegions);
+          for (const b of p.entities ?? []) {
+            if (b.regionId) bindMap.set(b.name, b.regionId);
+          }
+        } catch { /* 该组失败, 实体绑定由兜底处理 */ }
+      }
+      // 深度不足重试一次: 建议层级深度 ≥ 2 但实体仍绑定在本组顶层(LLM 敷衍成 1 级或没生成链)
+      const deepNeed = depthReferenceFor([top], group, measurement);
+      const shallow = group.filter((e) => {
+        const bound = bindMap.get(e.name);
+        return !bound || bound === topId;
+      });
+      if (deepNeed >= 2 && shallow.length > 0) {
+        const retryRaw = await safeCall(llm, { systemPrompt: SUBREGIONS_SYSTEM, userMessage: `${seedBlock}\n\n# 世界尺度\n${JSON.stringify(measurement ?? {}, null, 2)}\n\n# 面积与层级参考\n${areaRef}\n\n# 注意: 上一轮你没有为这些实体生成足够的层级链。它们的建议深度 ≥ 2 级——需要生成完整的多级链(如 大陆→次大陆→地区→核心), 直到最细一级面积接近实体地盘面积, 并把实体绑定到最细一级。\n\n# 本组顶层区域\n${JSON.stringify([top], null, 2)}\n\n# 需要深化的实体\n${JSON.stringify(shallow.map((e) => ({ name: e.name, realm_area: e.realm_area, population: e.population })), null, 2)}`, maxTokens: 6000, json: true });
+        onTrace?.({
+          step: "complete-subregions-retry",
+          time: new Date().toISOString(), ok: !!retryRaw, calledLLM: true,
+          inputExcerpt: `retry: top=${topId}, entities=${shallow.length}`, responseExcerpt: retryRaw?.slice(0, 1200) ?? "(无返回)",
+        });
+        if (retryRaw) {
+          try {
+            const p = parseJSONFromLLM<{ regions: NonNullable<ParsedInitialState["regions"]>; entities?: Array<{ name: string; regionId?: string }> }>(retryRaw);
+            const newRegions = (p.regions ?? []).filter((r) => !subregions.some((x) => x.id === r.id));
+            subregions.push(...newRegions);
+            for (const b of p.entities ?? []) {
+              if (b.regionId) bindMap.set(b.name, b.regionId);
+            }
+          } catch { /* 重试失败则接受现状 */ }
         }
-      } catch { subregions = []; }
+      }
+    }
+    // 绑定回填: 实体 → 最细子区划（regionId 只指向已存在区域）
+    const validSubIds = new Set([...topRegions.map((r) => r.id), ...subregions.map((r) => r.id)]);
+    for (const e of entities) {
+      const rid = bindMap.get(e.name);
+      if (rid && validSubIds.has(rid)) e.regionId = rid;
     }
   }
   // 合并区域树: 顶层 + 聚焦子区划
   let allRegions = mergeRegions(topRegions, subregions);
   // 区域自洽校验: 对照用户原文检查(层级深度/引用一致性/share/实体区域分离), LLM 输出修正版
+  // §: 命名违规清单注入——LLM 常把政权/种族词写进区域名("矮人王国大陆"), 或层级命名不体现地理层级
+  //（次大陆级叫"中央低地"）。确定性检测后交给校验层改名(id 不变, identityGuard 允许 name 修正)。
   if (allRegions.length) {
-    const verified = await verifyLayer<{ regions: NonNullable<ParsedInitialState["regions"]> }>("regions", seed, { regions: allRegions }, llm, "区域树(含parent层级)", onTrace);
+    const namingNotes = regionNameViolations(allRegions);
+    const verified = await verifyLayer<{ regions: NonNullable<ParsedInitialState["regions"]> }>(
+      "regions", seed, { regions: allRegions }, llm, "区域树(含parent层级)", onTrace,
+      namingNotes.length > 0 ? namingNotes.join("\n") : undefined,
+    );
     if (verified.regions?.length) allRegions = verified.regions;
   }
 
@@ -670,6 +731,30 @@ export async function completeInitialState(
 }
 
 /**
+ * §: 单个实体的建议层级深度（供"深度不足重试"判定）: ceil(log(顶层面积/地盘面积)/log(5)), clamp [1,5]。
+ */
+function depthReferenceFor(
+  topRegions: NonNullable<ParsedInitialState["regions"]>,
+  entities: NonNullable<ParsedInitialState["entities"]>,
+  measurement: ParsedInitialState["measurement"],
+): number {
+  const w = measurement?.worldWidth;
+  const h = measurement?.worldHeight;
+  if (!w || !h || w <= 0 || h <= 0) return 1;
+  const worldArea = w * h;
+  const nTop = Math.max(1, topRegions.length);
+  let maxDepth = 1;
+  for (const e of entities) {
+    const top = topRegions.find((x) => x.id === e.topRegionId);
+    if (!top || !e.realm_area || e.realm_area <= 0) continue;
+    const share = typeof top.share === "number" && top.share > 0 ? top.share : 1 / nTop;
+    const ratio = (worldArea * share) / e.realm_area;
+    maxDepth = Math.max(maxDepth, Math.max(1, Math.min(5, Math.ceil(Math.log(ratio) / Math.log(5)))));
+  }
+  return maxDepth;
+}
+
+/**
  * §: realm_area 确定性估算（LLM 未给出地盘面积时兜底）: 人口 ÷ 时代密度。
  * 密度参考: 部落(粗放农业/游牧) ~3 人/km²; 城邦 ~15; 王国 ~30; 帝国 ~60; 未知 ~10。
  * 只作层级深度计算输入, 不写入实体卡片。
@@ -683,6 +768,38 @@ function estimateRealmArea(population: number, era?: string): number {
   else if (eraText.includes("帝国") || eraText.includes("近代") || eraText.includes("工业")) density = 60;
   else if (eraText.includes("魔法") || eraText.includes("真气") || eraText.includes("修真")) density = 8;
   return Math.max(100, Math.round(population / density));
+}
+
+/**
+ * §: 区域命名合法性校验（确定性）——LLM 常违反"纯自然地理名"铁律:
+ * 政权词(王国/帝国/部落...)与种族词(矮人/精灵...)不得进入区域名;
+ * 层级名不得是"方位+地形"泛称("中央低地"→ 应叫具体地名)。
+ * 返回违规清单(供 verifyLayer 注入修正), 空 = 全部合规。
+ */
+export function regionNameViolations(regions: NonNullable<ParsedInitialState["regions"]>): string[] {
+  const POLITICAL_WORDS = ["王国", "帝国", "公国", "共和国", "王朝", "部落", "联盟", "氏族", "城邦", "联邦", "汗国", "酋长国", "王国"];
+  const SPECIES_WORDS = ["矮人", "精灵", "兽人", "人类", "龙裔", "侏儒", "半身人", "精灵族", "兽人族", "人聚", "族聚"];
+  const DIRECTION_WORDS = ["中央", "东部", "西部", "南部", "北部", "中部", "东境", "西境", "南境", "北境", "腹地", "地带", "区域"];
+  const out: string[] = [];
+  for (const r of regions ?? []) {
+    const name = r.name ?? "";
+    const layer = r.parent ? "子区划" : "顶层";
+    const pol = POLITICAL_WORDS.find((w) => name.includes(w));
+    if (pol) {
+      out.push("- 「" + name + "」(" + r.id + ", " + layer + ") 含政权词「" + pol + "」——区域名必须纯自然地理名, 请改为该地的自然名(如" + (r.parent ? "恒河平原" : "奥雷利亚大陆") + ")");
+      continue;
+    }
+    const sp = SPECIES_WORDS.find((w) => name.includes(w));
+    if (sp) {
+      out.push("- 「" + name + "」(" + r.id + ", " + layer + ") 含种族词「" + sp + "」——区域名不得带居住者身份, 请改为该地本身的自然名");
+      continue;
+    }
+    // 方位+地形泛称检查: 以方位词开头的层级名(次大陆/大区级尤其常见)
+    if (r.parent && DIRECTION_WORDS.some((w) => name.startsWith(w))) {
+      out.push("- 「" + name + "」(" + r.id + ", " + layer + ") 是以方位词为主体的泛称——层级命名应体现地理层级概念(次大陆级: XX次大陆/XX半岛; 大区级: XX平原/XX盆地; 地区级: XX流域/XX谷地), 请给具体地名");
+    }
+  }
+  return out;
 }
 
 /**
@@ -918,7 +1035,10 @@ export function initialStateToSession(
     return chosen;
   };
   const entities: EntityCard[] = (completed.entities ?? []).map((e, i) => {
-    const rid = e.regionId && validRegionIds.has(e.regionId) ? e.regionId : pickFallback();
+    // 绑定优先级: 最细子区划 regionId → 顶层 topRegionId → 未占用区域 fallback
+    //（focused 步骤未回填时, 保证实体至少绑在自己选的顶层, 不会随机错绑到其他大陆）
+    const rid = e.regionId && validRegionIds.has(e.regionId) ? e.regionId
+      : (e.topRegionId && validRegionIds.has(e.topRegionId) ? e.topRegionId : pickFallback());
     const region = regions[rid];
     // 初始人口: 必须由 LLM 给出(结合时代/区域/文明规模综合判断)。引擎不做任何兜底公式——
     // 缺失则报错, 强制 LLM 补全, 不允许引擎猜。

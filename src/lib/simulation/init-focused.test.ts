@@ -8,6 +8,29 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+
+describe("区域命名铁律（纯自然地理名）", () => {
+  test("政权词/种族词/方位泛称 → 违规; 纯地理名 → 合规", async () => {
+    const { regionNameViolations } = await import("./init-customizer.ts");
+    const regions = [
+      { id: "dwarf-kingdom-cont", name: "矮人王国大陆", biome: "mixed" },
+      { id: "elf-forest", name: "精灵森林", biome: "forest" },
+      { id: "central-lowland", name: "中央低地", biome: "plains", parent: "x" },
+      { id: "yellow-river", name: "黄河流域", biome: "plains", parent: "x" },
+      { id: "silver-fir", name: "银桦森林", biome: "forest" },
+      { id: "human-settle", name: "艾洛瑞亚人聚地", biome: "plains", parent: "x" },
+    ] as any;
+    const v = regionNameViolations(regions);
+    const joined = v.join("\n");
+    assert.ok(joined.includes("矮人王国大陆"), "政权词违规: " + joined);
+    assert.ok(joined.includes("精灵森林"), "种族词违规");
+    assert.ok(joined.includes("中央低地"), "方位泛称违规");
+    assert.ok(joined.includes("人聚地"), "居住者词违规");
+    assert.ok(!joined.includes("黄河流域"), "合规名不报: " + joined);
+    assert.ok(!joined.includes("银桦森林"), "合规名不报");
+  });
+});
+
 describe("初始化重构 — 面积比驱动层级", () => {
   test("realm_area 确定性兜底: LLM 未给地盘面积时按 人口×时代密度 估算", async () => {
     // entities 步骤不带 realm_area → 引擎按部落密度 3 人/km² 兜底

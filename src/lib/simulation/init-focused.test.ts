@@ -8,6 +8,47 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+
+describe("LLM 类型防御 — 字符串不再被拆字（一劳永逸）", () => {
+  test("narrative/ontology 为字符串 → 归一化为单元素数组(不拆成单字)", () => {
+    const completed = {
+      laws: { rules: "起死回生不可能发生。", narrative: "部落时代晚期，类似四大古国前一个时期。", ontology: "与地球相似的物理法则。" },
+      regions: [{ id: "r", name: "平原", biome: "plains" }],
+      entities: [{ name: "部落", species: "人类", regionId: "r", population: 50000, era: "部落时代" }],
+    };
+    const res = initialStateToSession(completed, createRng(1), EARTH_LAWS);
+    assert.ok(res.laws.narrative.some((n) => n.includes("部落时代晚期")), "narrative 保持完整句子: " + JSON.stringify(res.laws.narrative));
+    assert.ok(res.laws.ontology.some((o) => o.includes("物理法则")), "ontology 保持完整句子: " + JSON.stringify(res.laws.ontology));
+    assert.ok(res.laws.rules.includes("起死回生不可能发生。"), "rules 字符串归一化为数组元素");
+    // 没有任何单字碎片
+    for (const item of [...res.laws.narrative, ...res.laws.ontology]) {
+      assert.ok(item.length > 1, "无单字碎片: " + JSON.stringify(item));
+    }
+  });
+
+  test("regions/entities 为字符串(LLM 抽风) → 归一化为空数组不崩溃", () => {
+    const completed = {
+      laws: { rules: [], narrative: [], ontology: [] },
+      regions: "不是数组" as any,
+      entities: "也不是数组" as any,
+    };
+    const res = initialStateToSession(completed, createRng(1), EARTH_LAWS);
+    assert.ok(Object.keys(res.regions).length > 0, "区域走默认布局兜底");
+    assert.equal(res.entities.length, 0, "实体归一化为空");
+  });
+
+  test("detectInitialConflicts 对字符串 rules 不逐字符遍历", () => {
+    const parsed = {
+      laws: { rules: "魔法存在 与 没有魔法 矛盾", narrative: [], ontology: [] },
+      regions: [],
+      entities: [{ name: "部落", species: "人类" }],
+    };
+    const conflicts = detectInitialConflicts(parsed as any);
+    // 不崩溃, 且不产生逐字符垃圾冲突
+    assert.ok(Array.isArray(conflicts));
+  });
+});
+
 describe("任意指令适配 — 永不因 LLM 波动崩溃", () => {
   test("缺 population 的实体不再抛错, 按时代兜底估算", () => {
     const completed = {

@@ -12,6 +12,38 @@
  */
 
 import { parseJSONFromLLM, safeCall, type LLMBindings } from "./llm.ts";
+// ── 归一化防御（§: LLM 输出类型不可信, 一劳永逸防"字符串被 spread 拆字/被遍历成字符"）──
+
+/** 归一化为字符串数组: 字符串→[字符串]; 数组→过滤非字符串; 其他→[]。
+ *  防两类 bug: ① spread 字符串拆成单字(如 "与地球相似的物理法则。" → ["与","地","球",...]);
+ *  ② for..of 字符串遍历成字符导致规则/事实碎片。 */
+function normalizeStringArray(v: unknown): string[] {
+  if (v == null) return [];
+  if (typeof v === "string") return v.trim() ? [v.trim()] : [];
+  if (Array.isArray(v)) {
+    return v
+      .filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+      .map((x) => x.trim());
+  }
+  return [];
+}
+
+/** 归一化 laws 三字段（rules/narrative/ontology 必须都是字符串数组） */
+function normalizeLaws(laws: unknown): { rules: string[]; narrative: string[]; ontology: string[] } {
+  const l = (laws && typeof laws === "object" ? laws : {}) as Record<string, unknown>;
+  return {
+    rules: normalizeStringArray(l.rules),
+    narrative: normalizeStringArray(l.narrative),
+    ontology: normalizeStringArray(l.ontology),
+  };
+}
+
+/** 归一化为数组: 非数组(LLM 可能输出对象/字符串) → []（防遍历字符串/对象崩） */
+function normalizeArray<T>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : [];
+}
+
+
 import { makeEntity, defaultRegions } from "./engine.ts";
 import { deriveRegionResources } from "./physics.ts";
 import { generateWorldLanguages } from "./culture.ts";
@@ -183,6 +215,10 @@ export async function parseUserDescription(
       measurement: !!parsed.measurement,
     };
     onTrace?.(entry);
+    // 归一化防御: LLM 可能把 narrative/ontology/rules 输出成字符串——统一转数组, 防后续 spread 拆字/遍历字符
+    parsed.laws = normalizeLaws(parsed.laws);
+    parsed.regions = normalizeArray(parsed.regions);
+    parsed.entities = normalizeArray(parsed.entities);
     return parsed;
   } catch (e) {
     entry.error = `解析失败: ${e instanceof Error ? e.message : String(e)}`;
@@ -206,6 +242,8 @@ export type Conflict = {
  */
 export function detectInitialConflicts(parsed: ParsedInitialState): Conflict[] {
   const conflicts: Conflict[] = [];
+  // 归一化防御: rules 可能是字符串, 遍历会变成逐字符——统一转数组
+  parsed.laws = normalizeLaws(parsed.laws);
 
   // 1. 实体区域重叠：两个实体占同一区域
   const regionUsers = new Map<string, string[]>();
@@ -567,7 +605,8 @@ export async function completeInitialState(
   if (skeleton.regions?.length) {
     skeleton = await verifyLayer("skeleton", seed, skeleton, llm, "区域(大陆/海洋)+法则+尺度", onTrace);
   }
-  const laws = skeleton.laws ?? parsed.laws ?? { rules: [], narrative: [], ontology: [] };
+  // 归一化防御: skeleton/parsed 的 laws 字段可能是字符串(LLM 输出不稳)——统一转数组
+  const laws = normalizeLaws(skeleton.laws ?? parsed.laws ?? { rules: [], narrative: [], ontology: [] });
   const measurement = skeleton.measurement ?? parsed.measurement;
   // 骨架失败 → 回退用户已指定的区域（不留空, 不静默清空）
   let topRegions = (skeleton.regions?.length ? skeleton.regions : parsed.regions) ?? [];
@@ -593,7 +632,7 @@ export async function completeInitialState(
     time: new Date().toISOString(), ok: !!entRaw, calledLLM: true,
     inputExcerpt: `topRegions: ${topRegions.length}`, responseExcerpt: entRaw?.slice(0, 1500) ?? "(无返回)", error: entRaw ? undefined : "LLM 无返回",
   });
-  if (entRaw) { try { const p = parseJSONFromLLM<{ entities: NonNullable<ParsedInitialState["entities"]> }>(entRaw); entities = mergeEntities(entities, p.entities ?? []); } catch { /* 保留已解析实体 */ } }
+  if (entRaw) { try { const p = parseJSONFromLLM<{ entities: NonNullable<ParsedInitialState["entities"]> }>(entRaw); entities = mergeEntities(entities, normalizeArray(p.entities ?? [])); } catch { /* 保留已解析实体 */ } }
   // 实体自洽校验: 对照用户原文检查(同名实体/发源地分离/文明规模vs地盘/时代), LLM 输出修正版
   if (entities.length) {
     const verified = await verifyLayer<{ entities: NonNullable<ParsedInitialState["entities"]> }>("entities", seed, { entities }, llm, "实体(文明/种族, 含topRegionId/population/era)", onTrace);
@@ -1019,7 +1058,14 @@ export function initialStateToSession(
 ): CustomizedInitResult {
   // 区域: 用户指定的 + 补全的。补全区域邻接（空间拓扑, §4.0②）
   const regions: Record<string, SpaceRegion> = {};
-  const regionDefs = completed.regions ?? [];
+  // 归一化防御（入口）: LLM 可能把 laws/regions/entities 输出成字符串/对象——统一转数组, 防遍历拆字
+  completed = {
+    ...completed,
+    laws: normalizeLaws(completed.laws),
+    regions: normalizeArray(completed.regions ?? []),
+    entities: normalizeArray(completed.entities ?? []),
+  };
+  const regionDefs = completed.regions;
   if (regionDefs.length === 0) {
     // 用户没指定区域 → 用默认布局, 但应用用户可能的尺度
     const base = defaultRegions();

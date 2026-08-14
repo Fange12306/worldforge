@@ -8,6 +8,65 @@
  */
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+describe("初始化重构 — 面积比驱动层级", () => {
+  test("realm_area 确定性兜底: LLM 未给地盘面积时按 人口×时代密度 估算", async () => {
+    // entities 步骤不带 realm_area → 引擎按部落密度 3 人/km² 兜底
+    const mock = createMockLLM((prompt) => {
+      const p = prompt + " ";
+      if (p.includes("世界骨架")) {
+        return JSON.stringify({ laws: { rules: [], narrative: [] }, measurement: { lengthUnit: "公里", worldWidth: 10000, worldHeight: 5000 }, regions: [{ id: "c1", name: "大陆", biome: "mixed", share: 0.5 }] });
+      }
+      if (p.includes("文明/种族实体")) {
+        return JSON.stringify({ entities: [
+          { name: "部落", species: "人类", era: "部落时代", realm_scale: "settlement", topRegionId: "c1", politicalForm: "部落", population: 60000 },
+        ] });
+      }
+      if (p.includes("有的放矢")) {
+        return JSON.stringify({ regions: [], entities: [] });
+      }
+      return JSON.stringify({ relations: [] });
+    });
+    const completed = await completeInitialState(EMPTY, mock, "部落时代的一块大陆");
+    assert.ok(completed.entities[0].realm_area > 0, "realm_area 被兜底: " + completed.entities[0].realm_area);
+    // 60000 人口 / 部落密度 3 ≈ 20000
+    assert.equal(completed.entities[0].realm_area, 20000);
+  });
+
+  test("多级层级链: 聚焦步骤生成 3 级链, 实体绑定最细一级", async () => {
+    const mock = createMockLLM((prompt) => {
+      const p = prompt + " ";
+      if (p.includes("世界骨架")) {
+        return JSON.stringify({ laws: { rules: [], narrative: [] }, measurement: { lengthUnit: "公里", worldWidth: 10000, worldHeight: 5000 }, regions: [{ id: "asia", name: "亚洲大陆", biome: "mixed", share: 0.6 }] });
+      }
+      if (p.includes("文明/种族实体")) {
+        return JSON.stringify({ entities: [
+          { name: "人类部落", species: "人类", era: "部落时代", realm_scale: "settlement", topRegionId: "asia", politicalForm: "部落", population: 50000 },
+        ] });
+      }
+      if (p.includes("有的放矢")) {
+        // 3 级链: 大陆 → 次大陆 → 地区 → 核心(绑定)
+        return JSON.stringify({
+          regions: [
+            { id: "east-asia", name: "东亚", parent: "asia", biome: "mixed", share: 0.3 },
+            { id: "north-china", name: "华北", parent: "east-asia", biome: "plains", share: 0.4 },
+            { id: "yellow-mid", name: "黄河流域中游", parent: "north-china", biome: "plains", share: 0.5 },
+          ],
+          entities: [{ name: "人类部落", regionId: "yellow-mid" }],
+        });
+      }
+      return JSON.stringify({ relations: [] });
+    });
+    const completed = await completeInitialState(EMPTY, mock, "类地行星, 人类部落");
+    // 3 级链完整: asia → east-asia → north-china → yellow-mid
+    const byId = new Map(completed.regions.map((r) => [r.id, r]));
+    const chain = [];
+    let cur = byId.get("yellow-mid");
+    while (cur) { chain.unshift(cur.id); cur = cur.parent ? byId.get(cur.parent) : null; }
+    assert.deepEqual(chain, ["asia", "east-asia", "north-china", "yellow-mid"], "完整多级链: " + chain.join("→"));
+    assert.equal(completed.entities[0].regionId, "yellow-mid", "实体绑定最细一级");
+  });
+});
+
 
 import { EARTH_LAWS } from "./physics.ts";
 import { createRng } from "./random.ts";

@@ -110,6 +110,8 @@ export type ParsedInitialState = {
     era?: string;
     /** 地盘规模（时代+人口+文明形态 → 决定初始化细化层级深度）: 聚落级/区域级/大区级 */
     realm_scale?: "settlement" | "region" | "subcontinent";
+    /** 地盘面积（与 worldWidth/worldHeight 同单位², 如公里→平方公里）——面积比驱动层级: 顶层面积/地盘面积 → 层级数 */
+    realm_area?: number;
     /** 实体占据的顶层区域 id（先绑定顶层, 细化步骤再回填最细子区划 regionId） */
     topRegionId?: string;
     /** 起源叙事（从用户指令推出的隐含信息: 共同祖先/分化/迁徙——写入 identity.origin_story） */
@@ -347,22 +349,22 @@ ${COMMON_RULES}
 输出严格 JSON 对象, 不要 markdown 包裹。示例:
 {"laws":{"rules":["起死回生不可能发生。"],"narrative":["多种族并存的部落时代"],"ontology":["类地行星"]},"measurement":{"lengthUnit":"公里","worldWidth":2000,"worldHeight":1500},"regions":[{"id":"aurelia","name":"奥雷利亚大陆","biome":"mixed","share":0.6,"shape":"不规则大陆","position":"大陆中部","connections":{},"borders_land":[]},{"id":"endor-sea","name":"恩多尔海","biome":"ocean","share":0.4,"shape":"沿海水体","position":"大陆东侧","connections":{},"borders_land":["aurelia"]}]}`;
 
-const SUBREGIONS_SYSTEM = `你是架空世界的缔造者。用户给出世界种子, 已生成**顶层大陆/海洋**与**文明实体清单**(下方列出)。你**只为实体占据的顶层区域**生成子区划(layer 1-2), 并把每个实体绑定到最合适的子区划。
+const SUBREGIONS_SYSTEM = `你是架空世界的缔造者。用户给出世界种子, 已生成**顶层大陆/海洋**与**文明实体清单**(下方列出, 含各实体的地盘面积 realm_area)。你**只为实体占据的顶层区域**生成**完整的多级子区划链**(layer 1, 2, 3...), 把每个实体绑定到最合适的核心区划。
 
 ${COMMON_RULES}
 
 - **有的放矢(关键)**: 只为下方实体 topRegionId 指向的顶层区域细化子区划。**未被任何实体占据的顶层区域一律不枚举子区划**——它们保持概略(layer 0), 推演中涉及时才动态细化(细化即锁定)。**禁止为无实体的区域生成子区划。**
-- **层级深度由实体时代/地盘规模/世界尺度(下方 measurement)决定**:
-  - realm_scale="settlement"(部落/氏族): 顶层下 1 级子区划即可(如 大陆→河谷), 实体绑定该子区划;
-  - realm_scale="region"(城邦/小王国): 1-2 级(如 大陆→平原→盆地), 实体绑定最细一级;
-  - realm_scale="subcontinent"(王国/帝国): 2 级(如 大陆→大区→核心区), 实体绑定核心区。
-  - 世界尺度越大, 每级区划面积越大; 文明人口与地盘面积要自洽(几万人的部落不应占整个大陆)。
-- **每个实体必须绑定**: 在输出的 entities 数组里给出每个实体的最终 regionId（name 与实体清单一致, regionId 必须存在且是**最细一级**子区划或该顶层区域）。
-- 子区划的 **parent 必须指向下方已存在区域**(顶层区域或本批新子区划), 不得引用不存在的区域。
+- **层级深度由面积比决定(核心机制)**: 每个实体的层级链深度 = 顶层区域面积 ÷ 实体地盘面积(realm_area) 的比值。参考规则: 面积每缩小约 3-10 倍为一级(地理分层惯例: 大陆→次大陆→大区→地区→核心区), 层级数 N ≈ log(顶层面积/realm_area) / log(5)。
+  - **必须生成完整层级链, 直到最细一级的面积接近(不超过 ~10 倍)实体的 realm_area**——实体绑定最细一级。
+  - 现实参考(行星级世界): 亚洲(4400万 km²) → 东亚次大陆(~1000万, share≈0.25) → 华北地区(~150万, share≈0.15) → 黄河流域中游(~30万, share≈0.2) → 核心地带。一个部落文明从"大陆"到"它的河谷"通常需要 **3-4 级**子区划; 一个帝国从"大陆"到"核心省"需要 2-3 级。
+  - **每级都命名**: 次大陆/大区/地区都要有自然地理名(如"华北平原""黄河流域"), 不允许跳过级(不得从大陆直接跳到河谷)。
+  - 下方输入会给出每个顶层区域的估算面积与每个实体的"建议层级深度"——**以此为参考, 但最终由你综合判断**。
+- **每个实体必须绑定**: 在输出的 entities 数组里给出每个实体的最终 regionId（name 与实体清单一致, regionId 必须存在且是**最细一级**子区划）。
+- 子区划的 **parent 必须指向下方已存在区域**(顶层区域或本批新子区划), 不得引用不存在的区域; **每个子区划给 share(占父级比例, 0-1)**——父子面积链自洽: 同一父级的子区划 share 和 ≤ 1。
 - 岛屿(parent 归陆, neighbors 邻海)也在此层生成(仅当实体占用的顶层区域含岛屿时)。
 - 顶层区域本身不要重复输出。
 
-输出严格 JSON 对象。示例: {"regions":[{"id":"aurelia-valley","name":"晨曦河谷","parent":"aurelia","biome":"plains","share":0.3,"shape":"狭长河谷","position":"大陆中部","character":"两岸冲积平原, 北岸丘陵","connections":{}}],"entities":[{"name":"晨曦部族","regionId":"aurelia-valley"},{"name":"精灵","regionId":"silverbirch-forest"}]}`;
+输出严格 JSON 对象。示例: {"regions":[{"id":"aurelia-east-asia","name":"东晨曦次大陆","parent":"aurelia","biome":"mixed","share":0.3,"shape":"半岛状次大陆","position":"大陆东部","connections":{}},{"id":"aurelia-yellow-valley","name":"晨曦河平原","parent":"aurelia-east-asia","biome":"plains","share":0.5,"shape":"冲积平原","position":"次大陆中部","character":"两岸冲积平原, 北岸丘陵","connections":{}},{"id":"aurelia-mid-reach","name":"晨曦河中游","parent":"aurelia-yellow-valley","biome":"plains","share":0.4,"shape":"带状河谷","position":"平原中段","connections":{}}],"entities":[{"name":"晨曦部族","regionId":"aurelia-mid-reach"},{"name":"精灵","regionId":"silverbirch-forest"}]}`;
 
 const ENTITIES_SYSTEM = `你是架空世界的缔造者。用户给出世界种子, 已生成**顶层大陆/海洋**、**世界法则**与**世界尺度**(下方列出)。你先推断**哪些文明/种族实体存在**, 为每个实体推断**时代/政体/人口/地盘**, 绑定到顶层区域, 并给出**起源叙事**。
 
@@ -378,6 +380,12 @@ ${COMMON_RULES}
   - "settlement" 聚落级: 部落/氏族, 占据一个聚落/河谷/湖岸;
   - "region" 区域级: 城邦/小王国, 占据一块平原/盆地/海岸带;
   - "subcontinent" 大区级: 王国/帝国, 占据整个大区或跨多个区。
+- **realm_area 地盘面积(必填, 关键)**——与 worldWidth/worldHeight 同单位²（若世界宽 4000 公里 → 面积单位即平方公里）。由**人口 × 时代密度**反推 + 文明形态综合判断, 并对照下方世界尺度:
+  - 部落时代(粗放农业/游牧): 密度约 1-10 人/km² → 5 万人口 → 数千~数万 km²;
+  - 城邦时代(精耕农业): 密度约 10-50 人/km² → 50 万人口 → 1-5 万 km²;
+  - 王国/帝国: 密度约 20-100 人/km² → 500 万人口 → 5-25 万 km²。
+  - 参考现实: 黄河流域中游(一个部落文明的核心地带)约 30 万 km²; 华北平原约 15 万 km²; 一个城邦的腹地约 1-5 万 km²。
+  - **对照世界尺度自洽**: 世界是行星级(数十万 km 周长)时, 部落的地盘应为世界陆地面积的十万分之一到千分之一级; 世界是小世界(数千 km)时, 地盘相对占比大得多。realm_area 与 topRegionId 指向的顶层区域面积之比, 将决定该实体的区域细化层级数——比值越大层级越深。
 - **origin 起源叙事(一句话)**: 从用户原文推出**尽可能多的隐含信息**——"四个类人亚种"→ 共同祖先、分化/迁徙的历史; "与世隔绝的群岛"→ 孤立演化。origin 写进实体的起源叙事, 供后代 agent 引用。用户没给线索时给简短的合理起源（"起源于 X 的河谷"）, 不过度脑补。
 - **topRegionId**: 该实体占据的**顶层区域 id**（必须从下方列表选, 不得引用不存在的区域）。实体所在顶层区域会在下一步被细化出子区划, 因此**此时不填 regionId**（下一步细化后回填）。
 - population: 正整数（与 era/realm_scale 自洽）。
@@ -416,7 +424,10 @@ async function verifyLayer<T>(
 - 引用一致性: regionId/parent/target 必须指向真实存在。
 - share/面积自洽: 父子 share 和, 陆地+海洋比例。
 
-**若发现问题, 输出修正后的完整该层 JSON（同结构）; 若无问题, 原样输出。** 不要解释, 只输出 JSON。`;
+**硬性约束（最重要）**:
+- **绝对禁止修改任何 id 与 name**——输入里存在的 id/name 必须原样保留, 不得改名、不得换 id、不得重写区域集。引用一致性检查只针对"引用了不存在的 id"这类问题, 修正方式是调整**引用方**指向输入中已存在的 id, 而不是发明新 id。
+- 允许修正: 数值(population/share 不合理)、缺失字段的补全(如 realm_area 按时代密度估算)、引用调整、多余的同名实体合并。
+- **若无问题, 原样输出。** 不要解释, 只输出 JSON。`;
 
   const response = await safeCall(llm, {
     systemPrompt: verifySystem,
@@ -427,6 +438,19 @@ async function verifyLayer<T>(
   if (!response) return layerOutput;
   try {
     const verified = parseJSONFromLLM<T>(response);
+    // §: id/name 一致性保护——校验版不得重写结构/换区域 id:
+    // - regions: id 集合必须与输入完全一致(区域 id 绝不允许改)
+    // - entities: name 集合必须一致,**除非**输入存在同名实体(同名冲突允许校验版区分命名)
+    // 违反 → 判定校验版越权, 丢弃用原版
+    if (!identityGuard(layerOutput, verified)) {
+      onTrace?.({
+        step: `verify-${step}`,
+        time: new Date().toISOString(), ok: false, calledLLM: true,
+        inputExcerpt: `verify ${step} 越权(id/name 集合不一致), 丢弃校验版`,
+        responseExcerpt: response.slice(0, 400),
+      });
+      return layerOutput;
+    }
     onTrace?.({
       step: `verify-${step}`,
       time: new Date().toISOString(), ok: true, calledLLM: true,
@@ -436,6 +460,51 @@ async function verifyLayer<T>(
   } catch {
     return layerOutput; // 校验 LLM 输出非法 → 用原输出
   }
+}
+
+/**
+ * §: 校验版身份一致性保护。
+ * - regions: id 集合必须与输入完全一致（区域 id 绝不允许改, 引用检查只能调整引用方）
+ * - entities: name 集合必须一致, **除非**输入存在同名实体（同名冲突允许校验版区分命名）
+ * 返回 false = 校验版越权, 应丢弃。
+ */
+function identityGuard(orig: unknown, verified: unknown): boolean {
+  if (!orig || typeof orig !== "object") return true;
+  const o = orig as Record<string, unknown>;
+  const v = (verified && typeof verified === "object" ? verified : {}) as Record<string, unknown>;
+  // 区域 id 严格一致
+  const oRegions = collectIds(o.regions, "id");
+  const vRegions = collectIds(v.regions, "id");
+  if (oRegions.size > 0) {
+    if (vRegions.size === 0 || !setsEqual(oRegions, vRegions)) return false;
+  }
+  // 实体 name: 无同名冲突时必须一致
+  const oEntNames = collectIds(o.entities, "name");
+  const vEntNames = collectIds(v.entities, "name");
+  if (oEntNames.size > 0) {
+    if (vEntNames.size === 0) return false;
+    const hasDupName = Array.isArray(o.entities) && oEntNames.size !== (o.entities as unknown[]).length;
+    if (!hasDupName && !setsEqual(oEntNames, vEntNames)) return false;
+  }
+  return true;
+}
+
+/** 取数组字段的身份集合（field: "id" 或 "name"） */
+function collectIds(arr: unknown, field: "id" | "name"): Set<string> {
+  const out = new Set<string>();
+  if (!Array.isArray(arr)) return out;
+  for (const item of arr) {
+    if (item && typeof item === "object" && typeof (item as Record<string, unknown>)[field] === "string") {
+      out.add((item as Record<string, string>)[field]);
+    }
+  }
+  return out;
+}
+
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
 }
 
 /**
@@ -506,13 +575,22 @@ export async function completeInitialState(
     const verified = await verifyLayer<{ entities: NonNullable<ParsedInitialState["entities"]> }>("entities", seed, { entities }, llm, "实体(文明/种族, 含topRegionId/population/era)", onTrace);
     if (verified.entities?.length) entities = verified.entities;
   }
+  // §: realm_area 确定性兜底——LLM 未给地盘面积时按 人口 × 时代密度 估算
+  //（面积比 → 层级深度的关键输入, 缺了就无法计算层级链深度）
+  for (const e of entities) {
+    if (e.realm_area != null && e.realm_area > 0) continue;
+    if (typeof e.population !== "number" || e.population <= 0) continue;
+    e.realm_area = estimateRealmArea(e.population, e.era);
+  }
 
   // Step 3: 聚焦区域细化（§: 有的放矢——只细化实体占据的顶层区域, 其余保持概略, 推演中动态细化）
   // 输出 regions(实体区域下的子区划) + entities(每个实体的最终 regionId 绑定回填)
   onProgress?.("③ 聚焦区域细化（只细化文明所在区域）...");
   let subregions: NonNullable<ParsedInitialState["regions"]> = [];
   if (topRegions.length > 0 && entities.length > 0) {
-    const subRaw = await safeCall(llm, { systemPrompt: SUBREGIONS_SYSTEM, userMessage: `${seedBlock}\n\n# 世界尺度\n${JSON.stringify(measurement ?? {}, null, 2)}\n\n# 已生成的大陆/海洋（parent 只能从这里选）\n${JSON.stringify(topRegions, null, 2)}\n\n# 文明实体（只细化它们 topRegionId 指向的顶层区域; 并给每个实体回填最终 regionId）\n${JSON.stringify(entities.map((e) => ({ name: e.name, species: e.species, era: e.era, realm_scale: e.realm_scale, topRegionId: e.topRegionId, population: e.population })), null, 2)}`, maxTokens: 3000, json: true });
+    // §: 面积比 → 层级深度参考（确定性计算: 顶层面积/实体地盘面积 → 建议层级数, 注入 LLM 参考）
+    const areaRef = buildAreaDepthReference(topRegions, entities, measurement);
+    const subRaw = await safeCall(llm, { systemPrompt: SUBREGIONS_SYSTEM, userMessage: `${seedBlock}\n\n# 世界尺度\n${JSON.stringify(measurement ?? {}, null, 2)}\n\n# 面积与层级参考（建议层级深度 = 顶层面积/地盘面积, 生成层级链时以此为参考）\n${areaRef}\n\n# 已生成的大陆/海洋（parent 只能从这里选）\n${JSON.stringify(topRegions, null, 2)}\n\n# 文明实体（只细化它们 topRegionId 指向的顶层区域; 并给每个实体回填最终 regionId; realm_area 为地盘面积）\n${JSON.stringify(entities.map((e) => ({ name: e.name, species: e.species, era: e.era, realm_scale: e.realm_scale, realm_area: e.realm_area, topRegionId: e.topRegionId, population: e.population })), null, 2)}`, maxTokens: 4000, json: true });
     onTrace?.({
       step: "complete-subregions",
       time: new Date().toISOString(), ok: !!subRaw, calledLLM: true,
@@ -589,6 +667,70 @@ export async function completeInitialState(
     cultures: parsed.cultures,
     exclusions: parsed.exclusions,
   };
+}
+
+/**
+ * §: realm_area 确定性估算（LLM 未给出地盘面积时兜底）: 人口 ÷ 时代密度。
+ * 密度参考: 部落(粗放农业/游牧) ~3 人/km²; 城邦 ~15; 王国 ~30; 帝国 ~60; 未知 ~10。
+ * 只作层级深度计算输入, 不写入实体卡片。
+ */
+function estimateRealmArea(population: number, era?: string): number {
+  let density = 10; // 未知时代默认
+  const eraText = era ?? "";
+  if (eraText.includes("部落") || eraText.includes("原始") || eraText.includes("史前") || eraText.includes("狩猎")) density = 3;
+  else if (eraText.includes("城邦") || eraText.includes("古典")) density = 15;
+  else if (eraText.includes("王国") || eraText.includes("中世纪")) density = 30;
+  else if (eraText.includes("帝国") || eraText.includes("近代") || eraText.includes("工业")) density = 60;
+  else if (eraText.includes("魔法") || eraText.includes("真气") || eraText.includes("修真")) density = 8;
+  return Math.max(100, Math.round(population / density));
+}
+
+/**
+ * §: 面积比 → 层级深度参考（确定性计算, 注入 focused-regions 步骤供 LLM 参考）。
+ * 世界面积 = worldWidth × worldHeight; 顶层面积 = 世界面积 × share(缺省均分);
+ * 建议层级数 N = ceil(log(顶层面积/realm_area) / log(5)), clamp [1, 5]。
+ * 面积每缩小约 5 倍为一级（大陆→次大陆→大区→地区→核心区）。
+ * 只作参考, 不强制——最终层级链由 LLM 综合判断（地理/命名自洽优先）。
+ */
+function buildAreaDepthReference(
+  topRegions: NonNullable<ParsedInitialState["regions"]>,
+  entities: NonNullable<ParsedInitialState["entities"]>,
+  measurement: ParsedInitialState["measurement"],
+): string {
+  const w = measurement?.worldWidth;
+  const h = measurement?.worldHeight;
+  if (!w || !h || w <= 0 || h <= 0) {
+    return "(未给出世界尺度, 无法计算面积比; 请按文明规模自行判断层级深度)";
+  }
+  const worldArea = w * h;
+  const nTop = Math.max(1, topRegions.length);
+  const topAreaOf = (id: string): number => {
+    const r = topRegions.find((x) => x.id === id);
+    const share = typeof r?.share === "number" && r.share > 0 ? r.share : 1 / nTop;
+    return worldArea * share;
+  };
+  const lines = ["世界总面积 ≈ " + formatArea(worldArea) + "（" + w + " × " + h + "）"];
+  for (const e of entities) {
+    const topId = e.topRegionId;
+    const area = e.realm_area;
+    if (!topId || !area || area <= 0) {
+      lines.push("- " + e.name + ": 缺 realm_area/topRegionId, 无法计算层级参考");
+      continue;
+    }
+    const topArea = topAreaOf(topId);
+    const ratio = topArea / area;
+    const depth = Math.max(1, Math.min(5, Math.ceil(Math.log(ratio) / Math.log(5))));
+    lines.push("- " + e.name + ": 顶层「" + topId + "」≈ " + formatArea(topArea) + ", 地盘 ≈ " + formatArea(area) + " → 面积比 " + Math.round(ratio) + " 倍 → 建议层级深度 " + depth + " 级");
+  }
+  return lines.join("\n");
+}
+
+/** 面积格式化: 万/亿/万亿 */
+function formatArea(a: number): string {
+  if (a >= 1e12) return (a / 1e12).toFixed(1) + " 万亿";
+  if (a >= 1e8) return (a / 1e8).toFixed(1) + " 亿";
+  if (a >= 1e4) return (a / 1e4).toFixed(1) + " 万";
+  return Math.round(a).toLocaleString();
 }
 
 /**
@@ -673,6 +815,7 @@ function mergeEntities(
         ideology: existing.ideology ?? e.ideology,
         era: e.era ?? existing.era,
         realm_scale: e.realm_scale ?? existing.realm_scale,
+        realm_area: e.realm_area ?? existing.realm_area,
         topRegionId: e.topRegionId ?? existing.topRegionId,
         origin: e.origin ?? existing.origin,
       });

@@ -9,6 +9,50 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
+describe("发源地分离 — 不同物种不得同顶层", () => {
+  test("ensureSpeciesSeparation: 同顶层多物种 → 重分配到未占用顶层", async () => {
+    const { completeInitialState } = await import("./init-customizer.ts");
+    // mock: entities 步骤把人类+精灵放同一顶层(LLM 违规), 兽人矮人各占一个顶层
+    const mock = createMockLLM((prompt) => {
+      const p = prompt + " ";
+      if (p.includes("世界骨架")) {
+        return JSON.stringify({ laws: { rules: [], narrative: [] }, measurement: { lengthUnit: "公里", worldWidth: 10000, worldHeight: 10000 }, regions: [
+          { id: "c1", name: "甲大陆", biome: "mixed", share: 0.3 },
+          { id: "c2", name: "乙大陆", biome: "mixed", share: 0.3 },
+          { id: "c3", name: "丙大陆", biome: "mixed", share: 0.2 },
+          { id: "c4", name: "丁大陆", biome: "mixed", share: 0.1 },
+          { id: "big-ocean", name: "大洋", biome: "ocean", share: 0.1 },
+        ] });
+      }
+      if (p.includes("文明/种族实体")) {
+        return JSON.stringify({ entities: [
+          { name: "人类", species: "人类", era: "部落时代", realm_scale: "settlement", topRegionId: "c1", politicalForm: "部落", population: 50000 },
+          { name: "精灵", species: "精灵", era: "部落时代", realm_scale: "settlement", topRegionId: "c1", politicalForm: "部落", population: 30000 },
+          { name: "兽人", species: "兽人", era: "部落时代", realm_scale: "settlement", topRegionId: "c2", politicalForm: "部落", population: 40000 },
+          { name: "矮人", species: "矮人", era: "部落时代", realm_scale: "settlement", topRegionId: "c3", politicalForm: "部落", population: 20000 },
+        ] });
+      }
+      if (p.includes("有的放矢")) {
+        return JSON.stringify({ regions: [], entities: [] });
+      }
+      if (p.includes("自洽校验者")) {
+        const body = p.split("该层输出")[1]?.split("# 用户原文")[0];
+        return body ? body.trim() : "{}";
+      }
+      return JSON.stringify({ relations: [] });
+    });
+    const EMPTY2 = { laws: { rules: [], narrative: [], ontology: [] }, regions: [], entities: [] };
+    const completed = await completeInitialState(EMPTY2, mock, "演化出人类精灵兽人矮人, 部落时代");
+    // 4 物种应各自独占一个顶层(精灵被重分配到 c2 或 c3 的未占用区)
+    const tops = completed.entities.map((e) => e.topRegionId);
+    assert.equal(new Set(tops).size, 4, "不同物种不得同顶层: " + tops.join(","));
+    const speciesOfTop = new Map();
+    for (const e of completed.entities) speciesOfTop.set(e.topRegionId, e.species);
+    assert.equal(new Set([...speciesOfTop.values()]).size, 4, "每个顶层只有一个物种");
+  });
+});
+
+
 describe("LLM 类型防御 — 字符串不再被拆字（一劳永逸）", () => {
   test("narrative/ontology 为字符串 → 归一化为单元素数组(不拆成单字)", () => {
     const completed = {

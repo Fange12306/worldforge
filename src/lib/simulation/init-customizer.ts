@@ -633,11 +633,19 @@ export async function completeInitialState(
     inputExcerpt: `topRegions: ${topRegions.length}`, responseExcerpt: entRaw?.slice(0, 1500) ?? "(无返回)", error: entRaw ? undefined : "LLM 无返回",
   });
   if (entRaw) { try { const p = parseJSONFromLLM<{ entities: NonNullable<ParsedInitialState["entities"]> }>(entRaw); entities = mergeEntities(entities, normalizeArray(p.entities ?? [])); } catch { /* 保留已解析实体 */ } }
-  // 实体自洽校验: 对照用户原文检查(同名实体/发源地分离/文明规模vs地盘/时代), LLM 输出修正版
+  // 实体自洽校验: 对照用户原文检查(同名实体/发源地分离/文明规模vs地盘/时代), LLM 输出修正版。
+  // §: 注入发源地分离违规清单——不同物种不得同顶层(同一大陆), 让校验层把冲突实体改到其他顶层
   if (entities.length) {
-    const verified = await verifyLayer<{ entities: NonNullable<ParsedInitialState["entities"]> }>("entities", seed, { entities }, llm, "实体(文明/种族, 含topRegionId/population/era)", onTrace);
+    const sepNotes = speciesOverlapNotes(entities, topRegions);
+    const verified = await verifyLayer<{ entities: NonNullable<ParsedInitialState["entities"]> }>(
+      "entities", seed, { entities }, llm, "实体(文明/种族, 含topRegionId/population/era)", onTrace,
+      sepNotes.length > 0 ? sepNotes.join("\n") : undefined,
+    );
     if (verified.entities?.length) entities = verified.entities;
   }
+  // §: 发源地分离确定性兜底——校验层没改对(LLM 波动)时, 把同顶层的多余物种实体重分配到未占用顶层。
+  // 这是"不同亚种不得相邻"的最终保证: prompt/校验都只是软约束, 这里是硬保证。
+  ensureSpeciesSeparation(entities, topRegions);
   // §: realm_area 确定性兜底——LLM 未给地盘面积时按 人口 × 时代密度 估算
   //（面积比 → 层级深度的关键输入, 缺了就无法计算层级链深度）
   for (const e of entities) {
@@ -879,6 +887,62 @@ export function regionNameViolations(regions: NonNullable<ParsedInitialState["re
     }
   }
   return out;
+}
+
+/**
+ * §: 发源地分离违规清单（不同物种不得同顶层=同一大陆, 用户明确共居除外）。
+ * 返回违规说明供 verifyLayer 注入修正; 空 = 合规。
+ */
+function speciesOverlapNotes(
+  entities: NonNullable<ParsedInitialState["entities"]>,
+  topRegions: NonNullable<ParsedInitialState["regions"]>,
+): string[] {
+  const topIds = new Set(topRegions.map((r) => r.id));
+  const speciesOfTop = new Map<string, Set<string>>();
+  for (const e of entities) {
+    const top = e.topRegionId;
+    if (!top || !topIds.has(top)) continue;
+    if (!speciesOfTop.has(top)) speciesOfTop.set(top, new Set());
+    speciesOfTop.get(top)!.add(e.species || e.name);
+  }
+  const out: string[] = [];
+  for (const [top, species] of speciesOfTop) {
+    if (species.size > 1) {
+      out.push("- 发源地分离违规: 顶层区域「" + top + "」被多个物种占用(" + [...species].join("、") + ")——不同物种的发源地必须分离, 请把除第一个外的实体改到其他顶层区域(topRegionId), 或按用户原文明确共居说明处理");
+    }
+  }
+  return out;
+}
+
+/**
+ * §: 发源地分离确定性兜底（硬保证）——校验层未修正时, 把同顶层的多余物种实体
+ * 重分配到未被占用的顶层区域。同物种多实体(封建多国)可共享顶层, 不受影响。
+ * 无空闲顶层时保持原样（软冲突已由 speciesOverlapNotes 报告）。
+ */
+function ensureSpeciesSeparation(
+  entities: NonNullable<ParsedInitialState["entities"]>,
+  topRegions: NonNullable<ParsedInitialState["regions"]>,
+): void {
+  const topIds = topRegions.map((r) => r.id);
+  const speciesOfTop = new Map<string, string>();
+  for (const e of entities) {
+    const top = e.topRegionId;
+    if (!top || !topIds.includes(top)) continue;
+    const occupier = speciesOfTop.get(top);
+    if (occupier && occupier !== e.species) {
+      // 不同物种冲突: 移到"未占用且为陆地"的顶层(海洋顶层不能安置文明, 防矮人被扔进大洋);
+      // regionId 清空让聚焦步骤重新绑定
+      const free = topIds.find((t) => !speciesOfTop.has(t) && !isOceanTop(t, topRegions));
+      if (free) {
+        e.topRegionId = free;
+        e.regionId = undefined;
+        speciesOfTop.set(free, e.species);
+        continue;
+      }
+      // 无合适陆地顶层 → 保持原样（软冲突可见）
+    }
+    speciesOfTop.set(top, e.species);
+  }
 }
 
 /**
@@ -1363,6 +1427,13 @@ function neighborCandidates(regionId: string, regions: Record<string, SpaceRegio
     }
   }
   return [...out];
+}
+
+/** 顶层区域是否为海洋（海洋顶层不能安置文明发源地） */
+function isOceanTop(topId: string, topRegions: NonNullable<ParsedInitialState["regions"]>): boolean {
+  const r = topRegions.find((x) => x.id === topId);
+  const biome = String(r?.biome ?? "").toLowerCase();
+  return /ocean|海|洋|sea|sea-|bay/.test(biome);
 }
 
 /** 两个区域是否同属一个顶层区域（父链回溯到顶层比较）——同顶层 = 同一大陆 */

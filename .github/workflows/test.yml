@@ -1,0 +1,24 @@
+name: simulation-tests
+
+on:
+  push:
+    paths:
+      - "src/lib/simulation/**"
+      - "package.json"
+      - ".github/workflows/test.yml"
+  pull_request:
+    paths:
+      - "src/lib/simulation/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 历史推演引擎测试（node --experimental-strip-types）
+        run: npm test

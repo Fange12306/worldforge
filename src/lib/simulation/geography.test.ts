@@ -134,10 +134,11 @@ describe("细化同步 geography(engine 集成)", () => {
     const session = createSession({ laws: world, regions, entities: [ent], config: { seed: 1 } });
     // 触发无人区细化
     const { arbitrate } = await import("./arbiter.ts");
+    // B3: 只有"空间细节事件"(engine 源、非随机)才触发细化入库——agent 行为叙事不锁为空间事实
     const ev = {
       id: "ref-ev", tick: 1, time_label: "t1", type: "cultural", participants: ["e"],
       region: "desert-south", description: "绿洲边缘出现聚落, 盐滩与灌溉渠交错。",
-      changes: [], random: false, source: "agent",
+      changes: [], random: false, source: "engine",
     };
     const arb = await arbitrate({
       laws: session.laws, config: session.config, entities: session.entities,

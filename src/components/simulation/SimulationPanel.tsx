@@ -88,11 +88,28 @@ export function SimulationPanel({ worldPath, onClose, sidebarOpen, rightOpen, ll
   const [typeFilter, setTypeFilter] = useState<string[]>([]);
   // 因果链回链高亮: 点击"前因"跳转到目标事件并高亮
   const [highlightedEventId, setHighlightedEventId] = useState<string | null>(null);
+  /** 最近一次推演步的 LLM 成本估算（§3.4 预算监控: 真实用量, 非代理） */
+  const [tickCost, setTickCost] = useState<{ inputTokens: number; outputTokens: number; calls: number } | null>(null);
   const eventScrollRef = useRef<HTMLDivElement>(null);
   const runningRef = useRef(false);
   const handleStepRef = useRef<(n: number) => Promise<void>>(async () => {});
   const autoPlayRef = useRef(autoPlay);
   autoPlayRef.current = autoPlay;
+  // 自动保存防抖（C3: 防 WebView 重载/崩溃丢推演）——连续步进时合并为一次落盘
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleAutoSave = useCallback((s: SimulationSession, wp: string) => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        await createDiskPersistence().save(s, wp);
+      } catch {
+        try { await createMemoryPersistence().save(s, wp); } catch { /* 无 Tauri 也无内存兜底则放弃 */ }
+      }
+    }, 1500);
+  }, []);
+  useEffect(() => () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+  }, []);
 
   // 默认选中第一个活跃实体(右侧常驻侧栏显示)
   useEffect(() => {
@@ -115,7 +132,7 @@ export function SimulationPanel({ worldPath, onClose, sidebarOpen, rightOpen, ll
     return () => clearInterval(interval);
   }, [autoPlay]);
 
-  // 预算监控：本 tick 事件数作为成本代理
+  // 预算监控：事件数为展示用; 真实 token 用量来自最近一步的 res.cost（§3.4）
   const eventCount = session?.events.length ?? 0;
 
   // 创建初始会话（全景初始化）——LLM 按用户种子文本推构完整世界（§4.0: 初始粗但全面, 由 LLM 补全）
@@ -255,11 +272,15 @@ export function SimulationPanel({ worldPath, onClose, sidebarOpen, rightOpen, ll
         return JSON.stringify(activity);
       });
       // runTicks 内置: 多 agent 并行推演(§5.2) + 物理层 + 仲裁(§5.3) + 动态池(§5.4) + 干预(§5.5)
-      await runTicks(s, multi, {
+      const res = await runTicks(s, multi, {
         agentConfig: { llm: agentLLM, maxTokens: Math.round(config.budget.perEntity) },
         llm: agentLLM,
       });
       setSession({ ...s });
+      // §3.4 预算监控: 显示真实估算 token 用量（含熔断降级说明）
+      if (res.cost) setTickCost(res.cost);
+      // C3 自动保存（防 WebView 重载/崩溃丢推演）: 每步后落盘, 连续步进时 1.5s 防抖合并
+      scheduleAutoSave(s, worldPath);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       setDecreeResult(`推演出错（实体可能部分更新, 但事件未记录）: ${msg}`);
@@ -571,6 +592,19 @@ export function SimulationPanel({ worldPath, onClose, sidebarOpen, rightOpen, ll
               <Button variant="ghost" size="sm" onClick={handleImport}>导入词条法则</Button>
             </div>
             <div className="mt-2 text-xs text-ink-muted">tick {session.current_tick} / 上限 {config.maxTicks}</div>
+            {/* §3.4 预算监控: 真实估算 token（来自 res.cost）+ 预算; 超限提示自动降级 */}
+            {(() => {
+              const global = config.budget?.perTickGlobal ?? 0;
+              const used = tickCost ? tickCost.inputTokens + tickCost.outputTokens : null;
+              const pct = used != null && global > 0 ? used / global : 0;
+              return (
+                <div className={'mt-1 text-[0.625rem] ' + (pct > 1 ? 'text-amber-400' : 'text-ink-muted')}>
+                  {used != null
+                    ? <span>最近一步 LLM 估算 {used.toLocaleString()} / {global.toLocaleString()} token（{tickCost?.calls ?? 0} 次调用）{pct > 1 ? '· 超预算, 已自动跳过可省略的语义层' : ''}</span>
+                    : '预算: 每 tick ' + global.toLocaleString() + ' token（步进后显示真实用量）'}
+                </div>
+              );
+            })()}
             {forkDiff && <div className="mt-2 text-[0.625rem] whitespace-pre-wrap text-ink-secondary">{forkDiff}</div>}
           </div>
 

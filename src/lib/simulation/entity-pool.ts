@@ -56,6 +56,18 @@ export function splitEntity(
     stability: Math.max(1, Math.round(parent.metrics.stability * (1 - stab))),
   };
 
+  // 领土分割（§5.4 修复）: 父实体保留前半, 子实体分得后半——不再整份复制（旧实现父子共享全部领土）。
+  // 仅核心区(1 块领土)时, 子实体与其共享核心区（空间模型无更细粒度, 可接受）
+  const parentTerr = parent.territory ?? [parent.geography.region];
+  let childTerr: string[] = [];
+  let newParentTerr = parentTerr;
+  if (parentTerr.length > 1) {
+    const cut = Math.ceil(parentTerr.length / 2);
+    newParentTerr = parentTerr.slice(0, cut);
+    childTerr = parentTerr.slice(cut);
+    if (!newParentTerr.includes(parent.geography.region)) newParentTerr = [parent.geography.region, ...newParentTerr];
+  }
+
   // 子实体继承父卡片，但身份/指标为"分裂部分"
   const child: EntityCard = {
     ...parent,
@@ -76,6 +88,9 @@ export function splitEntity(
       culture: `${childName}文化`,
     },
     geography: { ...parent.geography, neighbors: [...parent.geography.neighbors, parent.id] },
+    // 分得的领土（无多余领土时共享核心区）; 指标历史从出生开始, 不继承父的走势
+    territory: childTerr.length > 0 ? childTerr : [parent.geography.region],
+    history: undefined,
     relations: [],
     internal: {
       recent_events: [event.description],
@@ -87,7 +102,7 @@ export function splitEntity(
     updated_at: tick,
   };
 
-  const updatedParent: EntityCard = { ...parent, metrics: parentMetrics, updated_at: tick };
+  const updatedParent: EntityCard = { ...parent, metrics: parentMetrics, territory: newParentTerr, updated_at: tick };
   return { parent: updatedParent, child, split: { population: p, military: m, legitimacy: leg, stability: stab } };
 }
 

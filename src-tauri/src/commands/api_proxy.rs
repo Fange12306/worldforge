@@ -159,8 +159,10 @@ pub async fn single_chat(
     provider: String,
     model: String,
     max_tokens: u32,
-    json: bool,
+    json: Option<bool>,
 ) -> Result<String, String> {
+    // json 可选: 旧调用方(主聊天 context-compression 等)未传此参数, 默认 false——避免 Tauri 参数缺失报错
+    let json = json.unwrap_or(false);
     let api_key = crate::commands::api_key::get_api_key(provider.clone())
         .map_err(|e| format!("未配置 API Key: {}", e))?;
 

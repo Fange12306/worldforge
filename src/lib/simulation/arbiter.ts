@@ -70,6 +70,8 @@ export type ArbitrateContext = {
   llm?: {
     resolveConflict: (a: SimulationEvent, b: SimulationEvent) => Promise<ConflictPair["resolved"]>;
     validateRefinement: (content: string, laws: WorldLaws) => Promise<boolean>;
+    /** §4.3 规则层语义复核（可选）: 批量判定事件是否违反世界法则（关键词粗筛之外的第二道防线） */
+    validateRules?: (events: SimulationEvent[], laws: WorldLaws) => Promise<{ violations: { event_id: string; reason: string }[] }>;
   };
 };
 
@@ -86,6 +88,23 @@ export async function arbitrate(
     accepted: [], rejected: [], blocked: [], refinements: [], conflicts: [], violations: [], softWarnings: [],
   };
 
+  // 0. §4.3 规则层语义复核（可选）: 关键词粗筛之外的 LLM 批量判定（只审 agent 事件, 引擎事件由确定性逻辑生成）
+  const llmViolations = new Map<string, string>(); // event_id → reason
+  if (ctx.llm?.validateRules) {
+    const agentEvents = events.filter((e) => e.source === "agent");
+    if (agentEvents.length > 0) {
+      const res = await ctx.llm.validateRules(agentEvents, ctx.laws);
+      for (const v of res?.violations ?? []) {
+        if (v.event_id && agentEvents.some((e) => e.id === v.event_id)) {
+          llmViolations.set(v.event_id, v.reason ?? "LLM 判定违反世界法则");
+        }
+      }
+    }
+  }
+
+  // 细化候选: 按事件 id 暂存, 冲突消解/去重完成后再按"最终 accepted"收集（§5.3）
+  const refinementCandidates = new Map<string, { scope: string; content: string; layer: number }>();
+
   for (const event of events) {
     // 1. 硬约束检查（世界法则 rules + physics）
     const v = checkHardConstraints(event, ctx.laws);
@@ -93,6 +112,15 @@ export async function arbitrate(
       result.rejected.push({ event, reason: v.hard[0].reason });
       result.violations.push(...v.hard);
       result.blocked.push(makeBlockedEvent(event, v.hard[0].rule, v.hard[0].reason));
+      continue;
+    }
+
+    // 1.1 规则层语义复核命中 → 打回（与硬约束同级, 受阻记录保持历史连续）
+    const llmReason = llmViolations.get(event.id);
+    if (llmReason) {
+      result.rejected.push({ event, reason: llmReason });
+      result.violations.push({ level: "hard", rule: "世界法则(语义复核)", event_id: event.id, reason: llmReason });
+      result.blocked.push(makeBlockedEvent(event, "世界法则", llmReason));
       continue;
     }
 
@@ -126,7 +154,7 @@ export async function arbitrate(
       continue;
     }
     if (refineCheck.isRefinement && refineCheck.refinement) {
-      result.refinements.push(refineCheck.refinement);
+      refinementCandidates.set(event.id, refineCheck.refinement);
     }
 
     // 3. 历史即锁定检查（时间向）：不得与已发生历史矛盾
@@ -145,16 +173,28 @@ export async function arbitrate(
   for (const pair of conflictPairs) {
     const resolved = await resolveConflict(pair, ctx);
     result.conflicts.push(resolved);
-    // 等级仲裁决出胜负后, 败者事件移出 accepted（合并对账, §5.3）
+    // 等级仲裁决出胜负后, 只移除败方"那一条冲突事件"（合并对账, §5.3）——
+    // 旧实现按 participants[0] 过滤, 把败方本 tick 的无关事件也一并删除（误伤）
     if (resolved.resolved?.loser) {
-      result.accepted = result.accepted.filter(
-        (e) => e.participants[0] !== resolved.resolved!.loser,
-      );
+      const loserEvent = pair.eventA.participants[0] === resolved.resolved.loser
+        ? pair.eventA
+        : (pair.eventB.participants[0] === resolved.resolved.loser ? pair.eventB : null);
+      if (loserEvent) {
+        result.accepted = result.accepted.filter((e) => e !== loserEvent);
+        // 败方事件以"受阻"记录可见（历史连续）; 其细化提案由下方收集规则自动作废
+        result.rejected.push({ event: loserEvent, reason: "冲突仲裁落败（与对方宣称互斥）" });
+        result.blocked.push(makeBlockedEvent(loserEvent, "冲突消解", "与「" + resolved.resolved.winner + "」的宣称冲突, 仲裁落败"));
+      }
     }
   }
 
   // 5. 实体消解（§5.3 第6步, EvoSpark 启发）：同区域同现象的重复事件合并到 canonical
   result.accepted = resolveEntityDuplicates(result.accepted);
+
+  // 6. 细化入库候选: 只保留"最终 accepted"事件的细化（冲突落败/被拒事件的细化不作数, §5.3）
+  result.refinements = result.accepted
+    .map((e) => refinementCandidates.get(e.id))
+    .filter((r): r is { scope: string; content: string; layer: number } => !!r);
 
   return result;
 }
@@ -321,13 +361,28 @@ function makeBlockedEvent(event: SimulationEvent, rule: string, reason: string):
 
 // ── 2. 细化即锁定检查（空间向）───────────────────────
 
+/** 空间细化的最大层数（每 scope 至多 初始 + MAX_REFINEMENT_LAYERS 条空间事实, 防 lore 无限膨胀） */
+const MAX_REFINEMENT_LAYERS = 4;
+
+/**
+ * 只有"空间细节事件"才产生细化入库——生态变化/区域细分(engine 源、非随机)描述空间本身;
+ * agent 行为叙事/黑天鹅(战争/瘟疫/异象)不是空间事实, 只进事件日志, 不锁入 lore
+ * （§3.6 细化即锁定锁的是"空间细节", 不是事件叙事——旧实现把事件描述当细化锁定, 导致 lore 膨胀+语义污染）。
+ */
+function isSpatialDetailEvent(event: SimulationEvent): boolean {
+  return event.source === "engine" && !event.random && event.type !== "other";
+}
+
 function checkRefinementLock(
   event: SimulationEvent,
   ctx: ArbitrateContext,
 ): { blocked: boolean; reason?: string; isRefinement?: boolean; refinement?: { scope: string; content: string; layer: number } } {
   if (!event.region) return { blocked: false };
-
   const scope = event.region;
+
+  // 非空间细节事件: 通过（事件叙事由事件日志/历史锁定管理, 不锁为空间事实）
+  if (!isSpatialDetailEvent(event)) return { blocked: false };
+
   const existing = findLoreByScope(ctx.lore, scope);
   if (existing.length === 0) {
     return {
@@ -337,7 +392,9 @@ function checkRefinementLock(
     };
   }
 
+  // 细化层数封顶: 超过 MAX_REFINEMENT_LAYERS 不再入库（事件照常 accepted, 历史由事件日志锁定）
   const maxLayer = maxLockedLayer(ctx.lore, scope);
+  if (maxLayer >= MAX_REFINEMENT_LAYERS) return { blocked: false };
   if (existing.some((f) => f.content && f.content !== event.description && event.description.includes(f.content))) {
     return { blocked: false };
   }
@@ -348,10 +405,7 @@ function checkRefinementLock(
       refinement: { scope, content: event.description, layer: maxLayer + 1 },
     };
   }
-  return {
-    blocked: true,
-    reason: `事件改写已锁定区域 '${scope}' 的确定事实（细化即锁定, §4.0）`,
-  };
+  return { blocked: false };
 }
 
 // ── 3. 历史即锁定检查（时间向）───────────────────────
@@ -381,7 +435,16 @@ function detectConflicts(events: SimulationEvent[]): ConflictPair[] {
       const bResult = b.major || b.changes?.some((c) => c.absorbed_by || c.collapsed || c.founded);
       if (aResult && bResult) {
         const sharedParticipants = a.participants.filter((p) => b.participants.includes(p));
-        if (sharedParticipants.length > 0 && a.region === b.region) {
+        if (sharedParticipants.length === 0) continue;
+        // 直接互斥的吞并宣称（A 声称吞并 B, B 声称吞并 A）——同一件事的相反说法, 跨区域也算冲突
+        const aAbsorb = a.changes?.find((c) => c.absorbed_by);
+        const bAbsorb = b.changes?.find((c) => c.absorbed_by);
+        const contradictoryAbsorption = !!(
+          aAbsorb && bAbsorb
+          && aAbsorb.absorbed_by === b.participants[0]
+          && bAbsorb.absorbed_by === a.participants[0]
+        );
+        if (a.region === b.region || contradictoryAbsorption) {
           pairs.push({
             eventA: a,
             eventB: b,

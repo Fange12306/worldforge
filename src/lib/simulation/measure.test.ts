@@ -237,10 +237,11 @@ describe("细化即锁定 → 生成实际子区域", () => {
     const before = Object.keys(session.regions).length;
     // 触发无人区(desert-south)细化: 事件描述该区域细节, 走 arbitrate → refinements
     const { arbitrate } = await import("./arbiter.ts");
+    // B3: 只有"空间细节事件"(engine 源、非随机)才触发细化入库——agent 行为叙事不锁为空间事实
     const ev = {
       id: "refine-ev", tick: 1, time_label: "t1", type: "cultural", participants: ["e"],
       region: "desert-south", description: "绿洲边缘出现早期聚落, 盐碱滩涂与灌溉渠道交错。",
-      changes: [], random: false, source: "agent",
+      changes: [], random: false, source: "engine",
     };
     const arb = await arbitrate({
       laws: session.laws, config: session.config, entities: session.entities,

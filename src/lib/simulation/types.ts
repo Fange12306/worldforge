@@ -494,6 +494,8 @@ export type SimulationResult = {
   ticks_run: number;
   // 每个 tick 的实体数 / 事件数（供成本与演化监控）
   population_trace: { tick: number; entities: number; events: number }[];
+  /** 本次推进的 LLM 成本估算（输入/输出 token, 调用次数）——预算熔断 + UI 监控（§3.4） */
+  cost?: { inputTokens: number; outputTokens: number; calls: number };
 };
 
 // ── 文化-语言系统（命名与文化强相关, 随历史演化）──

@@ -173,7 +173,8 @@ export function createSession(opts: {
   /** 初始自然实体（山脉/河流/湖泊/海洋等, §4.0② 独立地理地图） */
   features?: GeographyUnit[];
 }): SimulationSession {
-  const config = opts.config ?? defaultConfig();
+  // 合并默认参数: 调用方只需传覆盖项（补齐 budget/autoJump/infoDelay/yearsPerTick 等, 防缺字段运行时崩溃）
+  const config = { ...defaultConfig(), ...opts.config };
   const regions = opts.regions ?? buildRegionsFor(opts.laws);
   // 语言从世界初始状态生成（§: 不预设地球语言, 从物种/地理/文化涌现）
   // 若调用方显式提供则用之（全景初始化定义的语言）
@@ -252,18 +253,37 @@ export function createSession(opts: {
         ?? Object.values(languages)[0];
       session.cultures[ethnicity] = createCulture(ethnicity, ethnicity, lang?.id ?? "");
     }
+    // §4.1 初始化对齐: 初始人口超出区域承载时, 不硬改数值(物理增长自然回落), 但显式提示,
+    // 避免"第一 tick 人口骤降"的无解释惊吓
+    const initRegion = finalRegions[e.geography.region];
+    let initNotes: string[] = [];
+    if (initRegion && e.metrics?.population != null) {
+      const initEntity = { ...e, tech: e.tech ?? {}, regime: e.regime ?? { organizational_complexity: 0, centralization: 0, economic_base: 0 } } as EntityCard;
+      const cap = populationCapacity(initRegion.resources, developmentLevel(initEntity));
+      if (e.metrics.population > cap) {
+        initNotes = [
+          "初始人口 " + e.metrics.population.toLocaleString() + " 超出区域承载（约 " + Math.round(cap).toLocaleString() + "），推演将自人口压力与粮食短缺开始",
+        ];
+      }
+    }
     session.entities[e.id] = {
       ...e,
       identity: { ...e.identity, ethnicity, culture: session.cultures[ethnicity]?.name ?? e.identity.culture },
       geography: { ...e.geography, region: e.geography.region, neighbors: e.geography.neighbors ?? [] },
       territory: e.territory ?? [e.geography.region],   // 领土缺省 = 核心区域
       relations: e.relations ?? [],
+      internal: {
+        ...e.internal,
+        recent_events: [...initNotes, ...(e.internal?.recent_events ?? [])].slice(0, 5),
+      },
     };
   }
   // 初始同步维度注册表
+  // §4.2 只注册真正的"发展轴"(航海/农业/冶金/制度/生产/魔力掌控/修为)——
+  // 不注册区域资源常量(food_capacity 等)——那是物理参数, 不是发展轴(防黑天鹅/agent 误升常量)
   for (const e of Object.values(session.entities)) {
-    const region = regions[e.geography.region];
-    if (region) syncTechDimensions(session.registry, deriveRegionResources(region.biome, opts.laws), 0);
+    const region = finalRegions[e.geography.region];
+    if (region) syncTechDimensions(session.registry, deriveTechPotential(region.resources, opts.laws), 0);
   }
   return session;
 }
@@ -301,6 +321,36 @@ export type RunOptions = {
   llm?: LLMBindings;
 };
 
+// ── 预算计量（§3.4）───────────────────────────────
+
+export type TickCost = { inputTokens: number; outputTokens: number; calls: number };
+
+/** 粗略 token 估算（CJK 一字≈1 token, ASCII 4 字符≈1 token）——预算硬上限与 UI 监控用 */
+export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  let cjk = 0, ascii = 0;
+  for (const ch of text) {
+    if (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(ch)) cjk += 1;
+    else if (ch !== " " && ch !== "\n") ascii += 1;
+  }
+  return cjk + Math.ceil(ascii / 4);
+}
+
+/** 包装 LLM: 计数估算 token 消耗（输入=prompt, 输出=响应）。用于每 tick 预算熔断（§3.4） */
+function countingLLM(llm: LLMBindings, cost: TickCost): LLMBindings {
+  return {
+    real: llm.real,
+    call: async (req) => {
+      cost.calls += 1;
+      cost.inputTokens += estimateTokens(req.systemPrompt) + estimateTokens(req.userMessage);
+      const out = await llm.call(req);
+      cost.outputTokens += estimateTokens(out);
+      return out;
+    },
+  };
+}
+
+
 /**
  * 推进 N 个 tick。
  * 返回每个 tick 后的事件（追加到 session.events）与更新后的会话。
@@ -316,37 +366,50 @@ export async function runTicks(
   const rng = createRng(session.config.seed + session.current_tick);
   const trace: SimulationResult["population_trace"] = [];
 
+  // §3.4 预算硬上限: 本 tick LLM 成本估算（输入/输出 token + 调用次数）。
+  // 所有 LLM 调用(agent/稀有事件/细分/仲裁/干预)都走计数包装, 超限后自动降级(跳过可省略的语义层)。
+  const cost: TickCost = { inputTokens: 0, outputTokens: 0, calls: 0 };
+  const perTickGlobal = session.config.budget?.perTickGlobal ?? Infinity;
+  const overBudget = () => cost.inputTokens + cost.outputTokens >= perTickGlobal;
+  const countedLLM = options.llm ? countingLLM(options.llm, cost) : undefined;
+
+  // §3.4 autoJump(时代跳跃): 连续平静 tick 计数——上一 tick 无 accepted agent 事件视为平静期
+  let quietTicks = 0;
+
   for (let i = 0; i < ticks; i++) {
     session.current_tick += 1;
     const tick = session.current_tick;
     const tickEvents: SimulationEvent[] = [];
 
-    // 1. 多 agent 并行推演（§5.2，可选）：LLM agent 产出事件 + 暂存 delta（不改实体数值,
-    //    避免被物理层全量覆盖——agent 决策在物理基线之上 clamp 生效）
+    // §3.4 预算按 tick 计数（每 tick 重置）
+    cost.inputTokens = 0;
+    cost.outputTokens = 0;
+    cost.calls = 0;
+
+    // autoJump: 平静期跳过 agent 推演与稀有事件(只跑物理基线, 时代静默推进)。
+    // 节奏: 每 3 tick 至少跑一次 agent（quietTicks%3===0 时强制跑）, 防止"永远平静→永不推进"的死锁
+    const jump = !!options.agentConfig && session.config.autoJump === true && quietTicks > 0 && quietTicks % 3 !== 0;
+
+    // 1. 多 agent 并行推演（§5.2，可选）：LLM agent 产出事件 + 暂存 delta。
+    //    注意: delta 只是"暂存声明", 仲裁通过后才应用（§5.3 唯一事实源, 见 4.5 节）
     let agentDeltas = new Map<string, AgentDelta>();
-    if (options.agentConfig) {
-      const agentRun = await runAllAgents(session, options.agentConfig);
+    if (options.agentConfig && !jump) {
+      const agentRun = await runAllAgents(session, { ...options.agentConfig, llm: countedLLM ?? options.agentConfig.llm });
       tickEvents.push(...agentRun.events);
       agentDeltas = agentRun.deltas;
     }
 
-    // 1. 每个实体跑物理层（物理基线）→ agent delta 之上 clamp 应用 → 稀有事件
+    // 1.5 每个实体跑物理层（§4.1 确定性基线, 不经过仲裁——数值引擎是"物理常识"）。
+    //    agent 决策延迟到仲裁后应用; 这里记录 PhysicsResult 供后续 clamp 使用
+    const physicsResults = new Map<string, PhysicsResult>();
     for (const entity of Object.values(session.entities)) {
       if (entity.status !== "active") continue;
       const region = session.regions[entity.geography.region];
       if (!region) continue;
 
       const result = tickPhysics(entity, region, session.laws);
+      physicsResults.set(entity.id, result);
       const spawned = applyPhysicsResult(entity, result, session, tick, rng);
-      // agent 决策（人口/粮食/科技/领土/新轴）在物理基线之上真实生效
-      const agentDelta = agentDeltas.get(entity.id);
-      if (agentDelta) {
-        // 事件 changes[].metrics/tech/values 与顶层 delta 合并去重（顶层优先）, 避免同量 double-count
-        const merged = mergeClaimedChangesIntoDelta(entity, agentDelta, tickEvents);
-        applyAgentDelta(session, entity, merged, result, tick);
-      }
-      // 记录本 tick 结束时的核心指标快照（环形缓冲, 供"近期走势"注入）
-      pushMetricSnapshot(entity, tick);
       // 物理引擎触发的结构性事件
       for (const te of result.triggeredEvents) {
         tickEvents.push({
@@ -365,45 +428,57 @@ export async function runTicks(
       tickEvents.push(...spawned);
     }
 
-    // 1.2 稀有事件（§7 收口）: 不再用概率阈值"拍板"该不该发生——**每 tick 对每个活跃实体
-    // 询问 LLM 综合世界状态判断**: 这几十年内有无值得记载的独特事件(黑天鹅/天才/异象/变迁)。
-    // LLM 输出 null/无事件 = 平静年代, 由 LLM 判断而非引擎概率。无真实 LLM 才回退程序化生成。
-    for (const pick of Object.values(session.entities)) {
-      if (pick.status !== "active") continue;
-      const region = session.regions[pick.geography.region];
-      if (!region) continue;
-      let swan: BlackSwanCandidate | null = null;
-      if (options.llm?.real) {
-        // 真实 LLM: 综合判断"这数十年有无值得记载之事"。LLM 输出 null/平静 → 无事件,
-        // **不**回退程序化(否则会淹没 LLM 的"平静年代"判断)。
-        swan = await generateRareEvent({ session, entity: pick, region, tick }, options.llm);
-      } else if (options.llm) {
-        // 无真实 LLM(mock/未配) → 程序化组合 fallback
-        swan = generateBlackSwan(makeBlackSwanContext({
-          laws: session.laws,
-          entity: pick,
-          region,
-          config: session.config,
-          rng,
-          tick,
-          techDims: techDims(session.registry),
-          valueDims: valueDims(session.registry),
-          populationPressure: populationPressureOf(pick, region),
-          foodDeficit: pick.metrics.food < 0,
-        }));
-      }
-      if (swan) {
-        applyRareEventEffect(session, pick, region, swan, tick);
+    // 1.6 稀有事件（§7）: 每实体判定"这数十年有无值得记载之事"——
+    // 真实 LLM 综合世界状态判断(输出 null/平静 = 平静年代, 不回退程序化);
+    // 无真实 LLM 走程序化组合生成, 按 randomness 概率门控(§7: 概率控制"事发生的概率")。
+    // 候选效果延迟到仲裁后应用（§5.3）。真实 LLM 路径并行询问(§5.2 并行推演);
+    // 预算超限时跳过(语义层降级, 物理基线不受影响)。
+    const swanCandidates: { entity: EntityCard; region: SpaceRegion; swan: BlackSwanCandidate }[] = [];
+    if (!jump && !overBudget()) {
+      const hasRareSource = countedLLM !== undefined;
+      const activePicks = Object.values(session.entities)
+        .filter((e) => e.status === "active" && session.regions[e.geography.region]);
+      const swanTasks = activePicks.map(async (pick) => {
+        // 无 LLM: 纯物理推演不生成稀有事件, 也不消耗 rng
+        if (!hasRareSource) return null;
+        const region = session.regions[pick.geography.region]!;
+        let swan: BlackSwanCandidate | null = null;
+        if (countedLLM!.real) {
+          // 真实 LLM: 综合判断, 不设概率门(LLM 输出 null/平静 = 平静年代)
+          swan = await generateRareEvent({ session, entity: pick, region, tick }, countedLLM!);
+        } else {
+          // 程序化 fallback: §7 概率门控(旧实现每实体每 tick 必生成, 天灾刷屏)
+          if (rng() >= session.config.randomness) return null;
+          swan = generateBlackSwan(makeBlackSwanContext({
+            laws: session.laws,
+            entity: pick,
+            region,
+            config: session.config,
+            rng,
+            tick,
+            techDims: techDims(session.registry),
+            valueDims: valueDims(session.registry),
+            populationPressure: populationPressureOf(pick, region),
+            foodDeficit: pick.metrics.food < 0,
+          }));
+        }
+        return swan ? { entity: pick, region, swan } : null;
+      });
+      // 真实 LLM 下并行询问; fallback 同步执行(按实体顺序消费 rng, 保持确定性)
+      const swanResults = await Promise.all(swanTasks);
+      for (const c of swanResults) {
+        if (!c) continue;
+        swanCandidates.push(c);
         tickEvents.push({
-          id: `evt-bs-${tick}-${pick.id}`,
+          id: `evt-bs-${tick}-${c.entity.id}`,
           tick,
           time_label: timeLabel(session, tick),
-          type: swan.type ?? "other",
-          participants: [pick.id],
-          region: pick.geography.region,
-          description: swan.description,
-          changes: swan.dim
-            ? [{ entity: pick.id, tech: { [swan.dim]: swan.dimDelta ?? 0 } }]
+          type: c.swan.type ?? "other",
+          participants: [c.entity.id],
+          region: c.entity.geography.region,
+          description: c.swan.description,
+          changes: c.swan.dim
+            ? [{ entity: c.entity.id, tech: { [c.swan.dim]: c.swan.dimDelta ?? 0 } }]
             : [],
           random: true,
           source: "engine",
@@ -411,15 +486,16 @@ export async function runTicks(
       }
     }
 
-    // 1.5 例行推演事件（时间推进的锚点, 防空 tick）
+    // 1.75 例行推演事件（时间推进的锚点, 防空 tick）
     const mainEvent = buildRoutineEvent(session, tick);
     tickEvents.push(mainEvent);
 
-    // 1.6 区域多实体自动细分（改动 C）: 每 SUBDIVISION_INTERVAL tick, 区域 2+ 实体 → LLM 判定细分
-    const subdivEvents = await maybeSubdivideRegions(session, tick, options.llm);
+    // 1.8 区域多实体自动细分（改动 C）: 每 SUBDIVISION_INTERVAL tick, 区域 2+ 实体 → LLM 判定细分。
+    //    预算超限时降级为无 LLM(确定性 fallback)
+    const subdivEvents = await maybeSubdivideRegions(session, tick, overBudget() ? undefined : countedLLM);
     tickEvents.push(...subdivEvents);
 
-    // 1.75 用户干预判定（§5.5）：处理 target_tick = 当前 tick 且未判定的指令
+    // 1.9 用户干预判定（§5.5）：处理 target_tick = 当前 tick 且未判定的指令
     const pendingDecrees = session.decrees.filter((d) => d.target_tick <= tick && !d.verdict);
     for (const decree of pendingDecrees) {
       const adjudication = await adjudicateDecree({
@@ -428,9 +504,9 @@ export async function runTicks(
         entities: session.entities,
         events: session.events,
         currentTick: tick,
-        llm: options.llm ? {
+        llm: countedLLM ? {
           assess: async (decree, context) => {
-            const text = await safeCall(options.llm!, {
+            const text = await safeCall(countedLLM, {
               systemPrompt: "你是历史推演的干预判定者。评估用户的指令是否违反世界法则、是否与历史惯性相容。输出严格 JSON: {verdict: accepted|adjusted|twisted|rejected, note: 一句话理由}",
               userMessage: `指令: ${decree.intent}\n${context}`,
               json: true,
@@ -491,16 +567,16 @@ export async function runTicks(
     }
 
     // 3. 片尾仲裁（§5.3）：所有事件过自洽检查, 只锁定 accepted
-    // 接入 LLM 语义判定（§5.3 全局仲裁 agent / 细化合理性）——提供 llm 时生效
+    // 接入 LLM 语义判定（§5.3 全局仲裁 agent / 细化合理性 / §4.3 规则语义复核）——提供 llm 时生效
     const arbResult = await arbitrate({
       laws: session.laws,
       config: session.config,
       entities: session.entities,
       lore: session.lore,
       currentTick: tick,
-      llm: options.llm ? {
+      llm: countedLLM ? {
         resolveConflict: async (a, b) => {
-          const text = await safeCall(options.llm!, {
+          const text = await safeCall(countedLLM, {
             systemPrompt: "你是历史推演的冲突仲裁者。裁决两个冲突事件（同一对象的不同说法）。考虑军力、世界法则、历史惯性。输出严格 JSON: {winner: 事件A 或 事件B 的参与者名, note: 一句话理由}",
             userMessage: `事件A: ${a.description} (参与: ${a.participants.join(",")})\n事件B: ${b.description} (参与: ${b.participants.join(",")})`,
             json: true,
@@ -514,7 +590,7 @@ export async function runTicks(
           }
         },
         validateRefinement: async (content, laws) => {
-          const text = await safeCall(options.llm!, {
+          const text = await safeCall(countedLLM, {
             systemPrompt: `你是历史推演的世界法则校验者。判断这段细化描述是否违反世界法则。输出严格 JSON: {valid: boolean, note: string}\n世界法则: ${laws.rules.join("；")}`,
             userMessage: content,
             json: true,
@@ -524,6 +600,21 @@ export async function runTicks(
             return parseJSONFromLLM<{ valid: boolean }>(text).valid;
           } catch {
             return true;
+          }
+        },
+        // §4.3 规则层语义复核: 关键词粗筛之外, LLM 批量判定 agent 事件是否违反世界法则
+        //（预算超限时省略, 退回关键词粗筛）
+        validateRules: overBudget() ? undefined : async (events, laws) => {
+          const text = await safeCall(countedLLM, {
+            systemPrompt: "你是历史推演的硬约束校验者。判断以下事件是否违反世界法则（违反任何一条都标记）。只标记明确违反的事件, 不确定的不标记。输出严格 JSON: {violations: [{event_id, reason}]}\n世界法则: " + laws.rules.join("；"),
+            userMessage: events.map((e) => "[" + e.id + "] " + e.type + ": " + e.description).join("\n"),
+            json: true,
+          });
+          if (!text) return { violations: [] };
+          try {
+            return parseJSONFromLLM<{ violations: { event_id: string; reason: string }[] }>(text);
+          } catch {
+            return { violations: [] };
           }
         },
       } : undefined,
@@ -544,18 +635,56 @@ export async function runTicks(
     // 细化的区域细节写入背景规则库（空间向, 细化即锁定）。
     // 注意: 不再自动生成 "X:sub-{tick}" 无名子区划（曾造出 213 个「·细化」垃圾节点并把事件文本
     // 塞进 terrain）。真实有名字的子区划由 LLM 领土扩张(territory_claim)创建。
-    for (const r of arbResult.refinements) {
-      session.lore.facts.push({
-        id: `lore-refine-${tick}-${r.scope}-${r.layer}`,
-        axis: "space",
-        layer: r.layer,
-        scope: r.scope,
-        content: r.content,
-        source: "refinement",
-        locked_tick: tick,
-        notes: "仲裁细化入库",
-      });
-      if (r.layer > session.lore.max_layer) session.lore.max_layer = r.layer;
+    // 4.5 起, 细化只来自"最终 accepted"的空间细节事件(arbiter 已过滤冲突落败者);
+    // 同 tick 同 scope 同 layer 的事件用序号区分 id, 防覆盖
+    {
+      let refineIdx = 0;
+      for (const r of arbResult.refinements) {
+        session.lore.facts.push({
+          id: `lore-refine-${tick}-${r.scope}-${r.layer}-${refineIdx++}`,
+          axis: "space",
+          layer: r.layer,
+          scope: r.scope,
+          content: r.content,
+          source: "refinement",
+          locked_tick: tick,
+          notes: "仲裁细化入库",
+        });
+        if (r.layer > session.lore.max_layer) session.lore.max_layer = r.layer;
+      }
+    }
+
+    // 4.5 §5.3 唯一事实源: 仲裁通过后才应用 LLM 决策的效果——
+    // 被否决/受阻的事件不得改变世界状态（数值/维度/领土/黑天鹅）
+    const acceptedIds = new Set(arbResult.accepted.map((e) => e.id));
+    // 黑天鹅效果: 只有对应事件 accepted 才应用
+    for (const c of swanCandidates) {
+      if (!acceptedIds.has(`evt-bs-${tick}-${c.entity.id}`)) continue;
+      applyRareEventEffect(session, c.entity, c.region, c.swan, tick);
+    }
+    // agent delta: 实体本 tick 无 agent 事件(纯内部决策) 或 至少 1 个事件 accepted 才应用;
+    // 全部被拒 → 决策不生效（历史连续, 状态不被未承认事件改变）
+    const agentEventsThisTick = tickEvents.filter((e) => e.source === "agent");
+    for (const [entityId, delta] of agentDeltas) {
+      const entity = session.entities[entityId];
+      if (!entity || entity.status !== "active") continue;
+      const acceptedAgent = arbResult.accepted.filter((e) => e.source === "agent" && e.participants[0] === entityId);
+      const ownAgentEvents = agentEventsThisTick.filter((e) => e.participants[0] === entityId);
+      if (acceptedAgent.length === 0 && ownAgentEvents.length > 0) {
+        entity.internal.recent_events = [
+          "本 tick 行动未获承认（事件被仲裁否决, 决策不生效）",
+          ...entity.internal.recent_events,
+        ].slice(0, 5);
+        continue;
+      }
+      // 事件 changes[].metrics/tech/values 与顶层 delta 合并去重（顶层优先, 避免同量 double-count）
+      const merged = mergeClaimedChangesIntoDelta(entity, delta, acceptedAgent);
+      const result = physicsResults.get(entityId);
+      if (result) applyAgentDelta(session, entity, merged, result, tick);
+    }
+    // 指标快照: 在全部效果(物理基线 + agent 决策 + 黑天鹅)应用之后记录（环形缓冲, 供"近期走势"注入）
+    for (const entity of Object.values(session.entities)) {
+      if (entity.status === "active") pushMetricSnapshot(entity, tick);
     }
 
     // 5. 动态 agent 池更新（§5.4）：处理状态变化事件
@@ -564,6 +693,10 @@ export async function runTicks(
     // 5.5 复兴触发（§5.4, 进阶）：后世 agent 有概率发现 archive 文明遗迹 → 触发复兴
     maybeRevive(session, tick, rng, tickEvents);
 
+    // 5.75 平静期统计（§3.4 autoJump 用）: 本 tick 无 accepted agent 事件 → 平静 +1, 否则清零
+    const acceptedAgentCount = arbResult.accepted.filter((e) => e.source === "agent").length;
+    quietTicks = acceptedAgentCount > 0 ? 0 : quietTicks + 1;
+
     trace.push({
       tick,
       entities: Object.values(session.entities).filter((e) => e.status === "active").length,
@@ -571,7 +704,7 @@ export async function runTicks(
     });
   }
 
-  return { session, ticks_run: ticks, population_trace: trace };
+  return { session, ticks_run: ticks, population_trace: trace, cost };
 }
 
 function applyPhysicsResult(
@@ -688,7 +821,8 @@ function applyRareEventEffect(
       let next = entity.metrics[key] + v;
       if (k === "population") {
         const cap = region ? populationCapacity(region.resources, developmentLevel(entity)) : Infinity;
-        next = clampNum(next, MIN_POP, cap);
+        // 同 applyMetricDelta: 已在承载上方的实体不强制下压, 防悬崖
+        next = clampNum(next, MIN_POP, Math.max(cap, entity.metrics.population));
       } else if (k === "food") {
         next = clampNum(next, -entity.metrics.population * 0.3, entity.metrics.population * 3);
       } else if (k === "military") {
@@ -730,7 +864,10 @@ function applyMetricDelta(
     const key = k as keyof EntityCard["metrics"];
     let next = entity.metrics[key] + v;
     if (k === "population") {
-      next = clampNum(next, MIN_POP, result.populationCap);
+      // 钳制上限取 max(承载, 当前人口): 已在承载上方的实体不强制下压（物理增长自然回落,
+      // 防"第一 tick 500 万被硬拽到 4 万"的悬崖）; 只拦"超出承载的增长"
+      const cap = Math.max(result.populationCap, entity.metrics.population);
+      next = clampNum(next, MIN_POP, cap);
     } else if (k === "food") {
       next = clampNum(next, -result.foodCap, result.foodCap);
     } else if (k === "military") {
@@ -743,12 +880,11 @@ function applyMetricDelta(
 }
 
 /**
- * 把本 tick 该实体的 agent 事件 changes[].metrics/tech/values 并入顶层 delta。
+ * 把本 tick 该实体"已通过仲裁"的 agent 事件 changes[].metrics/tech/values 并入顶层 delta。
  * 顶层 delta 优先, 同 key 跳过（避免事件与顶层对同一量 double-count）;
  * tech 只并入已存在的维度（与 agent.ts 顶层过滤一致, 防维度膨胀）。
- * 只合并 source==="agent" 的事件——稀有事件(changes 有 metrics)已由 applyRareEventEffect
- * 单独应用, 不在此重复。被仲裁拒绝的事件不会进入本路径（合并发生在 applyAgentDelta,
- * 而拒绝发生在仲裁; 与顶层 metric_delta 同语义）。
+ * 调用方只传 accepted 的 agent 事件（§5.3 唯一事实源）——被仲裁拒绝的事件不进入本路径,
+ * 其声称的数值后果不会生效。
  */
 function mergeClaimedChangesIntoDelta(
   entity: EntityCard,
@@ -965,6 +1101,23 @@ function dedupe<T>(arr: T[]): T[] {
  * - cultural → 分化（派生子实体, 共享部分 identity）
  * - 复兴：由后续 tick 的 agent 发现 archive 触发（此处预留接口）
  */
+
+/**
+ * 邻居重路由（§5.4 修复）: 实体被吞并/灭亡后, 所有活跃实体的邻接列表移除旧 id;
+ * 吞并场景并入吞并者 id（世界对"谁接壤谁"的认知随版图变化更新, 防残留指向 extinct 实体的邻居）。
+ */
+function rerouteNeighbors(session: SimulationSession, oldId: string, newId: string | null): void {
+  for (const e of Object.values(session.entities)) {
+    if (e.status !== "active" || e.id === oldId) continue;
+    const n = e.geography.neighbors;
+    if (!n.includes(oldId)) continue;
+    e.geography = {
+      ...e.geography,
+      neighbors: dedupe(newId ? [...n.filter((x) => x !== oldId), newId] : n.filter((x) => x !== oldId)),
+    };
+  }
+}
+
 function applyStateChanges(
   session: SimulationSession,
   events: SimulationEvent[],
@@ -984,6 +1137,8 @@ function applyStateChanges(
         session.entities[c.absorbed_by] = r.conqueror;
         session.entities[c.entity] = r.conquered;
         session.archive.push(r.archive);
+        // §5.4 邻居重路由: 其余实体的邻接列表移除被吞者, 并入吞并者（世界对"谁接壤谁"的认知随版图更新）
+        rerouteNeighbors(session, c.entity, c.absorbed_by);
         // 语言接触演化（§: 征服 → 借词）：吞并者语言借入被吞者文化的词根
         const conqCulture = session.cultures[conqueror.identity.ethnicity];
         const conquCulture = session.cultures[conquered.identity.ethnicity];
@@ -1035,6 +1190,8 @@ function applyStateChanges(
         const archive = collapseEntity(entity, ev, tick);
         session.entities[c.entity] = archive.entity;
         session.archive.push(archive);
+        // §5.4 邻居重路由: 灭亡实体的 id 从其余活跃实体的邻接列表移除
+        rerouteNeighbors(session, c.entity, null);
         continue;
       }
     }

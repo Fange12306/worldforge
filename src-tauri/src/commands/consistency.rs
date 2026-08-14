@@ -92,7 +92,7 @@ pub async fn check_consistency_semantic(
         provider,
         judge_model,
         1024,
-        true, // json mode: 响应是 JSON 数组
+        Some(true), // json mode: 响应是 JSON 数组
     )
     .await
     .map_err(|e| format!("语义检查 LLM 调用失败: {}", e))?;

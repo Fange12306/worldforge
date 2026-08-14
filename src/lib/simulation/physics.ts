@@ -78,9 +78,13 @@ export function populationCapacity(region: RegionResources, development = 0): nu
  */
 export function developmentLevel(entity: EntityCard): number {
   const t = entity.tech;
-  const dims = {
+  const dims: Record<string, number> = {
     农业: 0.25, 生产: 0.2, 制度: 0.15, 航海: 0.1, 冶金: 0.1,
   };
+  // 第二物理维度（§4.1 法则派生）: 魔法/真气世界的发展主轴——若该实体已涌现, 计入发展水平
+  if (t["魔力掌控"] != null) dims["魔力掌控"] = 0.1;
+  if (t["修为"] != null) dims["修为"] = 0.12;
+  if (t["军事"] != null) dims["军事"] = 0.08;
   let dev = 0;
   for (const [dim, w] of Object.entries(dims)) {
     dev += w * clamp((t[dim] ?? 0) / 100);

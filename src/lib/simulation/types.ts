@@ -66,6 +66,8 @@ export type EntityCard = {
     ideology: string;          // 主导意识形态
     religion?: string;         // 宗教/信仰体系
     origin_story: string;      // 起源叙事
+    /** 时代（初始化时由 LLM 从用户指令推断, §: 时代 → 政体/人口规模/区域面积的推导枢纽） */
+    era?: string;              // "部落时代" / "青铜时代" / "古典城邦时代" / "中世纪王国"...
   };
 
   // ── 位置与邻接（空间层, 引用 space.ts 的区域）──

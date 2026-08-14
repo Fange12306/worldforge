@@ -210,6 +210,7 @@ export function buildAgentInput(
   const system = [
     `你是 ${entity.name} 的执政者/历史推演器。`,
     `世界模型：${session.laws.name}（${session.laws.spatial_scale}）。`,
+    ...(entity.identity.era ? [`时代：${entity.identity.era}——你的一切决策必须符合该时代的技术与制度水平。`] : []),
     `世界法则：${session.laws.rules.join("；")}`,
     `推演参数：randomness=${session.config.randomness}, surprise=${session.config.surprise}, rigor=${session.config.rigor}, 档位=${attention.level}。`,
     `输出格式契约：严格 JSON（decisions/events/metric_delta/tech_delta/values_delta/territory_claim/propose_dim/notes）。`,

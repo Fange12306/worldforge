@@ -106,6 +106,14 @@ export type ParsedInitialState = {
     constraints?: string[];
     /** 初始人口（LLM 结合时代/区域承载/文明规模综合判断, 非公式）——部落时代通常数千到数十万 */
     population?: number;
+    /** 时代（推导枢纽, §: 时代 → 政体/人口规模/区域面积）。"部落时代"/"青铜时代"/"古典城邦时代"... */
+    era?: string;
+    /** 地盘规模（时代+人口+文明形态 → 决定初始化细化层级深度）: 聚落级/区域级/大区级 */
+    realm_scale?: "settlement" | "region" | "subcontinent";
+    /** 实体占据的顶层区域 id（先绑定顶层, 细化步骤再回填最细子区划 regionId） */
+    topRegionId?: string;
+    /** 起源叙事（从用户指令推出的隐含信息: 共同祖先/分化/迁徙——写入 identity.origin_story） */
+    origin?: string;
   }>;
   /** 用户指定的度量单位 */
   measurement?: {
@@ -261,6 +269,35 @@ export function detectInitialConflicts(parsed: ParsedInitialState): Conflict[] {
     });
   }
 
+  // 5. 发源地分离（软冲突）: 不同物种的实体不应以同一区域为发源地（除非用户明确说共居）。
+  //    "四个类人亚种" → 各自发源地应分离——同一 species 的多个实体(一国分裂/同族多邦)可以共享区域
+  const regionSpecies = new Map<string, Set<string>>();
+  for (const e of parsed.entities) {
+    const rid = e.topRegionId ?? e.regionId;
+    if (!rid) continue;
+    if (!regionSpecies.has(rid)) regionSpecies.set(rid, new Set());
+    regionSpecies.get(rid)!.add(e.species || e.name);
+  }
+  for (const [rid, sps] of regionSpecies) {
+    if (sps.size > 1) {
+      conflicts.push({
+        severity: "soft",
+        kind: "origin_separation",
+        description: `区域「${rid}」被多个物种作为发源地: ${[...sps].join("、")}（不同物种的发源地通常分离——除非用户明确说共居）`,
+      });
+    }
+  }
+
+  // 6. 时代一致性（软冲突）: 同一世界的初始实体时代应一致（除非用户明确说明存在发展差异）
+  const eras = new Set(parsed.entities.map((e) => e.era).filter(Boolean) as string[]);
+  if (eras.size > 1) {
+    conflicts.push({
+      severity: "soft",
+      kind: "era_mismatch",
+      description: `实体时代不一致: ${[...eras].join(" / ")}（同一世界的初始时代应一致, 除非用户明确说明存在发展差异）`,
+    });
+  }
+
   return conflicts;
 }
 
@@ -310,26 +347,42 @@ ${COMMON_RULES}
 输出严格 JSON 对象, 不要 markdown 包裹。示例:
 {"laws":{"rules":["起死回生不可能发生。"],"narrative":["多种族并存的部落时代"],"ontology":["类地行星"]},"measurement":{"lengthUnit":"公里","worldWidth":2000,"worldHeight":1500},"regions":[{"id":"aurelia","name":"奥雷利亚大陆","biome":"mixed","share":0.6,"shape":"不规则大陆","position":"大陆中部","connections":{},"borders_land":[]},{"id":"endor-sea","name":"恩多尔海","biome":"ocean","share":0.4,"shape":"沿海水体","position":"大陆东侧","connections":{},"borders_land":["aurelia"]}]}`;
 
-const SUBREGIONS_SYSTEM = `你是架空世界的缔造者。用户给出世界种子, 并已生成**顶层大陆/海洋**(下方列出)。你在这些顶层区域下**补充分区划**(layer 1+), 按文明规模分层。
+const SUBREGIONS_SYSTEM = `你是架空世界的缔造者。用户给出世界种子, 已生成**顶层大陆/海洋**与**文明实体清单**(下方列出)。你**只为实体占据的顶层区域**生成子区划(layer 1-2), 并把每个实体绑定到最合适的子区划。
 
 ${COMMON_RULES}
 
-- 每个子区划的 **parent 必须是下方已存在区域的 id**, 不得引用不存在的区域。
-- 在顶层区域下生成子区划, **层级深度与区域划分完全从用户描述推导**——用户说"类地行星、地球大小、部落时代", 就据此推导出合理的分层与文明地盘大小。不预设固定层数, 一切从用户描述推导。
-- 岛屿(parent 归陆, neighbors 邻海)也在此层生成。
+- **有的放矢(关键)**: 只为下方实体 topRegionId 指向的顶层区域细化子区划。**未被任何实体占据的顶层区域一律不枚举子区划**——它们保持概略(layer 0), 推演中涉及时才动态细化(细化即锁定)。**禁止为无实体的区域生成子区划。**
+- **层级深度由实体时代/地盘规模/世界尺度(下方 measurement)决定**:
+  - realm_scale="settlement"(部落/氏族): 顶层下 1 级子区划即可(如 大陆→河谷), 实体绑定该子区划;
+  - realm_scale="region"(城邦/小王国): 1-2 级(如 大陆→平原→盆地), 实体绑定最细一级;
+  - realm_scale="subcontinent"(王国/帝国): 2 级(如 大陆→大区→核心区), 实体绑定核心区。
+  - 世界尺度越大, 每级区划面积越大; 文明人口与地盘面积要自洽(几万人的部落不应占整个大陆)。
+- **每个实体必须绑定**: 在输出的 entities 数组里给出每个实体的最终 regionId（name 与实体清单一致, regionId 必须存在且是**最细一级**子区划或该顶层区域）。
+- 子区划的 **parent 必须指向下方已存在区域**(顶层区域或本批新子区划), 不得引用不存在的区域。
+- 岛屿(parent 归陆, neighbors 邻海)也在此层生成(仅当实体占用的顶层区域含岛屿时)。
 - 顶层区域本身不要重复输出。
 
-输出严格 JSON 对象。示例: {"regions":[{"id":"aurelia-central","name":"晨曦平原","parent":"aurelia","biome":"plains","share":0.2,"shape":"冲积平原","position":"大陆中部","connections":{},"borders_land":[]}]}`;
+输出严格 JSON 对象。示例: {"regions":[{"id":"aurelia-valley","name":"晨曦河谷","parent":"aurelia","biome":"plains","share":0.3,"shape":"狭长河谷","position":"大陆中部","character":"两岸冲积平原, 北岸丘陵","connections":{}}],"entities":[{"name":"晨曦部族","regionId":"aurelia-valley"},{"name":"精灵","regionId":"silverbirch-forest"}]}`;
 
-const ENTITIES_SYSTEM = `你是架空世界的缔造者。用户给出世界种子, 并已生成**完整区域树**(下方列出)。你在这些区域上生成**文明/种族实体**。
+const ENTITIES_SYSTEM = `你是架空世界的缔造者。用户给出世界种子, 已生成**顶层大陆/海洋**、**世界法则**与**世界尺度**(下方列出)。你先推断**哪些文明/种族实体存在**, 为每个实体推断**时代/政体/人口/地盘**, 绑定到顶层区域, 并给出**起源叙事**。
 
 ${COMMON_RULES}
 
-- **用户原文中明确提到的物种必须出现**（用户说"演化出人类、精灵、兽人、矮人", 这四个物种就都要出现在最终实体里, species 用原文物种名）。**实体数量、每个实体控制哪块区域, 完全从用户描述与文明规模推导**——不预设个数, 不机械复制, 一切从用户输入出发。
-- **若下方 regionId 列表为空但原文提到物种, 也必须从原文恢复这些物种为实体**。
-- 每个实体: name(文明/种族名), species(从原文推断的种族名, 如"人类"; 若实体名就是物种名则二者相同), regionId(**只能从下方已生成区域里选, 不得引用不存在的区域**), population(正整数), politicalForm(自由描述)。
+- **用户原文中明确提到的物种必须全部出现**（用户说"演化出人类、精灵、兽人、矮人", 这四个物种就都要出现在最终实体里, species 用原文物种名）。**实体数量、每个实体在哪块区域, 完全从用户描述与文明规模推导**——不预设个数, 不机械复制, 一切从用户输入出发。**若顶层区域列表为空但原文提到物种, 也必须从原文恢复这些物种为实体**。
+- **发源地分离(关键合理性)**: 不同物种/文明的发源地**不得重叠**——每个实体绑定**不同的顶层区域**, 且发源地之间应有合理间距（如四个类人亚种 → 分布在大陆的不同方向/不同大区, 不挤在一起）。**仅当用户原文明确说共居/同源一城时**才可共享区域。
+- **环境适配(关键合理性)**: 实体绑定的顶层区域环境必须与其生活方式相配——矮人/矿工→多山多矿的区域, 精灵→森林, 兽人/游牧→草原/荒野, 人类→平原/海岸, 海洋文明→群岛/海岸带。**用户原文指定了环境则以用户为准**（用户说"精灵住在沙漠"就按沙漠）。同时结合**世界法则**: 魔法世界的高魔力区域、真气世界的灵脉福地, 更可能孕育相应文明。
+- **时代同步(关键合理性)**: 同一世界的初始实体处于**同一时代**(era 一致或相近)。仅当用户明确说明存在发展差异时才可错开（如"偏远地区仍处于部落时代"）。
+- **每个实体推断时代 era**(自由文本: "部落时代"/"青铜时代"/"古典城邦时代"/"中世纪王国"/"魔法纪元"…): 从用户原文推断; 原文没提时代时, 从文明形态与描述反推（部落联盟→部落时代; 城邦→古典时代; 帝国→古代帝国时代...）。
+- **时代决定文明量级**(综合判断, 给合理数值, 不套公式): 部落时代人口数千~数十万、政体多为部落/氏族/部族议事会; 城邦时代数万~百万、政体多为城邦/王国; 王国/帝国时代百万级、政体为王国/帝国/联邦。politicalForm 自由描述, 不预设枚举。
+- **realm_scale 地盘规模**(三选一, 由时代+人口+文明形态推断):
+  - "settlement" 聚落级: 部落/氏族, 占据一个聚落/河谷/湖岸;
+  - "region" 区域级: 城邦/小王国, 占据一块平原/盆地/海岸带;
+  - "subcontinent" 大区级: 王国/帝国, 占据整个大区或跨多个区。
+- **origin 起源叙事(一句话)**: 从用户原文推出**尽可能多的隐含信息**——"四个类人亚种"→ 共同祖先、分化/迁徙的历史; "与世隔绝的群岛"→ 孤立演化。origin 写进实体的起源叙事, 供后代 agent 引用。用户没给线索时给简短的合理起源（"起源于 X 的河谷"）, 不过度脑补。
+- **topRegionId**: 该实体占据的**顶层区域 id**（必须从下方列表选, 不得引用不存在的区域）。实体所在顶层区域会在下一步被细化出子区划, 因此**此时不填 regionId**（下一步细化后回填）。
+- population: 正整数（与 era/realm_scale 自洽）。
 
-输出严格 JSON 对象。示例: {"entities":[{"name":"晨曦部族","species":"人类","regionId":"aurelia-central","politicalForm":"部落","population":50000},{"name":"精灵","species":"精灵","regionId":"silverbirch-forest","politicalForm":"部族议会","population":30000}]}`;
+输出严格 JSON 对象。示例: {"entities":[{"name":"晨曦部族","species":"人类","era":"部落时代","realm_scale":"settlement","topRegionId":"aurelia","politicalForm":"部落","population":50000,"origin":"最早迁徙到晨曦平原的类人分支, 与精灵同源于大陆腹地"},{"name":"精灵","species":"精灵","era":"部落时代","realm_scale":"settlement","topRegionId":"endor-forest","politicalForm":"部族议会","population":30000,"origin":"类人亚种中最早进入森林的一支, 与人类共享远古祖先"}]}`;
 
 const RELATIONS_SYSTEM = `你是架空世界的缔造者。用户给出世界种子, 并已生成**实体列表**(下方列出)。你为这些实体建立**相互关系**。
 
@@ -393,12 +446,16 @@ async function verifyLayer<T>(
  * 返回合并后的完整 ParsedInitialState。
  */
 export async function completeInitialState(
-  parsed: ParsedInitialState,
+  parsed: ParsedInitialState | null,
   llm: LLMBindings,
   seedText?: string,
   onProgress?: (stage: string) => void,
   onTrace?: InitTraceCb,
 ): Promise<ParsedInitialState> {
+  // parse 失败(null)时用空底座, 不让后续步骤崩溃——LLM 层失败降级, 不静默丢用户内容
+  if (!parsed) {
+    parsed = { laws: { rules: [], narrative: [], ontology: [] }, regions: [], entities: [] };
+  }
   const seed = seedText?.trim() || "（无原始设定, 请按通用架空世界推导）";
   const seedBlock = `# 用户原始设定（唯一权威——整个世界必须从这里推导, 不得与之矛盾）\n${seed}\n`;
   const parsedBlock = `# 解析出的结构化参考（仅参考; 若与原文冲突, 以原文为准）\n${JSON.stringify(parsed, null, 2)}`;
@@ -420,43 +477,67 @@ export async function completeInitialState(
   const laws = skeleton.laws ?? parsed.laws ?? { rules: [], narrative: [], ontology: [] };
   const measurement = skeleton.measurement ?? parsed.measurement;
   // 骨架失败 → 回退用户已指定的区域（不留空, 不静默清空）
-  const topRegions = (skeleton.regions?.length ? skeleton.regions : parsed.regions) ?? [];
+  let topRegions = (skeleton.regions?.length ? skeleton.regions : parsed.regions) ?? [];
+  // 骨架与用户都无顶层区域 → 确定性兜底（一块大陆的物理布局）: 保证 entities 步骤有真实区域可选、
+  // focused-regions 有 parent 可用——防"LLM 编造区域 id / 实体全部 fallback 挤进第一个区域"
+  if (topRegions.length === 0) {
+    onTrace?.({
+      step: "skeleton-fallback",
+      time: new Date().toISOString(), ok: false, calledLLM: false,
+      inputExcerpt: "骨架层未产出顶层区域", responseExcerpt: "回退确定性默认大陆布局(6 区域)",
+    });
+    topRegions = deterministicTopRegions();
+  }
   const skeletonStats = { regions: topRegions.length, layer0: topRegions.filter((r) => !r.parent).length };
 
-  // Step 2: 区域分层（在已生成大陆/海洋下补子区划）
-  onProgress?.("② 区域分层（按文明规模细分子区划）...");
-  let subregions: NonNullable<ParsedInitialState["regions"]> = [];
-  if (topRegions.length > 0) {
-    const subRaw = await safeCall(llm, { systemPrompt: SUBREGIONS_SYSTEM, userMessage: `${seedBlock}\n\n# 已生成的大陆/海洋（parent 只能从这里选）\n${JSON.stringify(topRegions, null, 2)}`, maxTokens: 3000, json: true });
-    onTrace?.({
-      step: "complete-subregions",
-      time: new Date().toISOString(), ok: !!subRaw, calledLLM: true,
-      inputExcerpt: `topRegions: ${topRegions.length}`, responseExcerpt: subRaw?.slice(0, 1200) ?? "(无返回)", error: subRaw ? undefined : "LLM 无返回",
-    });
-    if (subRaw) { try { const p = parseJSONFromLLM<{ regions: NonNullable<ParsedInitialState["regions"]> }>(subRaw); subregions = p.regions ?? []; } catch { subregions = []; } }
-  }
-  // 合并区域树: 顶层 + 子区划
-  let allRegions = mergeRegions(topRegions, subregions);
-  // 区域自洽校验: 对照用户原文检查(层级深度/引用一致性/share), LLM 输出修正版
-  if (allRegions.length) {
-    const verified = await verifyLayer<{ regions: NonNullable<ParsedInitialState["regions"]> }>("regions", seed, { regions: allRegions }, llm, "区域树(含parent层级)", onTrace);
-    if (verified.regions?.length) allRegions = verified.regions;
-  }
-
-  // Step 3: 实体（regionId 只能从已生成区域选）
-  onProgress?.("③ 生成文明/种族...");
+  // Step 2: 实体先行（§: 先推断"有哪些实体/什么时代/多大地盘", 绑定顶层区域——有的放矢的前提）
+  // 输入 = 顶层区域 + 世界法则 + 世界尺度: 让实体选址同时考虑环境适配与世界法则(魔法浓度/灵脉福地)
+  onProgress?.("② 推断文明实体（时代/政体/人口/发源地）...");
   let entities: NonNullable<ParsedInitialState["entities"]> = parsed.entities ?? [];
-  const entRaw = await safeCall(llm, { systemPrompt: ENTITIES_SYSTEM, userMessage: `${seedBlock}\n\n# 已生成区域树（regionId 只能从这里选, 不存在的区域不可引用）\n${JSON.stringify(allRegions.map((r) => ({ id: r.id, name: r.name, parent: r.parent })), null, 2)}`, maxTokens: 3000, json: true });
+  const entRaw = await safeCall(llm, { systemPrompt: ENTITIES_SYSTEM, userMessage: `${seedBlock}\n\n# 世界法则\n${JSON.stringify(laws, null, 2)}\n\n# 世界尺度\n${JSON.stringify(measurement ?? {}, null, 2)}\n\n# 已生成的顶层大陆/海洋（topRegionId 只能从这里选, 不存在的区域不可引用）\n${JSON.stringify(topRegions.map((r) => ({ id: r.id, name: r.name, biome: r.biome, parent: r.parent })), null, 2)}`, maxTokens: 3000, json: true });
   onTrace?.({
     step: "complete-entities",
     time: new Date().toISOString(), ok: !!entRaw, calledLLM: true,
-    inputExcerpt: `regions: ${allRegions.length}`, responseExcerpt: entRaw?.slice(0, 1500) ?? "(无返回)", error: entRaw ? undefined : "LLM 无返回",
+    inputExcerpt: `topRegions: ${topRegions.length}`, responseExcerpt: entRaw?.slice(0, 1500) ?? "(无返回)", error: entRaw ? undefined : "LLM 无返回",
   });
   if (entRaw) { try { const p = parseJSONFromLLM<{ entities: NonNullable<ParsedInitialState["entities"]> }>(entRaw); entities = mergeEntities(entities, p.entities ?? []); } catch { /* 保留已解析实体 */ } }
-  // 实体自洽校验: 对照用户原文检查(同名实体/文明规模vs地盘), LLM 输出修正版
+  // 实体自洽校验: 对照用户原文检查(同名实体/发源地分离/文明规模vs地盘/时代), LLM 输出修正版
   if (entities.length) {
-    const verified = await verifyLayer<{ entities: NonNullable<ParsedInitialState["entities"]> }>("entities", seed, { entities }, llm, "实体(文明/种族, 含regionId/population)", onTrace);
+    const verified = await verifyLayer<{ entities: NonNullable<ParsedInitialState["entities"]> }>("entities", seed, { entities }, llm, "实体(文明/种族, 含topRegionId/population/era)", onTrace);
     if (verified.entities?.length) entities = verified.entities;
+  }
+
+  // Step 3: 聚焦区域细化（§: 有的放矢——只细化实体占据的顶层区域, 其余保持概略, 推演中动态细化）
+  // 输出 regions(实体区域下的子区划) + entities(每个实体的最终 regionId 绑定回填)
+  onProgress?.("③ 聚焦区域细化（只细化文明所在区域）...");
+  let subregions: NonNullable<ParsedInitialState["regions"]> = [];
+  if (topRegions.length > 0 && entities.length > 0) {
+    const subRaw = await safeCall(llm, { systemPrompt: SUBREGIONS_SYSTEM, userMessage: `${seedBlock}\n\n# 世界尺度\n${JSON.stringify(measurement ?? {}, null, 2)}\n\n# 已生成的大陆/海洋（parent 只能从这里选）\n${JSON.stringify(topRegions, null, 2)}\n\n# 文明实体（只细化它们 topRegionId 指向的顶层区域; 并给每个实体回填最终 regionId）\n${JSON.stringify(entities.map((e) => ({ name: e.name, species: e.species, era: e.era, realm_scale: e.realm_scale, topRegionId: e.topRegionId, population: e.population })), null, 2)}`, maxTokens: 3000, json: true });
+    onTrace?.({
+      step: "complete-subregions",
+      time: new Date().toISOString(), ok: !!subRaw, calledLLM: true,
+      inputExcerpt: `topRegions: ${topRegions.length}, entities: ${entities.length}`, responseExcerpt: subRaw?.slice(0, 1200) ?? "(无返回)", error: subRaw ? undefined : "LLM 无返回",
+    });
+    if (subRaw) {
+      try {
+        const p = parseJSONFromLLM<{ regions: NonNullable<ParsedInitialState["regions"]>; entities?: Array<{ name: string; regionId?: string }> }>(subRaw);
+        subregions = p.regions ?? [];
+        // 实体绑定回填: 细化步骤把每个实体绑定到最细子区划（regionId 只指向已存在区域）
+        const bindMap = new Map((p.entities ?? []).map((b) => [b.name, b.regionId]));
+        const validSubIds = new Set([...topRegions.map((r) => r.id), ...subregions.map((r) => r.id)]);
+        for (const e of entities) {
+          const rid = bindMap.get(e.name);
+          if (rid && validSubIds.has(rid)) e.regionId = rid;
+        }
+      } catch { subregions = []; }
+    }
+  }
+  // 合并区域树: 顶层 + 聚焦子区划
+  let allRegions = mergeRegions(topRegions, subregions);
+  // 区域自洽校验: 对照用户原文检查(层级深度/引用一致性/share/实体区域分离), LLM 输出修正版
+  if (allRegions.length) {
+    const verified = await verifyLayer<{ regions: NonNullable<ParsedInitialState["regions"]> }>("regions", seed, { regions: allRegions }, llm, "区域树(含parent层级)", onTrace);
+    if (verified.regions?.length) allRegions = verified.regions;
   }
 
   // Step 4: 关系（基于已生成实体）
@@ -508,6 +589,22 @@ export async function completeInitialState(
     cultures: parsed.cultures,
     exclusions: parsed.exclusions,
   };
+}
+
+/**
+ * 确定性兜底顶层区域（骨架层失败时用）: 一块大陆的物理布局（生物群系网格）。
+ * 只在"LLM 骨架与用户都未给出顶层区域"时兜底——保证后续 entities/focused-regions 步骤有真实区域可用。
+ */
+function deterministicTopRegions(): NonNullable<ParsedInitialState["regions"]> {
+  const defs = [
+    { id: "coast-east", name: "东部海岸带", biome: "coast", shape: "弧形海岸" },
+    { id: "plains-mid", name: "中部平原", biome: "plains", shape: "开阔平原" },
+    { id: "mountains-north", name: "北部山地", biome: "mountains", shape: "山链" },
+    { id: "desert-south", name: "南部荒漠", biome: "desert", shape: "沙海盆地" },
+    { id: "steppe-west", name: "西部草原", biome: "steppe", shape: "起伏草原" },
+    { id: "forest-valley", name: "森林谷地", biome: "forest", shape: "河谷林地" },
+  ];
+  return defs.map((r) => ({ id: r.id, name: r.name, biome: r.biome, shape: r.shape, neighbors: [], connections: {} }));
 }
 
 /** 合并区域: 用户区域优先(id 匹配保留用户定义), 补全邻接/连接/character; 新区域追加 */
@@ -574,6 +671,10 @@ function mergeEntities(
         politicalForm: existing.politicalForm ?? e.politicalForm,
         religion: existing.religion ?? e.religion,
         ideology: existing.ideology ?? e.ideology,
+        era: e.era ?? existing.era,
+        realm_scale: e.realm_scale ?? existing.realm_scale,
+        topRegionId: e.topRegionId ?? existing.topRegionId,
+        origin: e.origin ?? existing.origin,
       });
     } else {
       out.push(e);
@@ -664,9 +765,17 @@ export function initialStateToSession(
   // **不做任何预设**(物种→地形映射/层级下钻/规模限制)——一切由 LLM 按初始化指令综合判断,
   // 引擎不硬编码"精灵在哪/部落多大/区域多细", 否则初始化条件不同就错。
   const validRegionIds = new Set(Object.keys(regions));
-  const fallbackRegion = Object.keys(regions)[0] ?? "plains-mid";
+  // fallback 分配: 实体 regionId 落空时, 按处理顺序优先分到"尚未被其他实体占用"的区域
+  //（不同实体不应全挤进第一个区域——尤其不同物种的发源地应分离, §: 发源地分离合理性）
+  const usedFallback = new Set<string>();
+  const pickFallback = (): string => {
+    const free = Object.keys(regions).find((id) => !usedFallback.has(id));
+    const chosen = free ?? Object.keys(regions)[0] ?? "plains-mid";
+    usedFallback.add(chosen);
+    return chosen;
+  };
   const entities: EntityCard[] = (completed.entities ?? []).map((e, i) => {
-    const rid = e.regionId && validRegionIds.has(e.regionId) ? e.regionId : fallbackRegion;
+    const rid = e.regionId && validRegionIds.has(e.regionId) ? e.regionId : pickFallback();
     const region = regions[rid];
     // 初始人口: 必须由 LLM 给出(结合时代/区域/文明规模综合判断)。引擎不做任何兜底公式——
     // 缺失则报错, 强制 LLM 补全, 不允许引擎猜。
@@ -706,6 +815,10 @@ export function initialStateToSession(
     const tmpSession = { cultures: {}, languages: {} } as unknown as SimulationSession;
     ent.identity.religion = e.religion?.trim() || deriveReligion(ent, regions[rid], tmpSession);
     ent.identity.ideology = e.ideology?.trim() || deriveIdeology(ent, regions[rid], tmpSession);
+    // 时代（推导枢纽）: 从初始化指令推断, 供 agent 提示词注入
+    if (e.era?.trim()) ent.identity.era = e.era.trim();
+    // 起源叙事: LLM 从用户指令推出的隐含信息(共同祖先/分化/迁徙), 替代弱兜底"X起源于Y"
+    if (e.origin?.trim()) ent.identity.origin_story = e.origin.trim();
     return ent;
   });
 

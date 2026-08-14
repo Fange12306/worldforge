@@ -33,10 +33,12 @@ import { SettingsPanel } from "@/components/settings/SettingsPanel";
 import { CommandPalette } from "@/components/chat/CommandPalette";
 import { ConsistencyReport } from "@/components/chat/ConsistencyReport";
 import { TimelinePanel } from "@/components/timeline/TimelinePanel";
+import { SimulationPanel } from "@/components/simulation/SimulationPanel";
+import { createLLMBindings, type LLMBindings } from "@/lib/simulation/llm";
 import { PanelLeftOpen, PanelRightOpen, Save, X, Edit3, Trash2, Clock, Hash, ChevronDown, ChevronRight } from "lucide-react";
 import type { Entry, ChapterInfo } from "@/lib/types";
 
-type CenterView = null | { type: "entry"; entry: Entry; editing: boolean } | { type: "outline"; chapterOrder: number; chapterId?: string; title: string; content: string; editing: boolean } | { type: "file"; fileName: string; content: string } | { type: "memory"; fileName: string; content: string } | { type: "timeline"; initialEventId?: string; initialTimelineId?: string };
+type CenterView = null | { type: "entry"; entry: Entry; editing: boolean } | { type: "outline"; chapterOrder: number; chapterId?: string; title: string; content: string; editing: boolean } | { type: "file"; fileName: string; content: string } | { type: "memory"; fileName: string; content: string } | { type: "timeline"; initialEventId?: string; initialTimelineId?: string } | { type: "simulation" };
 
 export function AppShell() {
   const { t } = useT();
@@ -50,6 +52,25 @@ export function AppShell() {
   const [centerView, setCenterView] = useState<CenterView>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const llmProvider = useStore((s) => s.llmProvider);
+  const activeProviderId = useStore((s) => s.activeProviderId);
+  const activeModel = useStore((s) => s.activeModel);
+  // 真实 LLM 绑定（§5.2: agent 用 single_chat）——创建一次, 配置变化时重建
+  const [llmBindings, setLlmBindings] = useState<LLMBindings | undefined>(undefined);
+  useEffect(() => {
+    const provider = activeProviderId || llmProvider;
+    if (!provider || !activeModel) {
+      setLlmBindings(undefined);
+      return;
+    }
+    let cancelled = false;
+    createLLMBindings().then((b) => {
+      if (!cancelled) setLlmBindings(b);
+    }).catch(() => {
+      if (!cancelled) setLlmBindings(undefined);
+    });
+    return () => { cancelled = true; };
+  }, [activeProviderId, llmProvider, activeModel]);
 
   // Close center view when world is closed
   useEffect(() => {
@@ -74,7 +95,7 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    (window as any).__worldforge = { openSettings: () => setSettingsOpen(true), openPalette: () => setPaletteOpen(true), openTimeline: () => setCenterView({ type: "timeline" }) };
+    (window as any).__worldforge = { openSettings: () => setSettingsOpen(true), openPalette: () => setPaletteOpen(true), openTimeline: () => setCenterView({ type: "timeline" }), openSimulation: () => setCenterView({ type: "simulation" }) };
     invoke<{ provider: string; models: ModelConfig[]; activeModel?: string }>("load_config").then((cfg) => {
       if (cfg.provider) useStore.getState().setLlmProvider(cfg.provider);
       if (cfg.models?.length) {
@@ -220,7 +241,7 @@ export function AppShell() {
         <Header />
         <ErrorBoundary renderError={t.layout.renderError} retry={t.layout.retry}>
           {settingsOpen ? <SettingsPanel onClose={() => setSettingsOpen(false)} /> : centerView ? (
-            <DetailView view={centerView} onBack={() => { setCenterView(null); setRefreshKey(k => k + 1); }} onUpdate={(v) => { setCenterView(v); setRefreshKey(k => k + 1); }} activeWorldId={activeWorldId} activeConversationId={activeConversationId} worlds={worlds} sidebarOpen={sidebarOpen} rightOpen={rightOpen} theme={theme} />
+            <DetailView view={centerView} onBack={() => { setCenterView(null); setRefreshKey(k => k + 1); }} onUpdate={(v) => { setCenterView(v); setRefreshKey(k => k + 1); }} activeWorldId={activeWorldId} activeConversationId={activeConversationId} worlds={worlds} sidebarOpen={sidebarOpen} rightOpen={rightOpen} theme={theme} llm={llmBindings} />
           ) : <ChatLayout />}
         </ErrorBoundary>
         <StatusBar />
@@ -242,14 +263,26 @@ export function AppShell() {
   );
 }
 
-function DetailView({ view, onBack, onUpdate, activeWorldId, activeConversationId, worlds, sidebarOpen, rightOpen, theme }: {
+function DetailView({ view, onBack, onUpdate, activeWorldId, activeConversationId, worlds, sidebarOpen, rightOpen, theme, llm }: {
   view: NonNullable<CenterView>; onBack: () => void; onUpdate: (v: CenterView) => void;
   activeWorldId: string | null; activeConversationId: string | null; worlds: ReturnType<typeof useStore.getState>["worlds"];
-  sidebarOpen: boolean; rightOpen: boolean; theme: "dark" | "light";
+  sidebarOpen: boolean; rightOpen: boolean; theme: "dark" | "light"; llm?: LLMBindings;
 }) {
   const { t } = useT();
+  const w = worlds.find((x) => x.id === activeWorldId);
+  if (view.type === "simulation") {
+    if (!w) return null;
+    return (
+      <SimulationPanel
+        worldPath={w.path}
+        onClose={onBack}
+        sidebarOpen={sidebarOpen}
+        rightOpen={rightOpen}
+        llm={llm}
+      />
+    );
+  }
   if (view.type === "timeline") {
-    const w = worlds.find((x) => x.id === activeWorldId);
     if (!w) return null;
     return (
       <TimelinePanel

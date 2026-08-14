@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
 import { invoke } from "@/lib/api";
 import { useT } from "@/lib/i18n";
-import { Sun, Moon, Command, BookOpen } from "lucide-react";
+import { Sun, Moon, Command, BookOpen, Globe } from "lucide-react";
 import { Tooltip } from "@/components/ui/tooltip";
 
 export function Header() {
@@ -90,6 +90,14 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-1">
+        <button
+          onClick={() => (window as any).__worldforge?.openSimulation?.()}
+          className="flex items-center gap-1.5 px-2 py-1 text-xs text-ink-muted bg-surface-900 border border-edge rounded-md hover:bg-surface-800 transition-colors"
+        >
+          <Globe className="w-3 h-3" />
+          <span>历史推演</span>
+        </button>
+
         <button
           onClick={() => (window as any).__worldforge?.openPalette?.()}
           className="flex items-center gap-1.5 px-2 py-1 text-xs text-ink-muted bg-surface-900 border border-edge rounded-md hover:bg-surface-800 transition-colors"

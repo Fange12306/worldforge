@@ -19,6 +19,7 @@ use commands::relations;
 use commands::timeline;
 use commands::web_search;
 use commands::world_init;
+use commands::simulation;
 
 #[cfg(target_os = "macos")]
 use tauri::image::Image;
@@ -137,6 +138,13 @@ pub fn run() {
             timeline::list_events,
             timeline::move_event,
             timeline::list_distinct_time_points,
+            // ── 历史推演模式（§二 代码隔离, 末尾追加）──
+            simulation::simulation_write_file,
+            simulation::simulation_read_file,
+            simulation::simulation_list_files,
+            simulation::simulation_remove_file,
+            simulation::simulation_append_file,
+            simulation::simulation_reset,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

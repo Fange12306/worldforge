@@ -159,29 +159,45 @@ pub async fn single_chat(
     provider: String,
     model: String,
     max_tokens: u32,
+    json: bool,
 ) -> Result<String, String> {
     let api_key = crate::commands::api_key::get_api_key(provider.clone())
         .map_err(|e| format!("未配置 API Key: {}", e))?;
 
     let client = reqwest::Client::builder()
         .no_proxy()
+        // 防止 DeepSeek/慢模型挂起导致前端无限等待（"半天不返回"的根因）——60s 超时降级
+        .timeout(std::time::Duration::from_secs(60))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
-    let default_api_url = match provider.as_str() {
-        "anthropic" => "https://api.anthropic.com/v1/messages",
-        "openai" => "https://api.openai.com/v1/chat/completions",
-        "deepseek" => "https://api.deepseek.com/v1/chat/completions",
-        _ => return Err(format!("未知 Provider: {}", provider)),
-    };
+    // 与 stream_chat 一致: provider 只用来取 API Key; 请求地址从配置读（任意 provider id 都可配 base_url）,
+    // 无配置时 fallback 到 Anthropic/DeepSeek 默认。格式由 URL 判断, 不再依赖 provider 名写死。
     let configured_api_url = crate::commands::api_key::get_api_base_url(provider.clone());
-    let api_url = configured_api_url.as_deref().unwrap_or(default_api_url);
+    let default_api_url = if provider == "anthropic" {
+        "https://api.anthropic.com/v1/messages"
+    } else {
+        "https://api.deepseek.com/v1/chat/completions"
+    };
+    let api_url = configured_api_url
+        .as_deref()
+        .filter(|u| !u.trim().is_empty())
+        .unwrap_or(default_api_url);
 
-    if provider == "anthropic" {
+    let is_anthropic = api_url.contains("anthropic.com")
+        || api_url.trim_end_matches('/').ends_with("/v1/messages");
+
+    if is_anthropic {
+        // Anthropic 无 response_format; json=true 时在 system prompt 前置强制 JSON 约束
+        let system = if json {
+            format!("You must respond with valid JSON only, no prose, no markdown, no code fences.\n\n{}", system_prompt)
+        } else {
+            system_prompt
+        };
         let body = serde_json::json!({
             "model": model,
             "max_tokens": max_tokens,
             "messages": [{"role": "user", "content": user_message}],
-            "system": system_prompt,
+            "system": system,
             "stream": false,
         });
         let resp = client
@@ -209,12 +225,21 @@ pub async fn single_chat(
             serde_json::json!({"role": "system", "content": system_prompt}),
             serde_json::json!({"role": "user", "content": user_message}),
         ];
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": model,
             "messages": msgs,
             "max_tokens": max_tokens,
             "stream": false,
         });
+        // DeepSeek V4 (thinking 模型): 默认 thinking 模式下 content 可能为空、推理全在 reasoning_content。
+        // 严格 JSON 输出场景直接关掉 thinking, 让 content 承载最终答案。
+        if model.to_lowercase().starts_with("deepseek") && model.to_lowercase().contains("v4") {
+            body["thinking"] = serde_json::json!({"type": "disabled"});
+        }
+        // json mode: OpenAI 兼容端点(含 DeepSeek)加 response_format, 让 LLM 直接输出合法 JSON。
+        if json {
+            body["response_format"] = serde_json::json!({"type": "json_object"});
+        }
         let resp = client
             .post(api_url)
             .header("Authorization", format!("Bearer {}", api_key))
@@ -231,10 +256,17 @@ pub async fn single_chat(
         }
 
         let json: serde_json::Value = resp.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
-        json["choices"][0]["message"]["content"]
-            .as_str()
-            .map(String::from)
-            .ok_or_else(|| format!("无法提取响应文本: {}", json))
+        let msg = &json["choices"][0]["message"];
+        // 优先 content; thinking 模型 content 可能为空 → 回退 reasoning_content
+        let content = msg["content"].as_str().map(String::from);
+        match content {
+            Some(c) if !c.trim().is_empty() => Ok(c),
+            _ => msg["reasoning_content"]
+                .as_str()
+                .map(String::from)
+                .filter(|c| !c.trim().is_empty())
+                .ok_or_else(|| format!("无法提取响应文本: {}", json)),
+        }
     }
 }
 

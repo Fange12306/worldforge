@@ -173,6 +173,19 @@ function getTools(): ToolDef[] {
       required: ["url"],
     },
   },
+  {
+    name: "KnowledgeBaseSearch",
+    description: "Search the built-in read-only Knowledge Base (worldbuilding reference guides: geography building, climates, tectonics, scales, etc.). Pass 'query' to find documents whose title or content contains the keyword; pass 'doc_id' to read a specific document's full content. Use this when you need authoritative worldbuilding methodology (e.g. how to build continents, climate zones, area scales) — do NOT use web search for these. Returns document titles, ids, and matching snippets; use doc_id to read the full text.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Keyword to search across Knowledge Base documents (title + content). Omit when reading by doc_id." },
+        doc_id: { type: "string", description: "Exact document id (e.g. '05-climate') to read its FULL content. Omit to search by keyword." },
+        max_results: { type: "integer", description: "Max documents to return in keyword search (default 5, max 10)" },
+      },
+      required: [],
+    },
+  },
   // (EntryLink removed — use Relation for all static relationships)
   {
     name: "SceneAnalyze",
@@ -515,6 +528,115 @@ async function runConsistencyCheck(
   return { hard, soft };
 }
 
+// ── Knowledge Base search helper ──
+// 知识库 = 内置只读参考文档(public/knowledge-base/), 随应用打包, 与具体 world 无关。
+const KB_INDEX_URL = "knowledge-base/index.json";
+
+type KbDoc = { id: string; title: string; titleEn?: string; path: string };
+type KbCategory = {
+  id: string;
+  title: string;
+  titleEn?: string;
+  description?: string;
+  descriptionEn?: string;
+  docs: KbDoc[];
+};
+type KbIndex = { categories: KbCategory[] };
+
+async function knowledgeBaseSearch(input: Record<string, unknown>): Promise<string> {
+  const docId = input.doc_id as string | undefined;
+  const query = ((input.query as string) || "").trim();
+  const maxResults = Math.min((input.max_results as number) || 5, 10);
+
+  let index: KbIndex;
+  try {
+    const res = await fetch(KB_INDEX_URL);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    index = await res.json();
+  } catch {
+    return "知识库索引加载失败。";
+  }
+
+  const lang = useStore.getState().language;
+  const label = (zh?: string, en?: string) => (lang === "en" ? (en || zh || "") : (zh || en || ""));
+  const allDocs: { cat: KbCategory; doc: KbDoc }[] = [];
+  for (const cat of index.categories ?? []) {
+    for (const doc of cat.docs ?? []) allDocs.push({ cat, doc });
+  }
+
+  // ── 按 doc_id 读取全文 ──
+  if (docId) {
+    const hit = allDocs.find(({ doc }) => doc.id === docId);
+    if (!hit) {
+      const known = allDocs.map(({ doc }) => doc.id).join(", ");
+      return `未找到 doc_id "${docId}"。可用文档: ${known}`;
+    }
+    try {
+      const res = await fetch(`knowledge-base/${hit.doc.path}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      return `【知识库】${label(hit.cat.title, hit.cat.titleEn)} / ${label(hit.doc.title, hit.doc.titleEn)}\n${text}`;
+    } catch {
+      return `读取文档 "${docId}" 失败。`;
+    }
+  }
+
+  // ── 按关键词搜索(标题 + 内容)──
+  if (!query) {
+    // 无关键词: 列出全部文档供选择
+    const lines = allDocs.map(
+      ({ cat, doc }) => `- [${doc.id}] ${label(cat.title, cat.titleEn)} / ${label(doc.title, doc.titleEn)}`,
+    );
+    return `知识库文档列表(用 doc_id 读取全文):\n${lines.join("\n")}`;
+  }
+
+  const q = query.toLowerCase();
+  const results: { cat: KbCategory; doc: KbDoc; score: number; snippet: string }[] = [];
+
+  for (const { cat, doc } of allDocs) {
+    let content = "";
+    try {
+      const res = await fetch(`knowledge-base/${doc.path}`);
+      if (res.ok) content = await res.text();
+    } catch { /* skip unreadable */ }
+
+    let score = 0;
+    const titleText = label(doc.title, doc.titleEn).toLowerCase();
+    const catText = label(cat.title, cat.titleEn).toLowerCase();
+    const body = content.toLowerCase();
+
+    if (titleText.includes(q)) score += 10;
+    if (catText.includes(q)) score += 3;
+    const bodyMatches = body.split(q).length - 1;
+    if (bodyMatches > 0) score += Math.min(5, bodyMatches);
+
+    if (score > 0) {
+      // 找第一个命中位置的上下文片段
+      let snippet = "";
+      const idx = body.indexOf(q);
+      if (idx >= 0) {
+        const start = Math.max(0, idx - 60);
+        const end = Math.min(content.length, idx + 140);
+        snippet = content.slice(start, end).replace(/\n+/g, " ").trim();
+      }
+      results.push({ cat, doc, score, snippet });
+    }
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  const top = results.slice(0, maxResults);
+
+  if (top.length === 0) {
+    return `知识库中未找到与 "${query}" 相关的文档。可用文档: ${allDocs.map(({ doc }) => doc.id).join(", ")}`;
+  }
+
+  const lines = top.map(
+    ({ cat, doc, snippet }) =>
+      `- [${doc.id}] ${label(cat.title, cat.titleEn)} / ${label(doc.title, doc.titleEn)}\n  ${snippet ? `…${snippet}…` : "(标题命中)"}`,
+  );
+  return `知识库搜索结果(${top.length} 条, 用 doc_id 读取全文):\n${lines.join("\n")}`;
+}
+
 async function executeTool(
   name: string,
   input: Record<string, unknown>,
@@ -684,6 +806,9 @@ async function executeTool(
         { query: input.query as string, count: (input.count as number) || 5 },
       );
       return results.map((r) => `- ${r.title}\n  ${r.snippet}\n  ${r.url}`).join("\n\n");
+    }
+    case "KnowledgeBaseSearch": {
+      return await knowledgeBaseSearch(input);
     }
     case "SceneAnalyze": {
       const params: Record<string, unknown> = {

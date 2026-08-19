@@ -1,0 +1,929 @@
+{
+  "name": "WorldForge 知识库",
+  "nameEn": "WorldForge Knowledge Base",
+  "description": "建立世界观时的指导参考信息。只读, 随应用内置, 所有世界共享。",
+  "descriptionEn": "Reference guidance for worldbuilding. Read-only, built into the app, shared by all worlds.",
+  "categories": [
+    {
+      "id": "culture",
+      "title": "文化",
+      "titleEn": "Culture",
+      "description": "文化人类学、价值观世界观、信仰仪式、艺术审美、习俗神话、文化记忆、亚文化、文化传播冲突与象征符号",
+      "descriptionEn": "Cultural anthropology, values & worldviews, belief & ritual, arts & aesthetics, customs & myth, cultural memory, subcultures, diffusion & conflict, symbols",
+      "docs": [
+        {
+          "id": "culture-01",
+          "title": "文化总流程与接口",
+          "titleEn": "Culture Overview & Interfaces",
+          "path": "culture/01-overview.md"
+        },
+        {
+          "id": "culture-02",
+          "title": "文化人类学基础",
+          "titleEn": "Cultural Anthropology Foundations",
+          "path": "culture/02-anthropology.md"
+        },
+        {
+          "id": "culture-03",
+          "title": "价值观与世界观",
+          "titleEn": "Values & Worldviews",
+          "path": "culture/03-values.md"
+        },
+        {
+          "id": "culture-04",
+          "title": "信仰与仪式",
+          "titleEn": "Belief & Ritual",
+          "path": "culture/04-ritual.md"
+        },
+        {
+          "id": "culture-05",
+          "title": "艺术与审美",
+          "titleEn": "Arts & Aesthetics",
+          "path": "culture/05-arts.md"
+        },
+        {
+          "id": "culture-06",
+          "title": "习俗与日常生活",
+          "titleEn": "Customs & Everyday Life",
+          "path": "culture/06-customs.md"
+        },
+        {
+          "id": "culture-07",
+          "title": "神话与叙事传统",
+          "titleEn": "Myth & Narrative Traditions",
+          "path": "culture/07-myth.md"
+        },
+        {
+          "id": "culture-08",
+          "title": "文化记忆与集体认同",
+          "titleEn": "Cultural Memory & Collective Identity",
+          "path": "culture/08-memory.md"
+        },
+        {
+          "id": "culture-09",
+          "title": "亚文化与多元文化",
+          "titleEn": "Subcultures & Multiculturalism",
+          "path": "culture/09-subculture.md"
+        },
+        {
+          "id": "culture-10",
+          "title": "文化传播与变迁",
+          "titleEn": "Cultural Diffusion & Change",
+          "path": "culture/10-diffusion.md"
+        },
+        {
+          "id": "culture-11",
+          "title": "文化冲突与融合",
+          "titleEn": "Cultural Conflict & Fusion",
+          "path": "culture/11-conflict.md"
+        },
+        {
+          "id": "culture-12",
+          "title": "文化象征与符号",
+          "titleEn": "Symbols & Semiotics",
+          "path": "culture/12-symbols.md"
+        },
+        {
+          "id": "culture-13",
+          "title": "文化构建方法论与一致性总检",
+          "titleEn": "Culture Methodology & Consistency Checklist",
+          "path": "culture/13-methodology.md"
+        }
+      ]
+    },
+    {
+      "id": "geography",
+      "title": "地理",
+      "titleEn": "Geography",
+      "description": "空间全景、区域、自然实体、环境与资源",
+      "descriptionEn": "Spatial panorama, regions, natural features, environment and resources",
+      "docs": [
+        {
+          "id": "01-overview",
+          "title": "总流程: 从0到1构建地理世界",
+          "titleEn": "Overview: Building a Geography from Zero",
+          "path": "geography/01-overview.md"
+        },
+        {
+          "id": "02-astronomy",
+          "title": "天文参数: 地理世界的第一因",
+          "titleEn": "Astronomy: The First Cause",
+          "path": "geography/02-astronomy.md"
+        },
+        {
+          "id": "03-tectonics",
+          "title": "板块构造与宏观海陆分布",
+          "titleEn": "Plate Tectonics & Continents",
+          "path": "geography/03-tectonics.md"
+        },
+        {
+          "id": "04-landforms",
+          "title": "地形地貌: 山脉/高原/平原/草原/沙漠",
+          "titleEn": "Landforms: Mountains, Plateaus, Plains, Grasslands, Deserts",
+          "path": "geography/04-landforms.md"
+        },
+        {
+          "id": "05-climate",
+          "title": "气候系统",
+          "titleEn": "Climate Systems",
+          "path": "geography/05-climate.md"
+        },
+        {
+          "id": "06-hydrology",
+          "title": "水文系统: 河流/湖泊/流域",
+          "titleEn": "Hydrology: Rivers, Lakes, Watersheds",
+          "path": "geography/06-hydrology.md"
+        },
+        {
+          "id": "07-geographic-units",
+          "title": "具体地理单元: 半岛/地峡/岛屿/裂谷/海峡/海湾",
+          "titleEn": "Geographic Units: Peninsulas, Isthmuses, Islands, Rifts, Straits, Bays",
+          "path": "geography/07-geographic-units.md"
+        },
+        {
+          "id": "08-biomes",
+          "title": "生物群系与生物地理",
+          "titleEn": "Biomes & Biogeography",
+          "path": "geography/08-biomes.md"
+        },
+        {
+          "id": "09-regions",
+          "title": "地理区域划分: 自然区划与类型层",
+          "titleEn": "Regional Division: Natural Zoning & Type Layers",
+          "path": "geography/09-regions.md"
+        },
+        {
+          "id": "10-ocean",
+          "title": "海洋的构成与航路",
+          "titleEn": "Oceans & Sea Routes",
+          "path": "geography/10-ocean.md"
+        },
+        {
+          "id": "11-scales",
+          "title": "面积与尺度标尺",
+          "titleEn": "Area & Scale Reference",
+          "path": "geography/11-scales.md"
+        },
+        {
+          "id": "12-civilization-geography",
+          "title": "地理与文明(扩展参考)",
+          "titleEn": "Geography & Civilization (Extension)",
+          "path": "geography/12-civilization-geography.md"
+        },
+        {
+          "id": "13-cartography",
+          "title": "地图绘制: 投影/比例尺/一致性",
+          "titleEn": "Cartography: Projection, Scale, Consistency",
+          "path": "geography/13-cartography.md"
+        }
+      ]
+    },
+    {
+      "id": "laws",
+      "title": "法则",
+      "titleEn": "Laws",
+      "description": "世界法则、物理体系、本体规则",
+      "descriptionEn": "World laws, physics systems, ontological rules",
+      "docs": [
+        {
+          "id": "laws-01-overview",
+          "title": "法则构建总流程",
+          "titleEn": "Laws Building Overview",
+          "path": "laws/01-overview.md"
+        },
+        {
+          "id": "laws-02-magic-systems",
+          "title": "魔法系统设计",
+          "titleEn": "Magic System Design",
+          "path": "laws/02-magic-systems.md"
+        },
+        {
+          "id": "laws-03-magic-society",
+          "title": "魔法与社会",
+          "titleEn": "Magic & Society",
+          "path": "laws/03-magic-society.md"
+        },
+        {
+          "id": "laws-04-gods-religion",
+          "title": "神明与宗教体系",
+          "titleEn": "Gods & Religion Systems",
+          "path": "laws/04-gods-religion.md"
+        },
+        {
+          "id": "laws-05-soul",
+          "title": "灵性与灵魂法则",
+          "titleEn": "Spirit & Soul Laws",
+          "path": "laws/05-soul.md"
+        },
+        {
+          "id": "laws-06-downstream",
+          "title": "法则的下游影响: 地理/文明/历史",
+          "titleEn": "Laws Downstream Effects",
+          "path": "laws/06-downstream.md"
+        },
+        {
+          "id": "laws-07-workflow",
+          "title": "法则设计工作流",
+          "titleEn": "Laws Design Workflow",
+          "path": "laws/07-workflow.md"
+        }
+      ]
+    },
+    {
+      "id": "civilization",
+      "title": "文明",
+      "titleEn": "Civilization",
+      "description": "文化、语言、命名、组织与政体",
+      "descriptionEn": "Culture, languages, naming, organizations and regimes",
+      "docs": [
+        {
+          "id": "civ-01-overview",
+          "title": "文明构建总流程",
+          "titleEn": "Civilization Building Overview",
+          "path": "civilization/01-overview.md"
+        },
+        {
+          "id": "civ-02-origins",
+          "title": "文明的定义与起源",
+          "titleEn": "Definition & Origins of Civilization",
+          "path": "civilization/02-origins.md"
+        },
+        {
+          "id": "civ-03-agriculture",
+          "title": "农业革命与生计基础",
+          "titleEn": "Agricultural Revolution & Livelihood",
+          "path": "civilization/03-agriculture.md"
+        },
+        {
+          "id": "civ-04-state-polity",
+          "title": "国家形成与政体形态",
+          "titleEn": "State Formation & Polity Types",
+          "path": "civilization/04-state-polity.md"
+        },
+        {
+          "id": "civ-05-social-structure",
+          "title": "社会结构与分层",
+          "titleEn": "Social Structure & Stratification",
+          "path": "civilization/05-social-structure.md"
+        },
+        {
+          "id": "civ-06-institutions",
+          "title": "制度与治理技术",
+          "titleEn": "Institutions & Governance Technologies",
+          "path": "civilization/06-institutions.md"
+        },
+        {
+          "id": "civ-07-religion-legitimacy",
+          "title": "宗教、意识形态与政治合法性",
+          "titleEn": "Religion, Ideology & Legitimacy",
+          "path": "civilization/07-religion-legitimacy.md"
+        },
+        {
+          "id": "civ-08-empire",
+          "title": "帝国扩张与治理",
+          "titleEn": "Empire Expansion & Governance",
+          "path": "civilization/08-empire.md"
+        },
+        {
+          "id": "civ-09-trade-world-system",
+          "title": "贸易网络与世界体系",
+          "titleEn": "Trade Networks & World Systems",
+          "path": "civilization/09-trade-world-system.md"
+        },
+        {
+          "id": "civ-10-culture",
+          "title": "文化演化与扩散",
+          "titleEn": "Cultural Evolution & Diffusion",
+          "path": "civilization/10-culture.md"
+        },
+        {
+          "id": "civ-11-comparative",
+          "title": "文明比较与互动",
+          "titleEn": "Comparative Civilizations & Interaction",
+          "path": "civilization/11-comparative.md"
+        },
+        {
+          "id": "civ-12-rise-fall",
+          "title": "文明兴衰理论",
+          "titleEn": "Rise & Fall of Civilizations",
+          "path": "civilization/12-rise-fall.md"
+        },
+        {
+          "id": "civ-13-methodology",
+          "title": "文明设计方法论",
+          "titleEn": "Civilization Design Methodology",
+          "path": "civilization/13-methodology.md"
+        }
+      ]
+    },
+    {
+      "id": "economy",
+      "title": "经济",
+      "titleEn": "Economy",
+      "description": "经济模型、货币金融、财政税收、经济周期、贸易与经济地理",
+      "descriptionEn": "Economic models, money & finance, fiscal systems, cycles, trade and economic geography",
+      "docs": [
+        {
+          "id": "economy-01",
+          "title": "经济总流程与接口",
+          "titleEn": "Economy Overview & Interfaces",
+          "path": "economy/01-overview.md"
+        },
+        {
+          "id": "economy-02",
+          "title": "嵌入性与整合模式",
+          "titleEn": "Embeddedness & Modes of Integration",
+          "path": "economy/02-embeddedness.md"
+        },
+        {
+          "id": "economy-03",
+          "title": "生计与生产结构",
+          "titleEn": "Subsistence & Production",
+          "path": "economy/03-subsistence.md"
+        },
+        {
+          "id": "economy-04",
+          "title": "货币体系",
+          "titleEn": "Monetary Systems",
+          "path": "economy/04-money.md"
+        },
+        {
+          "id": "economy-05",
+          "title": "价格与市场机制",
+          "titleEn": "Prices & Markets",
+          "path": "economy/05-prices.md"
+        },
+        {
+          "id": "economy-06",
+          "title": "信贷、债务与金融",
+          "titleEn": "Credit, Debt & Finance",
+          "path": "economy/06-credit-debt.md"
+        },
+        {
+          "id": "economy-07",
+          "title": "商业组织与商人阶层",
+          "titleEn": "Merchants & Commercial Organizations",
+          "path": "economy/07-merchants.md"
+        },
+        {
+          "id": "economy-08",
+          "title": "贸易网络与世界体系",
+          "titleEn": "Trade Networks & World Systems",
+          "path": "economy/08-trade.md"
+        },
+        {
+          "id": "economy-09",
+          "title": "经济地理与区位",
+          "titleEn": "Economic Geography & Location Theory",
+          "path": "economy/09-geography.md"
+        },
+        {
+          "id": "economy-10",
+          "title": "财政与国家",
+          "titleEn": "Fiscal Systems & the State",
+          "path": "economy/10-fiscal.md"
+        },
+        {
+          "id": "economy-11",
+          "title": "经济周期与人口动态",
+          "titleEn": "Economic Cycles & Demographics",
+          "path": "economy/11-cycles.md"
+        },
+        {
+          "id": "economy-12",
+          "title": "增长、停滞与转型",
+          "titleEn": "Growth, Stagnation & Transformation",
+          "path": "economy/12-growth.md"
+        },
+        {
+          "id": "economy-13",
+          "title": "经济构建方法论与超自然经济",
+          "titleEn": "Methodology & Supernatural Economy",
+          "path": "economy/13-methodology.md"
+        }
+      ]
+    },
+    {
+      "id": "military",
+      "title": "军事",
+      "titleEn": "Military",
+      "description": "军事社会学、兵种、后勤、战略地缘、战争形态与魔法战争",
+      "descriptionEn": "Military sociology, arms, logistics, strategy & geopolitics, warfare evolution and magic warfare",
+      "docs": [
+        {
+          "id": "military-01",
+          "title": "军事总流程与接口",
+          "titleEn": "Military Overview & Interfaces",
+          "path": "military/01-overview.md"
+        },
+        {
+          "id": "military-02",
+          "title": "军事社会学与军队构成",
+          "titleEn": "Military Sociology & Force Composition",
+          "path": "military/02-sociology.md"
+        },
+        {
+          "id": "military-03",
+          "title": "战争伦理与军事文化",
+          "titleEn": "War Ethics & Military Culture",
+          "path": "military/03-ethics.md"
+        },
+        {
+          "id": "military-04",
+          "title": "兵种体系与兵种经济学",
+          "titleEn": "Arms & Military Economics",
+          "path": "military/04-arms.md"
+        },
+        {
+          "id": "military-05",
+          "title": "后勤与补给",
+          "titleEn": "Logistics & Supply",
+          "path": "military/05-logistics.md"
+        },
+        {
+          "id": "military-06",
+          "title": "训练、纪律与军事革命",
+          "titleEn": "Drill, Discipline & Military Revolution",
+          "path": "military/06-drill.md"
+        },
+        {
+          "id": "military-07",
+          "title": "雇佣军、私掠与私有武力",
+          "titleEn": "Mercenaries, Privateers & Private Force",
+          "path": "military/07-mercenaries.md"
+        },
+        {
+          "id": "military-08",
+          "title": "战略理论与战役法",
+          "titleEn": "Strategy & Operational Art",
+          "path": "military/08-strategy.md"
+        },
+        {
+          "id": "military-09",
+          "title": "地缘政治与战略要地",
+          "titleEn": "Geopolitics & Strategic Chokepoints",
+          "path": "military/09-geopolitics.md"
+        },
+        {
+          "id": "military-10",
+          "title": "战争形态演化史",
+          "titleEn": "Evolution of Warfare",
+          "path": "military/10-evolution.md"
+        },
+        {
+          "id": "military-11",
+          "title": "非常规与不对称战争",
+          "titleEn": "Unconventional & Asymmetric Warfare",
+          "path": "military/11-asymmetric.md"
+        },
+        {
+          "id": "military-12",
+          "title": "魔法战争形态学",
+          "titleEn": "Magic Warfare",
+          "path": "military/12-magic-warfare.md"
+        },
+        {
+          "id": "military-13",
+          "title": "军事构建方法论与一致性总检",
+          "titleEn": "Military Methodology & Consistency Checklist",
+          "path": "military/13-methodology.md"
+        }
+      ]
+    },
+    {
+      "id": "technology",
+      "title": "技术",
+      "titleEn": "Technology",
+      "description": "技术演化、技术树、能源材料、扩散停滞、知识传承、技术革命与魔法技术",
+      "descriptionEn": "Technological evolution, tech trees, energy & materials, diffusion & stagnation, knowledge transmission, revolutions and magic-as-technology",
+      "docs": [
+        {
+          "id": "technology-01",
+          "title": "技术总流程与接口",
+          "titleEn": "Technology Overview & Interfaces",
+          "path": "technology/01-overview.md"
+        },
+        {
+          "id": "technology-02",
+          "title": "技术演化理论",
+          "titleEn": "Theories of Technological Evolution",
+          "path": "technology/02-evolution.md"
+        },
+        {
+          "id": "technology-03",
+          "title": "技术-社会互动",
+          "titleEn": "Technology & Society",
+          "path": "technology/03-society.md"
+        },
+        {
+          "id": "technology-04",
+          "title": "技术树设计与时代分期",
+          "titleEn": "Tech Tree Design & Era Periodization",
+          "path": "technology/04-tree.md"
+        },
+        {
+          "id": "technology-05",
+          "title": "能源与材料技术",
+          "titleEn": "Energy & Materials",
+          "path": "technology/05-energy.md"
+        },
+        {
+          "id": "technology-06",
+          "title": "生产技术与工艺体系",
+          "titleEn": "Crafts & Production Technology",
+          "path": "technology/06-crafts.md"
+        },
+        {
+          "id": "technology-07",
+          "title": "技术扩散与传播",
+          "titleEn": "Technology Diffusion",
+          "path": "technology/07-diffusion.md"
+        },
+        {
+          "id": "technology-08",
+          "title": "技术停滞与路径依赖",
+          "titleEn": "Stagnation & Path Dependence",
+          "path": "technology/08-stagnation.md"
+        },
+        {
+          "id": "technology-09",
+          "title": "知识传承与教育体系",
+          "titleEn": "Knowledge Transmission & Education",
+          "path": "technology/09-knowledge.md"
+        },
+        {
+          "id": "technology-10",
+          "title": "技术革命与工业革命",
+          "titleEn": "Technological & Industrial Revolutions",
+          "path": "technology/10-revolution.md"
+        },
+        {
+          "id": "technology-11",
+          "title": "技术奇点与极限",
+          "titleEn": "Technological Singularity & Limits",
+          "path": "technology/11-singularity.md"
+        },
+        {
+          "id": "technology-12",
+          "title": "魔法作为技术路径",
+          "titleEn": "Magic as Technology",
+          "path": "technology/12-magic.md"
+        },
+        {
+          "id": "technology-13",
+          "title": "技术构建方法论与一致性总检",
+          "titleEn": "Technology Methodology & Consistency Checklist",
+          "path": "technology/13-methodology.md"
+        }
+      ]
+    },
+    {
+      "id": "language",
+      "title": "语言",
+      "titleEn": "Language",
+      "description": "语言类型学、音系文字、词汇语法、命名地名、语言社会、语言政策、魔法语言与多语世界",
+      "descriptionEn": "Linguistic typology, phonology & scripts, lexicon & grammar, naming & toponymy, language & society, language policy, magic language and multilingual worlds",
+      "docs": [
+        {
+          "id": "language-01",
+          "title": "语言总流程与接口",
+          "titleEn": "Language Overview & Interfaces",
+          "path": "language/01-overview.md"
+        },
+        {
+          "id": "language-02",
+          "title": "语言学基础与语言类型学",
+          "titleEn": "Linguistic Foundations & Typology",
+          "path": "language/02-typology.md"
+        },
+        {
+          "id": "language-03",
+          "title": "语言演化与历史语言学",
+          "titleEn": "Language Evolution & Historical Linguistics",
+          "path": "language/03-evolution.md"
+        },
+        {
+          "id": "language-04",
+          "title": "音系与书写系统设计",
+          "titleEn": "Phonology & Writing Systems",
+          "path": "language/04-phonology.md"
+        },
+        {
+          "id": "language-05",
+          "title": "词汇与语法设计",
+          "titleEn": "Lexicon & Grammar Design",
+          "path": "language/05-lexicon.md"
+        },
+        {
+          "id": "language-06",
+          "title": "虚构语言类型与实践",
+          "titleEn": "Conlang Types & Practice",
+          "path": "language/06-conlang.md"
+        },
+        {
+          "id": "language-07",
+          "title": "命名体系与地名学",
+          "titleEn": "Naming & Toponymy",
+          "path": "language/07-naming.md"
+        },
+        {
+          "id": "language-08",
+          "title": "语言与社会分层",
+          "titleEn": "Language & Social Stratification",
+          "path": "language/08-society.md"
+        },
+        {
+          "id": "language-09",
+          "title": "语言政策与语言政治",
+          "titleEn": "Language Policy & Politics",
+          "path": "language/09-policy.md"
+        },
+        {
+          "id": "language-10",
+          "title": "魔法语言与言语行为",
+          "titleEn": "Magic Language & Speech Acts",
+          "path": "language/10-magic.md"
+        },
+        {
+          "id": "language-11",
+          "title": "翻译、误解与文化接触",
+          "titleEn": "Translation, Misunderstanding & Contact",
+          "path": "language/11-translation.md"
+        },
+        {
+          "id": "language-12",
+          "title": "多语世界与语言生态",
+          "titleEn": "Multilingual Worlds & Language Ecology",
+          "path": "language/12-ecology.md"
+        },
+        {
+          "id": "language-13",
+          "title": "语言构建方法论与一致性总检",
+          "titleEn": "Language Methodology & Consistency Checklist",
+          "path": "language/13-methodology.md"
+        }
+      ]
+    },
+    {
+      "id": "cosmos",
+      "title": "宇宙",
+      "titleEn": "Cosmos",
+      "description": "宇宙结构、恒星行星系统、星系环境、位面、死后世界与多元宇宙",
+      "descriptionEn": "Cosmic structure, star & planetary systems, galactic environment, planes, afterlife and the multiverse",
+      "docs": [
+        {
+          "id": "cosmos-01",
+          "title": "宇宙总流程与接口",
+          "titleEn": "Cosmos Overview & Interfaces",
+          "path": "cosmos/01-overview.md"
+        },
+        {
+          "id": "cosmos-02",
+          "title": "天体物理与宇宙结构基础",
+          "titleEn": "Astrophysics & Cosmic Structure",
+          "path": "cosmos/02-astrophysics.md"
+        },
+        {
+          "id": "cosmos-03",
+          "title": "宇宙尺度与时间",
+          "titleEn": "Cosmic Scale & Time",
+          "path": "cosmos/03-scale.md"
+        },
+        {
+          "id": "cosmos-04",
+          "title": "恒星系统设计",
+          "titleEn": "Star System Design",
+          "path": "cosmos/04-starsystem.md"
+        },
+        {
+          "id": "cosmos-05",
+          "title": "行星类型与宜居性",
+          "titleEn": "Planet Types & Habitability",
+          "path": "cosmos/05-planets.md"
+        },
+        {
+          "id": "cosmos-06",
+          "title": "星系与星际环境",
+          "titleEn": "Galaxies & Interstellar Environment",
+          "path": "cosmos/06-galaxy.md"
+        },
+        {
+          "id": "cosmos-07",
+          "title": "位面宇宙论",
+          "titleEn": "Plane Cosmology",
+          "path": "cosmos/07-planes.md"
+        },
+        {
+          "id": "cosmos-08",
+          "title": "位面旅行与半位面",
+          "titleEn": "Plane Travel & Demiplanes",
+          "path": "cosmos/08-plane-travel.md"
+        },
+        {
+          "id": "cosmos-09",
+          "title": "死后世界与灵魂位面",
+          "titleEn": "Afterlife & Soul Planes",
+          "path": "cosmos/09-afterlife.md"
+        },
+        {
+          "id": "cosmos-10",
+          "title": "多元宇宙拓扑",
+          "titleEn": "Multiverse Topology",
+          "path": "cosmos/10-multiverse.md"
+        },
+        {
+          "id": "cosmos-11",
+          "title": "世界间旅行与法则差异",
+          "titleEn": "Cross-World Travel & Law Differences",
+          "path": "cosmos/11-crossworld.md"
+        },
+        {
+          "id": "cosmos-12",
+          "title": "宇宙之外的叙事与神秘",
+          "titleEn": "Narrative & Mystery Beyond the Cosmos",
+          "path": "cosmos/12-outer.md"
+        },
+        {
+          "id": "cosmos-13",
+          "title": "宇宙构建方法论与一致性总检",
+          "titleEn": "Cosmos Methodology & Consistency Checklist",
+          "path": "cosmos/13-methodology.md"
+        }
+      ]
+    },
+    {
+      "id": "species",
+      "title": "种族",
+      "titleEn": "Species",
+      "description": "生命起源、种族推导链、感官寿命、智慧形态、种族谱系、种族与文明、生态位与幻想生物、神话原型",
+      "descriptionEn": "Origins of life, species derivation chains, senses & lifespan, intelligence forms, lineages, species & civilization, niches & creatures, mythic archetypes",
+      "docs": [
+        {
+          "id": "species-01",
+          "title": "种族总流程与接口",
+          "titleEn": "Species Overview & Interfaces",
+          "path": "species/01-overview.md"
+        },
+        {
+          "id": "species-02",
+          "title": "生命起源与地外生物学",
+          "titleEn": "Origins of Life & Xenobiology",
+          "path": "species/02-abio.md"
+        },
+        {
+          "id": "species-03",
+          "title": "生理-心理-文化推导链",
+          "titleEn": "Physiology-Psychology-Culture Chain",
+          "path": "species/03-chain.md"
+        },
+        {
+          "id": "species-04",
+          "title": "感官与认知设计",
+          "titleEn": "Senses & Cognition Design",
+          "path": "species/04-senses.md"
+        },
+        {
+          "id": "species-05",
+          "title": "寿命、繁殖与生命周期",
+          "titleEn": "Lifespan, Reproduction & Life Cycles",
+          "path": "species/05-lifespan.md"
+        },
+        {
+          "id": "species-06",
+          "title": "智慧形态与意识",
+          "titleEn": "Intelligence Forms & Consciousness",
+          "path": "species/06-intelligence.md"
+        },
+        {
+          "id": "species-07",
+          "title": "种族谱系与演化",
+          "titleEn": "Lineages & Evolution",
+          "path": "species/07-lineage.md"
+        },
+        {
+          "id": "species-08",
+          "title": "种族与文明的关系",
+          "titleEn": "Species & Civilization",
+          "path": "species/08-civ.md"
+        },
+        {
+          "id": "species-09",
+          "title": "经典种族与原创种族",
+          "titleEn": "Classic & Original Races",
+          "path": "species/09-classic.md"
+        },
+        {
+          "id": "species-10",
+          "title": "生态位设计与生物多样性",
+          "titleEn": "Niches & Biodiversity",
+          "path": "species/10-niche.md"
+        },
+        {
+          "id": "species-11",
+          "title": "幻想生物设计",
+          "titleEn": "Fictional Creature Design",
+          "path": "species/11-creature.md"
+        },
+        {
+          "id": "species-12",
+          "title": "神话原型与民间传说",
+          "titleEn": "Mythic Archetypes & Folklore",
+          "path": "species/12-myth.md"
+        },
+        {
+          "id": "species-13",
+          "title": "种族构建方法论与一致性总检",
+          "titleEn": "Species Methodology & Consistency Checklist",
+          "path": "species/13-methodology.md"
+        }
+      ]
+    },
+    {
+      "id": "history",
+      "title": "历史",
+      "titleEn": "History",
+      "description": "纪元、时间轴与历史推演方法",
+      "descriptionEn": "Eras, timelines and historical simulation methods",
+      "docs": [
+        {
+          "id": "hist-01-overview",
+          "title": "历史构建总流程",
+          "titleEn": "History Building Overview",
+          "path": "history/01-overview.md"
+        },
+        {
+          "id": "hist-02-slice",
+          "title": "历史切片: 前推与后推",
+          "titleEn": "History Slice: Retro & Forward Projection",
+          "path": "history/02-slice.md"
+        },
+        {
+          "id": "hist-03-chronology",
+          "title": "历史时间与年代学",
+          "titleEn": "Historical Time & Chronology",
+          "path": "history/03-chronology.md"
+        },
+        {
+          "id": "hist-04-philosophy",
+          "title": "历史哲学与认识论",
+          "titleEn": "Philosophy of History",
+          "path": "history/04-philosophy.md"
+        },
+        {
+          "id": "hist-05-drivers",
+          "title": "历史变迁的驱动力",
+          "titleEn": "Drivers of Historical Change",
+          "path": "history/05-drivers.md"
+        },
+        {
+          "id": "hist-06-cycles",
+          "title": "历史周期理论",
+          "titleEn": "Historical Cycle Theory",
+          "path": "history/06-cycles.md"
+        },
+        {
+          "id": "hist-07-counterfactual",
+          "title": "反事实历史与分岔点",
+          "titleEn": "Counterfactual History & Branch Points",
+          "path": "history/07-counterfactual.md"
+        },
+        {
+          "id": "hist-08-archaeology",
+          "title": "考古学与历史重建",
+          "titleEn": "Archaeology & Historical Reconstruction",
+          "path": "history/08-archaeology.md"
+        },
+        {
+          "id": "hist-09-demography",
+          "title": "历史人口学与迁徙",
+          "titleEn": "Historical Demography & Migration",
+          "path": "history/09-demography.md"
+        },
+        {
+          "id": "hist-10-institutional",
+          "title": "制度变迁与路径依赖",
+          "titleEn": "Institutional Change & Path Dependence",
+          "path": "history/10-institutional.md"
+        },
+        {
+          "id": "hist-11-bighistory",
+          "title": "大历史与深时历史",
+          "titleEn": "Big History & Deep History",
+          "path": "history/11-bighistory.md"
+        },
+        {
+          "id": "hist-12-narrative",
+          "title": "历史书写与叙事构建",
+          "titleEn": "Historical Writing & Narrative",
+          "path": "history/12-narrative.md"
+        },
+        {
+          "id": "hist-13-methodology",
+          "title": "历史构建方法论",
+          "titleEn": "History Building Methodology",
+          "path": "history/13-methodology.md"
+        }
+      ]
+    }
+  ]
+}

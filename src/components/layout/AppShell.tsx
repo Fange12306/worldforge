@@ -34,11 +34,12 @@ import { CommandPalette } from "@/components/chat/CommandPalette";
 import { ConsistencyReport } from "@/components/chat/ConsistencyReport";
 import { TimelinePanel } from "@/components/timeline/TimelinePanel";
 import { SimulationPanel } from "@/components/simulation/SimulationPanel";
+import { KnowledgeBasePanel } from "@/components/knowledge/KnowledgeBasePanel";
 import { createLLMBindings, type LLMBindings } from "@/lib/simulation/llm";
 import { PanelLeftOpen, PanelRightOpen, Save, X, Edit3, Trash2, Clock, Hash, ChevronDown, ChevronRight } from "lucide-react";
 import type { Entry, ChapterInfo } from "@/lib/types";
 
-type CenterView = null | { type: "entry"; entry: Entry; editing: boolean } | { type: "outline"; chapterOrder: number; chapterId?: string; title: string; content: string; editing: boolean } | { type: "file"; fileName: string; content: string } | { type: "memory"; fileName: string; content: string } | { type: "timeline"; initialEventId?: string; initialTimelineId?: string } | { type: "simulation" };
+type CenterView = null | { type: "entry"; entry: Entry; editing: boolean } | { type: "outline"; chapterOrder: number; chapterId?: string; title: string; content: string; editing: boolean } | { type: "file"; fileName: string; content: string } | { type: "memory"; fileName: string; content: string } | { type: "timeline"; initialEventId?: string; initialTimelineId?: string } | { type: "simulation" } | { type: "knowledge" };
 
 export function AppShell() {
   const { t } = useT();
@@ -95,7 +96,7 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    (window as any).__worldforge = { openSettings: () => setSettingsOpen(true), openPalette: () => setPaletteOpen(true), openTimeline: () => setCenterView({ type: "timeline" }), openSimulation: () => setCenterView({ type: "simulation" }) };
+    (window as any).__worldforge = { openSettings: () => setSettingsOpen(true), openPalette: () => setPaletteOpen(true), openTimeline: () => setCenterView({ type: "timeline" }), openSimulation: () => setCenterView({ type: "simulation" }), openKnowledgeBase: () => setCenterView({ type: "knowledge" }) };
     invoke<{ provider: string; models: ModelConfig[]; activeModel?: string }>("load_config").then((cfg) => {
       if (cfg.provider) useStore.getState().setLlmProvider(cfg.provider);
       if (cfg.models?.length) {
@@ -270,6 +271,9 @@ function DetailView({ view, onBack, onUpdate, activeWorldId, activeConversationI
 }) {
   const { t } = useT();
   const w = worlds.find((x) => x.id === activeWorldId);
+  if (view.type === "knowledge") {
+    return <KnowledgeBasePanel onClose={onBack} />;
+  }
   if (view.type === "simulation") {
     if (!w) return null;
     return (

@@ -7,6 +7,18 @@
       "runtimeArgs": ["-m", "http.server", "8001", "--bind", "127.0.0.1"],
       "port": 8001,
       "cwd": "/Users/wangyufan/WorldForge/map-prototype"
+    },
+    {
+      "name": "web-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 1420
+    },
+    {
+      "name": "web-dev-verify",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "1421", "--strictPort"],
+      "port": 1421
     }
   ]
 }

@@ -716,11 +716,34 @@ export async function completeInitialState(
         }
       }
     }
-    // 绑定回填: 实体 → 最细子区划（regionId 只指向已存在区域）
+    // 绑定回填: 实体 → 最细子区划。
+    // 校验: ① regionId 必须存在; ② **regionId 的顶层必须等于实体的 topRegionId**
+    //（防跨大陆错绑——LLM 曾把 top=continent-c 的实体绑到 continent-a 的子区划）
     const validSubIds = new Set([...topRegions.map((r) => r.id), ...subregions.map((r) => r.id)]);
+    const topOfSub = new Map<string, string>(); // 子区划 id → 顶层 id
+    const findTop = (id: string): string => {
+      let cur = id, guard = new Set<string>();
+      while (topOfSub.has(cur)) return topOfSub.get(cur)!;
+      while (cur && validSubIds.has(cur) && !guard.has(cur)) {
+        guard.add(cur);
+        const r = subregions.find((x) => x.id === cur) ?? topRegions.find((x) => x.id === cur);
+        if (!r || !r.parent) { topOfSub.set(id, cur); return cur; }
+        cur = r.parent;
+      }
+      topOfSub.set(id, cur);
+      return cur;
+    };
     for (const e of entities) {
       const rid = bindMap.get(e.name);
-      if (rid && validSubIds.has(rid)) e.regionId = rid;
+      if (!rid || !validSubIds.has(rid)) continue;
+      // 归属校验: 绑定区域的顶层必须与实体的 topRegionId 一致
+      const boundTop = findTop(rid);
+      const expectTop = e.topRegionId;
+      if (expectTop && boundTop !== expectTop) {
+        // 跨顶层错绑 → 丢弃该绑定(由 initialStateToSession 的 topRegionId 兜底重新绑定)
+        continue;
+      }
+      e.regionId = rid;
     }
   }
   // 合并区域树: 顶层 + 聚焦子区划

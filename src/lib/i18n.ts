@@ -333,6 +333,17 @@ const zh = {
     deleteStory: "删除故事",
     selectConversation: "选择一个故事下的对话",
     expandStoryNewConv: "在左侧栏展开故事，点击 + 新建对话",
+    knowledgeBase: "知识库",
+  },
+
+  // Knowledge base (read-only reference panel)
+  knowledge: {
+    title: "知识库",
+    loading: "加载中...",
+    loadFailed: "加载失败",
+    noDocs: "暂无文档",
+    emptyHint: "文档内容将分模块添加",
+    readonly: "只读参考 · 随应用内置 · 所有世界共享",
   },
 
   // Labels (single-word category labels used in breadcrumbs, detail views)
@@ -839,6 +850,17 @@ const en: typeof zh = {
     deleteStory: "Delete Story",
     selectConversation: "Select a conversation under a story",
     expandStoryNewConv: "Expand a story in the sidebar, click + to start a new conversation",
+    knowledgeBase: "Knowledge Base",
+  },
+
+  // Knowledge base (read-only reference panel)
+  knowledge: {
+    title: "Knowledge Base",
+    loading: "Loading...",
+    loadFailed: "Failed to load",
+    noDocs: "No documents yet",
+    emptyHint: "Documents will be added module by module",
+    readonly: "Read-only reference · Built into the app · Shared by all worlds",
   },
 
   // Labels

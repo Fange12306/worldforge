@@ -11,6 +11,7 @@ import {
   FolderOpen,
   FilePlus,
   Clock,
+  BookOpen,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarToggle } from "./SidebarToggle";
@@ -183,7 +184,14 @@ export function Sidebar() {
           </div>
         </div>
 
-        <div className="p-2 flex-shrink-0">
+        <div className="p-2 flex-shrink-0 space-y-0.5">
+          <button
+            onClick={() => (window as any).__worldforge?.openKnowledgeBase()}
+            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-muted hover:text-ink hover:bg-surface-800 rounded-md transition-colors"
+          >
+            <BookOpen className="w-3.5 h-3.5" />
+            {t.sidebar.knowledgeBase}
+          </button>
           <UserProfileFooter />
         </div>
       </div>
@@ -304,6 +312,13 @@ export function Sidebar() {
         >
           <Clock className="w-3.5 h-3.5" />
           {t.sidebar.timeline}
+        </button>
+        <button
+          onClick={() => (window as any).__worldforge?.openKnowledgeBase()}
+          className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-ink-muted hover:text-ink hover:bg-surface-800 rounded-md transition-colors"
+        >
+          <BookOpen className="w-3.5 h-3.5" />
+          {t.sidebar.knowledgeBase}
         </button>
         <button
           data-confirm

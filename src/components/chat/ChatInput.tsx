@@ -1,15 +1,16 @@
 import { useState, useEffect, useRef, useCallback, type KeyboardEvent } from "react";
-import { useStore, type Message, type ToolCall, type TimelineBlock, type UploadedFile } from "@/lib/store";
+import { useStore, type Message, type ToolCall, type UploadedFile } from "@/lib/store";
 import { invoke } from "@/lib/api";
-import { runAgentLoop, resetPermissions, type AgentMessage } from "@/lib/agent-loop";
+import { runAgentLoop, resetPermissions, beginStreamSession, abortActiveStream, isSessionAborted, type AgentMessage } from "@/lib/agent-loop";
 import { buildSystemPrompt } from "@/lib/system-prompt";
 import { buildModelMessages } from "@/lib/model-context";
 import { pruneToolOutputs } from "@/lib/prune-tool-outputs";
 import { appendSessionMessage, rewriteSessionMessages, messagesToSessionLines } from "@/lib/session-writer";
 import { ArrowUp, Square, X, Paperclip, Loader2 } from "lucide-react";
 import { InlinePermission } from "./PermissionDialog";
+import { AskUserQuestions } from "./AskUserQuestions";
 import { ContextRing } from "./ContextRing";
-import type { PermissionChoice } from "@/lib/agent-loop";
+import type { PermissionChoice, UserQuestion, AskUserResult } from "@/lib/agent-loop";
 import type { Entry } from "@/lib/types";
 import { useT, getT } from "@/lib/i18n";
 
@@ -18,25 +19,81 @@ export function ChatInput({ storyId }: { storyId: string }) {
   const [pendingUploads, setPendingUploads] = useState<string[]>([]);
   const [uploadErrors, setUploadErrors] = useState<string[]>([]);
   const [permission, setPermission] = useState<null | { toolName: string; details: string; callback: (c: PermissionChoice) => void }>(null);
+  const permissionRef = useRef<null | { callback: (c: PermissionChoice) => void }>(null);
+  const [askUser, setAskUser] = useState<null | {
+    convId: string;
+    questions: UserQuestion[];
+    callback: (answers: AskUserResult[]) => void;
+  }>(null);
+  const askUserRef = useRef<null | {
+    convId: string;
+    questions: UserQuestion[];
+    callback: (answers: AskUserResult[]) => void;
+  }>(null);
   const [newEntryForm, setNewEntryForm] = useState(false);
   const [newEntryName, setNewEntryName] = useState("");
   const [newEntryType, setNewEntryType] = useState("character");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef = useRef(false);
-  const streamStateRef = useRef({ text: "", thinking: "", toolCalls: [] as ToolCall[] });
-  const turnTextRef = useRef("");
-  const turnThinkingRef = useRef("");
-  const turnToolCallsRef = useRef<ToolCall[]>([]);
+  // Per-loop accumulation: each agent loop (one API call) becomes its own
+  // assistant message, so the partial content is tracked per loop, not merged
+  // across the whole turn.
+  const loopTextRef = useRef("");
+  const loopThinkingRef = useRef("");
+  const loopToolCallsRef = useRef<ToolCall[]>([]);
   const handleSendRef = useRef<() => Promise<void>>(async () => {});
 
   // Listen for permission requests
   useEffect(() => {
     const handler = (e: Event) => {
       const d = (e as CustomEvent).detail;
-      setPermission({ toolName: d.toolName, details: d.details, callback: d.callback });
+      const p = { toolName: d.toolName, details: d.details, callback: d.callback };
+      permissionRef.current = p;
+      setPermission(p);
     };
     window.addEventListener("worldforge-permission", handler);
     return () => window.removeEventListener("worldforge-permission", handler);
+  }, []);
+
+  // Listen for clarification questions (AskUserQuestion tool). The agent loop
+  // blocks until the callback is invoked with the user's answers.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      const next = {
+        convId: useStore.getState().streamingConversationId || "",
+        questions: d.questions as UserQuestion[],
+        callback: d.callback as (answers: AskUserResult[]) => void,
+      };
+      // Defensive: if a previous question set is somehow still pending,
+      // resolve it as all-skipped so the agent loop never deadlocks.
+      const prev = askUserRef.current;
+      if (prev && prev !== next) {
+        prev.callback(prev.questions.map(() => ({ answer: "", custom: false, skipped: true })));
+      }
+      askUserRef.current = next;
+      setAskUser(next);
+    };
+    window.addEventListener("worldforge-ask-user", handler);
+    return () => window.removeEventListener("worldforge-ask-user", handler);
+  }, []);
+
+  // If ChatInput unmounts (settings/detail view replaces the chat) while the
+  // agent loop is still waiting on user input, resolve it so the background
+  // loop can unwind instead of deadlocking: pending questions → all-skipped,
+  // pending permission prompt → deny.
+  useEffect(() => {
+    return () => {
+      const cur = askUserRef.current;
+      if (cur) {
+        cur.callback(cur.questions.map(() => ({ answer: "", custom: false, skipped: true })));
+        askUserRef.current = null;
+      }
+      const perm = permissionRef.current;
+      if (perm) {
+        perm.callback("deny");
+        permissionRef.current = null;
+      }
+    };
   }, []);
 
   const worlds = useStore((s) => s.worlds);
@@ -58,7 +115,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
   const addStreamToolCall = useStore((s) => s.addStreamToolCall);
   const setIsThinking = useStore((s) => s.setIsThinking);
   const setIsToolRunning = useStore((s) => s.setIsToolRunning);
-  const updateStreamToolResult = useStore((s) => s.updateStreamToolResult);
+  const updateMessageToolResult = useStore((s) => s.updateMessageToolResult);
   const clearStreamText = useStore((s) => s.clearStreamText);
   const conversationFiles = useStore((s) => s.conversationFiles);
   const setConversationFiles = useStore((s) => s.setConversationFiles);
@@ -375,34 +432,35 @@ export function ChatInput({ storyId }: { storyId: string }) {
 
     setStreaming(true, convId);
     clearStreamText();
-    abortRef.current = false;
+    const session = beginStreamSession();
     resetPermissions(convId);
-    let finalContent = "";
-    let thinkingContent = "";
-    turnTextRef.current = "";
-    turnThinkingRef.current = "";
-    turnToolCallsRef.current = [];
-    const toolCalls: ToolCall[] = [];
-    const timeline: TimelineBlock[] = [];
-    let prevBlock: TimelineBlock | null = null;
-    streamStateRef.current = { text: "", thinking: "", toolCalls: [] };
+    loopTextRef.current = "";
+    loopThinkingRef.current = "";
+    loopToolCallsRef.current = [];
 
-    const flushTurnText = () => {
-      const text = turnTextRef.current;
-      const thinking = turnThinkingRef.current.trim() || undefined;
-      const tc = turnToolCallsRef.current;
-      if (text.trim() || thinking) {
+    // Persist the current loop's partial (text/thinking/tool calls) as its own
+    // assistant message, then reset for the next loop. With `stopped`, appends
+    // the "已取消" suffix and falls back to the store's live stream state (the
+    // refs may be empty if ChatInput remounted mid-turn).
+    const flushLoop = (opts?: { stopped?: boolean }) => {
+      const s = useStore.getState();
+      const text = loopTextRef.current || (opts?.stopped ? s.streamText : "");
+      const thinking = (loopThinkingRef.current || (opts?.stopped ? s.streamThinking : "")).trim() || undefined;
+      const tc = loopToolCallsRef.current.length > 0 ? loopToolCallsRef.current : (opts?.stopped ? s.streamToolCalls : []);
+      const content = opts?.stopped ? `${text} ${t.chat.stopped}`.trim() : text;
+      if (content.trim() || thinking || tc.length > 0) {
         addMessage(storyId, {
           role: "assistant",
-          content: text,
+          content,
           thinking,
           toolCalls: tc.length > 0 ? [...tc] : undefined,
         }, convId);
-        appendSessionMessage(world.path, convId, { type: "assistant", content: text, thinking: thinking || null, timestamp: new Date().toISOString() }).catch(() => {});
+        appendSessionMessage(world.path, convId, { type: "assistant", content, thinking: thinking || null, timestamp: new Date().toISOString() }).catch(() => {});
       }
-      turnTextRef.current = "";
-      turnThinkingRef.current = "";
-      turnToolCallsRef.current = [];
+      loopTextRef.current = "";
+      loopThinkingRef.current = "";
+      loopToolCallsRef.current = [];
+      clearStreamText();
     };
 
     try {
@@ -414,37 +472,26 @@ export function ChatInput({ storyId }: { storyId: string }) {
       const baseUrl = currentProvider?.baseUrl;
 
       await runAgentLoop(world.path, systemPrompt, prunedHistory, {
-        onTextDelta: (t) => { if (abortRef.current) return; appendStreamText(t); finalContent += t; turnTextRef.current += t; streamStateRef.current.text = finalContent;
+        onTextDelta: (t) => { if (isSessionAborted(session)) return; appendStreamText(t); loopTextRef.current += t;
           setIsThinking(false); setIsToolRunning(false);
-          if (prevBlock?.type === "text") { prevBlock.text += t; }
-          else { const b: TimelineBlock = { type: "text", text: t }; timeline.push(b); prevBlock = b; }
         },
-        onThinkingDelta: (t) => { if (abortRef.current) return; thinkingContent += t; turnThinkingRef.current += t; appendStreamThinking(t); streamStateRef.current.thinking = thinkingContent;
+        onThinkingDelta: (t) => { if (isSessionAborted(session)) return; loopThinkingRef.current += t; appendStreamThinking(t);
           setIsThinking(true); setIsToolRunning(false);
-          if (prevBlock?.type === "thinking") { prevBlock.text += t; }
-          else { const b: TimelineBlock = { type: "thinking", text: t }; timeline.push(b); prevBlock = b; }
         },
         onThinkingDone: () => {},
         onToolUse: (id, name, input) => {
-          if (abortRef.current) return;
+          if (isSessionAborted(session)) return;
           const tc: ToolCall = { id, name, input: input || {}, result: "" };
-          toolCalls.push(tc);
-          turnToolCallsRef.current = [...turnToolCallsRef.current, tc];
-          streamStateRef.current.toolCalls = [...toolCalls];
+          loopToolCallsRef.current = [...loopToolCallsRef.current, tc];
           addStreamToolCall(tc);
           appendSessionMessage(world.path, convId, { type: "tool_use", id, tool: name, input: input || {}, timestamp: new Date().toISOString() }).catch(() => {});
           setIsThinking(false); setIsToolRunning(true);
-          const b: TimelineBlock = { type: "tool", call: tc }; timeline.push(b); prevBlock = b;
         },
         onToolResult: (result, toolName) => {
-          if (abortRef.current) return;
-          let tc = toolCalls.find((c) => c.id === result.toolUseId);
-          if (!tc && toolName) {
-            const matching = toolCalls.filter((c) => c.name === toolName && !c.result);
-            tc = matching[matching.length - 1];
-          }
-          if (tc) tc.result = result.content;
-          updateStreamToolResult(result.toolUseId, result.content);
+          if (isSessionAborted(session)) return;
+          // The loop's message is already persisted (flushed at onLoopEnd) — stream
+          // the result into its tool call entry so the loop bubble updates live.
+          updateMessageToolResult(storyId, convId, result.toolUseId, result.content);
           appendSessionMessage(world.path, convId, { type: "tool_result", tool: toolName || result.toolName || "", tool_use_id: result.toolUseId, output: result.content, timestamp: new Date().toISOString() }).catch(() => {});
           // Persist tool result in conversation so next API call includes full history
           addMessage(storyId, { role: "system", content: `[工具结果: ${toolName || result.toolName || "tool"}]\n${result.content}` }, convId);
@@ -453,15 +500,24 @@ export function ChatInput({ storyId }: { storyId: string }) {
             window.dispatchEvent(new CustomEvent("worldforge-data-changed"));
           }
         },
-        onComplete: (text, thinking) => {
-          if (abortRef.current) return; // Already saved by stop button
-          flushTurnText();
+        // Loop boundary: this loop's stream is done — persist it as its own
+        // message and reset the live-stream state for the next loop.
+        onLoopEnd: () => {
+          if (isSessionAborted(session)) return;
+          flushLoop();
+        },
+        onComplete: () => {
+          if (isSessionAborted(session)) return; // Already saved by stop button
+          flushLoop(); // safety net — the final loop was already flushed at onLoopEnd
           setStreaming(false);
           clearStreamText();
         },
         onError: (error) => {
+          // A stop already saved the partial turn — never clobber it with an
+          // error message after the fact.
+          if (isSessionAborted(session)) return;
+          flushLoop();
           setStreaming(false);
-          flushTurnText();
           const msg = error.includes("发送请求") || error.includes("error sending request") || error.includes("连接")
             ? t.chat.networkError
             : error.includes("API Key") || error.includes("未配置")
@@ -473,14 +529,25 @@ export function ChatInput({ storyId }: { storyId: string }) {
           }
           clearStreamText();
         },
-      }, llmProvider, activeModel, storyId, reasoningEffort, convId, maxTokens, abortRef, thinkingStyle, baseUrl);
+      }, llmProvider, activeModel, storyId, reasoningEffort, convId, maxTokens, session, thinkingStyle, baseUrl);
     } catch (e: any) {
       setStreaming(false);
-      if (!abortRef.current) addMessage(storyId, { role: "assistant", content: `Error: ${e}` }, convId);
+      if (!isSessionAborted(session)) addMessage(storyId, { role: "assistant", content: `Error: ${e}` }, convId);
       clearStreamText();
     }
   };
   handleSendRef.current = handleSend;
+
+  // Called when the clarification panel finishes (all questions answered or
+  // skipped/cancelled). Hands the answers back to the blocked agent loop.
+  const handleAskUserDone = (answers: AskUserResult[]) => {
+    const cur = askUserRef.current;
+    if (cur) {
+      cur.callback(answers);
+      askUserRef.current = null;
+    }
+    setAskUser(null);
+  };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
@@ -496,8 +563,8 @@ export function ChatInput({ storyId }: { storyId: string }) {
           <InlinePermission
             toolName={permission.toolName}
             details={permission.details}
-            onChoose={(c) => { permission.callback(c); setPermission(null); }}
-            onDismiss={() => { permission.callback("deny"); setPermission(null); }}
+            onChoose={(c) => { permission.callback(c); permissionRef.current = null; setPermission(null); }}
+            onDismiss={() => { permission.callback("deny"); permissionRef.current = null; setPermission(null); }}
           />
         )}
         {/* New entry form */}
@@ -576,6 +643,13 @@ export function ChatInput({ storyId }: { storyId: string }) {
             ))}
           </div>
         )}
+        {/* Clarification questions — pops up from the input box, one at a time */}
+        {askUser && isStreamingHere && askUser.convId === activeConversationId && (
+          <AskUserQuestions
+            questions={askUser.questions}
+            onSubmit={handleAskUserDone}
+          />
+        )}
         <div className="bg-surface-800 rounded-2xl px-4 py-2">
           <textarea
             ref={textareaRef}
@@ -615,22 +689,38 @@ export function ChatInput({ storyId }: { storyId: string }) {
             )}
             {isStreamingHere ? (
               <button onClick={() => {
-                  abortRef.current = true;
+                  abortActiveStream();
                   const scid = useStore.getState().streamingConversationId;
                   if (scid) invoke("cancel_stream", { conversationId: scid }).catch(() => {});
                   if (scid !== activeConversationId) return;
-                  const thinking = turnThinkingRef.current.trim() || undefined;
-                  const tc = turnToolCallsRef.current;
-                  if (scid) addMessage(storyId, {
-                    role: "assistant",
-                    content: turnTextRef.current + ` ${t.chat.stopped}`,
-                    thinking,
-                    toolCalls: tc.length > 0 ? [...tc] : undefined,
-                  }, scid);
-                  if (world && scid) appendSessionMessage(world.path, scid, { type: "assistant", content: turnTextRef.current + ` ${t.chat.stopped}`, thinking: thinking || null, timestamp: new Date().toISOString() }).catch(() => {});
-                  turnTextRef.current = "";
-                  turnThinkingRef.current = "";
-                  turnToolCallsRef.current = [];
+                  // Persist the current (incomplete) loop with the "已取消"
+                  // suffix. Completed loops were already flushed at their own
+                  // onLoopEnd. The store's live stream state is the fallback
+                  // when the refs are empty (ChatInput remounted mid-turn).
+                  const s = useStore.getState();
+                  const text = loopTextRef.current || s.streamText;
+                  const thinking = (loopThinkingRef.current || s.streamThinking).trim() || undefined;
+                  const tc = loopToolCallsRef.current.length > 0 ? loopToolCallsRef.current : s.streamToolCalls;
+                  const finalContent = `${text} ${t.chat.stopped}`.trim();
+                  if (finalContent.trim() || thinking || tc.length > 0) {
+                    if (scid) addMessage(storyId, {
+                      role: "assistant",
+                      content: finalContent,
+                      thinking,
+                      toolCalls: tc.length > 0 ? [...tc] : undefined,
+                    }, scid);
+                    if (world && scid) appendSessionMessage(world.path, scid, { type: "assistant", content: finalContent, thinking: thinking || null, timestamp: new Date().toISOString() }).catch(() => {});
+                  }
+                  // Auto-deny any pending permission prompt so a blocked agent
+                  // loop can unwind instead of hanging after the stop.
+                  if (permissionRef.current) {
+                    permissionRef.current.callback("deny");
+                    permissionRef.current = null;
+                    setPermission(null);
+                  }
+                  loopTextRef.current = "";
+                  loopThinkingRef.current = "";
+                  loopToolCallsRef.current = [];
                   setStreaming(false);
                   clearStreamText();
                 }}

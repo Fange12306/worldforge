@@ -210,6 +210,17 @@ const zh = {
     compressNow: "立即压缩",
     modeAsk: "询问",
     modeEdit: "编辑",
+
+    // Clarification questions (AskUserQuestion tool)
+    askUser: {
+      title: "Agent 提问",
+      progress: (cur: number, total: number) => `问题 ${cur}/${total}`,
+      customPlaceholder: "输入自定义回答...",
+      submit: "回答",
+      skip: "跳过此问题",
+      cancel: "取消提问",
+      hint: "选择一个选项，或在下方输入自定义回答",
+    },
   },
 
   // Command palette
@@ -731,6 +742,17 @@ const en: typeof zh = {
     compressNow: "Compress now",
     modeAsk: "Ask",
     modeEdit: "Edit",
+
+    // Clarification questions (AskUserQuestion tool)
+    askUser: {
+      title: "Agent question",
+      progress: (cur: number, total: number) => `Question ${cur}/${total}`,
+      customPlaceholder: "Type a custom answer...",
+      submit: "Answer",
+      skip: "Skip this question",
+      cancel: "Cancel questions",
+      hint: "Pick an option, or type a custom answer below",
+    },
   },
 
   commands: {

@@ -2,7 +2,7 @@ import { memo, useState } from "react";
 import { useStore, type Message } from "@/lib/store";
 import { useT } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
-import { User, FileText, Copy, Check, RefreshCw, Pencil } from "lucide-react";
+import { User, FileText, Copy, Check, RefreshCw, Pencil, ChevronDown } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { WorldForgeLogo } from "@/components/brand/WorldForgeLogo";
 
@@ -15,13 +15,21 @@ type BubbleProps = {
   isThinking?: boolean;
   isToolRunning?: boolean;
   globalStreaming?: boolean;
+  /** Show the assistant avatar. False for continuation loops of the same turn
+   *  so one turn renders a single avatar (stable during and after streaming). */
+  showAvatar?: boolean;
+  /** True only for the LAST loop of a turn — the copy button is shown there
+   *  (copying the whole turn) instead of under every loop. */
+  isTurnLast?: boolean;
+  /** Full concatenated text of the turn (for the last-loop copy button). */
+  copyText?: string;
 };
 
 export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
   const { t } = useT();
   const avatar = useStore(s => s.avatar);
   const username = useStore(s => s.username);
-  const { message, isStreaming, isLastUser, theme, streamThinking = "", isThinking = false, isToolRunning = false, globalStreaming = false } = props;
+  const { message, isStreaming, isLastUser, theme, streamThinking = "", isThinking = false, isToolRunning = false, globalStreaming = false, showAvatar = true, isTurnLast = false, copyText = "" } = props;
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
@@ -31,7 +39,9 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
   const thinking = message.thinking || (isStreaming ? streamThinking : "");
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(message.content).then(() => {
+    // copyText (whole turn) when this is the last loop of a turn, otherwise the
+    // message's own content (user bubbles).
+    navigator.clipboard.writeText(copyText || message.content).then(() => {
       setCopied(true); setTimeout(() => setCopied(false), 1500);
     });
   };
@@ -56,6 +66,10 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
             <User className="w-5 h-5 text-ink-secondary" />
           )}
         </span>
+      ) : showAvatar === false ? (
+        // Continuation loop of the same turn: keep the content column aligned
+        // with the first loop's bubble, without repeating the avatar.
+        <span className="flex-shrink-0 w-10" />
       ) : (
         <span className="flex-shrink-0 w-10 h-10 rounded-full bg-surface-800 border border-edge flex items-center justify-center overflow-hidden">
           <WorldForgeLogo className="w-16 h-16 max-w-none translate-y-0.5" />
@@ -70,16 +84,16 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
             </div>
             {!globalStreaming && message.content && (
               <div className="flex items-center gap-2 mt-1.5 self-end">
-                <button onClick={handleCopy} className="text-[0.625rem] text-ink-muted/50 hover:text-ink-muted transition-colors">
+                <button onClick={handleCopy} className="text-[0.625rem] text-ink-secondary hover:text-ink transition-colors">
                   {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 </button>
                 {isLastUser && (
-                  <button onClick={handleRetry} className="text-[0.625rem] text-ink-muted/50 hover:text-ink-muted transition-colors" title={t.layout.retry}>
+                  <button onClick={handleRetry} className="text-[0.625rem] text-ink-secondary hover:text-ink transition-colors" title={t.layout.retry}>
                     <RefreshCw className={cn("w-3 h-3", retrying && "animate-spin")} />
                   </button>
                 )}
                 {isLastUser && (
-                  <button onClick={handleEditRetry} className="text-[0.625rem] text-ink-muted/50 hover:text-ink-muted transition-colors" title={t.layout.editRetry}>
+                  <button onClick={handleEditRetry} className="text-[0.625rem] text-ink-secondary hover:text-ink transition-colors" title={t.layout.editRetry}>
                     <Pencil className="w-3 h-3" />
                   </button>
                 )}
@@ -111,8 +125,9 @@ export const MessageBubble = memo(function MessageBubble(props: BubbleProps) {
                 <MarkdownContent content={message.content} isStreaming={isStreaming} />
               </div>
             )}
-            {!globalStreaming && isAssistant && message.content && (
-              <button onClick={handleCopy} className="text-[0.625rem] text-ink-muted/50 hover:text-ink-muted transition-colors mt-1.5">
+            {/* Copy button only on the LAST loop of a turn (copies the whole turn) */}
+            {!globalStreaming && isAssistant && isTurnLast && (copyText || message.content) && (
+              <button onClick={handleCopy} className="text-[0.625rem] text-ink-secondary hover:text-ink transition-colors mt-1.5">
                 {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
               </button>
             )}
@@ -140,11 +155,19 @@ function UserContent({ content }: { content: string }) {
 
 function ThinkingBlock({ text, expanded, active, onToggle }: { text: string; expanded: boolean; active?: boolean; onToggle: () => void }) {
   return (
-    <div>
-      <button onClick={onToggle} className="text-[0.688rem] text-ink-muted hover:text-ink-secondary transition-colors">
-        <span className={cn("inline-block w-1.5 h-1.5 rounded-full bg-current mr-1", active ? "pulse-dot" : "")} />Thinking
+    <div className="rounded-lg border border-surface-700/70 bg-surface-900/70 px-3 py-2">
+      <button onClick={onToggle} className="flex items-center gap-1 text-[0.688rem] text-ink-muted hover:text-ink-secondary transition-colors">
+        <span className={cn("inline-block w-1.5 h-1.5 rounded-full bg-current", active ? "pulse-dot" : "")} />
+        Thinking
+        <ChevronDown className={cn("w-3 h-3 transition-transform", expanded && "rotate-180")} />
       </button>
-      {expanded && <p className="text-[0.688rem] text-ink-muted whitespace-pre-wrap font-sans leading-relaxed pl-2 mt-0.5">{text}</p>}
+      {/* Default: 3-line preview inside the box; expanded: full content */}
+      <div className={cn(
+        "text-[0.688rem] text-ink-muted whitespace-pre-wrap font-sans leading-relaxed mt-1",
+        !expanded && "line-clamp-3"
+      )}>
+        {text}
+      </div>
     </div>
   );
 }
@@ -153,32 +176,38 @@ function ToolCallsSummary({ calls, expanded, active, onToggle }: { calls: NonNul
   // Count unique tool TYPES (not invocations) per user's request
   const uniqueTypes = new Set(calls.map((c) => c.name));
 
+  // Default: first 3 calls as a preview inside the box; expanded: all calls.
+  const visible = expanded ? calls : calls.slice(0, 3);
+  const more = calls.length - visible.length;
+
   return (
-    <div>
-      <button onClick={onToggle} className="text-[0.688rem] text-ink-muted hover:text-ink-secondary transition-colors text-left">
-        <span className={cn("inline-block w-1.5 h-1.5 rounded-full bg-current mr-1 align-middle", active ? "pulse-dot" : "")} />
+    <div className="rounded-lg border border-surface-700/70 bg-surface-900/70 px-3 py-2">
+      <button onClick={onToggle} className="flex items-center gap-1 text-[0.688rem] text-ink-muted hover:text-ink-secondary transition-colors">
+        <span className={cn("inline-block w-1.5 h-1.5 rounded-full bg-current", active ? "pulse-dot" : "")} />
         {uniqueTypes.size === 1
           ? `${calls.length} ${calls[0].name}`
           : `${uniqueTypes.size} tools used`}
+        <ChevronDown className={cn("w-3 h-3 transition-transform", expanded && "rotate-180")} />
       </button>
-      {expanded && (
-        <div className="mt-1 space-y-0.5 pl-2 border-l border-surface-700/50">
-          {calls.map((c, i) => {
-            const input = c.input as Record<string, unknown> | undefined;
-            const hint = input?.query || input?.entry_id || input?.chapter_id || input?.id || input?.order || input?.pattern || input?.path || input?.name || input?.url || input?.file_name || "";
-            const resultPreview = c.result
-              ? c.result.slice(0, 100).replace(/\n/g, " ").trim()
-              : "";
-            return (
-              <div key={i} className="text-[0.688rem] text-ink-muted/70 flex gap-1.5 items-start">
-                <span className="flex-shrink-0 font-medium text-ink-muted/50">{c.name}</span>
-                {hint && <span className="truncate">{String(hint)}</span>}
-                {resultPreview && <span className="text-ink-muted/40 hidden sm:inline">→ {resultPreview}</span>}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div className="mt-1 space-y-0.5">
+        {visible.map((c, i) => {
+          const input = c.input as Record<string, unknown> | undefined;
+          const hint = input?.query || input?.entry_id || input?.chapter_id || input?.id || input?.order || input?.pattern || input?.path || input?.name || input?.url || input?.file_name || "";
+          const resultPreview = c.result
+            ? c.result.slice(0, 100).replace(/\n/g, " ").trim()
+            : "";
+          return (
+            <div key={i} className="text-[0.688rem] text-ink-muted leading-relaxed flex gap-1.5 items-start">
+              <span className="flex-shrink-0">{c.name}</span>
+              {hint && <span className="truncate">{String(hint)}</span>}
+              {expanded && resultPreview && <span className="opacity-60 hidden sm:inline">→ {resultPreview}</span>}
+            </div>
+          );
+        })}
+        {!expanded && more > 0 && (
+          <div className="text-[0.688rem] text-ink-muted opacity-60">+{more} more</div>
+        )}
+      </div>
     </div>
   );
 }

@@ -129,6 +129,7 @@ type AppStore = {
   // Messages
   addMessage: (storyId: string, msg: Omit<Message, "id" | "timestamp"> & { toolCalls?: ToolCall[] }, convId?: string) => void;
   updateMessage: (storyId: string, msgId: string, content: string) => void;
+  updateMessageToolResult: (storyId: string, convId: string, toolUseId: string, result: string) => void;
 
   // UI
   sidebarOpen: boolean;
@@ -466,6 +467,40 @@ export const useStore = create<AppStore>((set, get) => ({
                         ...c,
                         messages: c.messages.map((m) =>
                           m.id === msgId ? { ...m, content } : m,
+                        ),
+                      }
+                    : c,
+                ),
+              }
+            : st,
+        ),
+      })),
+    })),
+
+  // Attach a tool result to the matching tool call inside a persisted message.
+  // Used after a loop's message has been flushed but its tools are still
+  // executing — the result streams into that message's toolCalls live.
+  updateMessageToolResult: (storyId, convId, toolUseId, result) =>
+    set((s) => ({
+      worlds: s.worlds.map((w) => ({
+        ...w,
+        stories: w.stories.map((st) =>
+          st.id === storyId
+            ? {
+                ...st,
+                conversations: st.conversations.map((c) =>
+                  c.id === convId
+                    ? {
+                        ...c,
+                        messages: c.messages.map((m) =>
+                          m.toolCalls?.some((tc) => tc.id === toolUseId)
+                            ? {
+                                ...m,
+                                toolCalls: m.toolCalls.map((tc) =>
+                                  tc.id === toolUseId ? { ...tc, result } : tc,
+                                ),
+                              }
+                            : m,
                         ),
                       }
                     : c,

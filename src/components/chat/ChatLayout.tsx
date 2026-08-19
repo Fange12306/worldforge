@@ -79,13 +79,17 @@ export function ChatLayout() {
         const convMsgs: StoreMessage[] = [];
         const pendingMap = new Map<string, { id: string; name: string; input: Record<string, unknown>; result: string }>();
         const pendingOrder: string[] = [];
+        let lastAssistant: StoreMessage | null = null;
         for (const m of msgs) {
           if (m.type === "user") {
             convMsgs.push({ id: `msg_${convMsgs.length}`, role: "user", content: m.content, timestamp: Date.now() });
             pendingMap.clear(); pendingOrder.length = 0;
+            lastAssistant = null;
           } else if (m.type === "assistant") {
             const toolCalls = pendingOrder.map((tid) => pendingMap.get(tid)!).filter(Boolean);
-            convMsgs.push({ id: `msg_${convMsgs.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: toolCalls.length > 0 ? toolCalls : undefined, timestamp: Date.now() });
+            const msg: StoreMessage = { id: `msg_${convMsgs.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: toolCalls.length > 0 ? toolCalls : undefined, timestamp: Date.now() };
+            convMsgs.push(msg);
+            lastAssistant = msg;
             pendingMap.clear(); pendingOrder.length = 0;
           } else if (m.type === "system") {
             convMsgs.push({ id: `msg_${convMsgs.length}`, role: "system", content: m.content, timestamp: Date.now() });
@@ -96,7 +100,10 @@ export function ChatLayout() {
           } else if (m.type === "tool_result") {
             const output = (m.output as string) || "";
             const tuid = m.tool_use_id || "";
-            const tc = tuid ? pendingMap.get(tuid) : undefined;
+            // Attach to the pending tool_use when it precedes the assistant line,
+            // otherwise to the most recent assistant message (tool_result lines
+            // may follow the assistant line — per-loop persistence order).
+            const tc = tuid ? (pendingMap.get(tuid) ?? lastAssistant?.toolCalls?.find((x) => x.id === tuid)) : undefined;
             if (tc) tc.result = output;
             convMsgs.push({ id: `msg_${convMsgs.length}`, role: "system", content: `[工具结果: ${m.tool || "tool"}]\n${output}`, timestamp: Date.now() });
           }

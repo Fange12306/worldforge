@@ -23,7 +23,7 @@
   /* ---- Text ---- */
   --color-text-primary: #fafafa;
   --color-text-secondary: #e4e4e7;
-  --color-text-muted: #a1a1aa;
+  --color-text-muted: #b0b0b8;
 
   /* ---- Borders ---- */
   --color-border: #27272a;
@@ -62,7 +62,7 @@
 
   --color-text-primary: #18181b;
   --color-text-secondary: #3f3f46;
-  --color-text-muted: #6b7280;
+  --color-text-muted: #606876;
 
   --color-border: #e4e4e7;
   --color-border-hover: #d4d4d8;

@@ -17,6 +17,32 @@ function t() {
   return getT(useStore.getState().language).agent;
 }
 
+// ── Stream session / abort ──
+// One session per user send. Lives at module scope (not inside the component)
+// so pressing stop keeps working even if ChatInput unmounted/remounted while
+// the agent loop was still running in the background — e.g. the user opened
+// settings or an entry detail view mid-turn and came back. A session is
+// "aborted" when the user stops it OR when a newer session starts (so an old
+// loop that is still unwinding can never resume and run tools again).
+export type StreamSession = { aborted: boolean; epoch: number };
+let currentSession: StreamSession | null = null;
+let sessionEpoch = 0;
+
+export function beginStreamSession(): StreamSession {
+  const s: StreamSession = { aborted: false, epoch: ++sessionEpoch };
+  currentSession = s;
+  return s;
+}
+
+export function abortActiveStream(): void {
+  if (currentSession) currentSession.aborted = true;
+}
+
+export function isSessionAborted(s?: StreamSession | null): boolean {
+  if (!s) return false;
+  return s.aborted || currentSession !== s;
+}
+
 // ── Helpers ──
 
 /** Build a map of event_id → readable name from edges/results that carry event IDs. */
@@ -90,6 +116,23 @@ export type ToolResult = {
   content: string;
 };
 
+/** One clarification question the agent asks the user (AskUserQuestion tool). */
+export type UserQuestion = {
+  question: string;
+  options?: string[];
+  header?: string;
+};
+
+/** The user's answer to one clarification question. */
+export type AskUserResult = {
+  /** The chosen option text, or the user's free-form custom answer. */
+  answer: string;
+  /** true when the answer was typed by the user rather than picked from options. */
+  custom: boolean;
+  /** true when the user skipped the question. */
+  skipped: boolean;
+};
+
 // ── Stream callback ──
 
 export type StreamCallbacks = {
@@ -98,6 +141,10 @@ export type StreamCallbacks = {
   onThinkingDone: () => void;
   onToolUse: (id: string, name: string, input: Record<string, unknown>) => void;
   onToolResult: (result: ToolResult, toolName?: string) => void;
+  /** Fired when one agent loop's stream completes (before its tools execute).
+   *  Lets the UI persist that loop's message and reset the live-stream state
+   *  for the next loop. */
+  onLoopEnd: () => void;
   onComplete: (finalText: string, thinking: string) => void;
   onError: (error: string) => void;
 };
@@ -378,6 +425,29 @@ function getTools(): ToolDef[] {
       required: ["timeline_id", "event_id", "new_time_point"],
     },
   },
+  {
+    name: "AskUserQuestion",
+    description: "Ask the user a clarifying question when you genuinely cannot proceed without their input — an ambiguous decision, a key preference, or a choice that changes the content. You may ask several questions at once (they are shown one at a time). Provide 2-5 concise options when possible; the user can also type a custom answer. Use sparingly: only ask when you cannot reasonably infer the answer, and never ask questions you could answer by checking the world data or context. The tool returns the user's answers — continue the task based on them.",
+    input_schema: {
+      type: "object",
+      properties: {
+        questions: {
+          type: "array",
+          description: "One or more questions to ask the user, shown one at a time in order. Keep each question self-contained so the user can answer without recalling earlier context.",
+          items: {
+            type: "object",
+            properties: {
+              question: { type: "string", description: "The full question, including enough context for the user to answer directly." },
+              options: { type: "array", items: { type: "string" }, description: "Optional answer choices (2-5 recommended). The user may pick one or type a custom answer." },
+              header: { type: "string", description: "Optional short heading for the question (e.g. '确认' / 'Choose Mode')." },
+            },
+            required: ["question"],
+          },
+        },
+      },
+      required: ["questions"],
+    },
+  },
   ];
 }
 
@@ -405,7 +475,7 @@ const DANGEROUS_TOOLS = new Set([
   "Relation",
 ]);
 
-async function checkPermission(name: string, input: Record<string, unknown>): Promise<boolean> {
+async function checkPermission(name: string, input: Record<string, unknown>, session?: StreamSession | null): Promise<boolean> {
   // Edit mode: auto-approve all write operations without prompting
   if (useStore.getState().mode === "edit") return true;
 
@@ -417,6 +487,18 @@ async function checkPermission(name: string, input: Record<string, unknown>): Pr
   const isDangerous = DANGEROUS_TOOLS.has(name) || isDelete;
   if (isDangerous) {
     return new Promise((resolve) => {
+      let settled = false;
+      const done = (choice: "once" | "session" | "deny") => {
+        if (settled) return;
+        settled = true;
+        clearInterval(poll);
+        resolve(choice !== "deny");
+      };
+      // If the user aborts the turn while a permission prompt is pending,
+      // auto-deny so the blocked agent loop can unwind instead of hanging.
+      const poll = setInterval(() => {
+        if (isSessionAborted(session)) done("deny");
+      }, 250);
       const labelMap: Record<string, string> = {
         Relation: t().toolRelation(!!input.delete, ((input.relation_id || input.description) as string) || ""),
         EntryWrite: t().toolEntryWriteDelete((input.entry_id as string) || ""),
@@ -431,7 +513,7 @@ async function checkPermission(name: string, input: Record<string, unknown>): Pr
           details: label,
           isDangerous: true,
           callback: (choice: "once" | "session" | "deny") => {
-            resolve(choice !== "deny");
+            done(choice);
           },
         },
       });
@@ -442,6 +524,17 @@ async function checkPermission(name: string, input: Record<string, unknown>): Pr
   // Normal write tools: session-level approval
   if (writeApproved) return true;
   return new Promise((resolve) => {
+    let settled = false;
+    const done = (choice: "once" | "session" | "deny") => {
+      if (settled) return;
+      settled = true;
+      clearInterval(poll);
+      if (choice === "session") writeApproved = true;
+      resolve(choice !== "deny");
+    };
+    const poll = setInterval(() => {
+      if (isSessionAborted(session)) done("deny");
+    }, 250);
     const labelMap: Record<string, string> = {
       OutlineWrite: input.chapter_id ? `Chapter ${input.chapter_id}` : `Ch${input.order} ${input.title || ""}`,
       EventWrite: t().toolEventLabel((input.event_id as string) || "", (input.summary as string) || ""),
@@ -453,8 +546,7 @@ async function checkPermission(name: string, input: Record<string, unknown>): Pr
         toolName: name,
         details: detail,
         callback: (choice: "once" | "session" | "deny") => {
-          if (choice === "session") writeApproved = true;
-          resolve(choice !== "deny");
+          done(choice);
         },
       },
     });
@@ -637,14 +729,49 @@ async function knowledgeBaseSearch(input: Record<string, unknown>): Promise<stri
   return `知识库搜索结果(${top.length} 条, 用 doc_id 读取全文):\n${lines.join("\n")}`;
 }
 
+// ── AskUserQuestion (clarification) ──
+// Dispatches the questions to the frontend (one-at-a-time panel above the input
+// box), then blocks the agent loop until the user answers. Resolves with all
+// questions marked "skipped" when the user aborts the turn (stop button) or
+// cancels the question set, so the loop never deadlocks.
+
+function askUserQuestions(questions: UserQuestion[], session?: StreamSession | null): Promise<AskUserResult[]> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const skipAll = (): AskUserResult[] => questions.map(() => ({ answer: "", custom: false, skipped: true }));
+    const done = (answers: AskUserResult[]) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(poll);
+      window.removeEventListener("worldforge-ask-user-cancel", onCancel);
+      resolve(answers);
+    };
+    const onCancel = () => done(skipAll());
+    window.addEventListener("worldforge-ask-user-cancel", onCancel);
+    // If the user presses the stop button while a question is pending, resolve
+    // immediately so the loop can unwind; the loop's abort check bails out.
+    const poll = setInterval(() => {
+      if (isSessionAborted(session)) done(skipAll());
+    }, 250);
+    const evt = new CustomEvent("worldforge-ask-user", {
+      detail: {
+        questions,
+        callback: (answers: AskUserResult[]) => done(answers),
+      },
+    });
+    window.dispatchEvent(evt);
+  });
+}
+
 async function executeTool(
   name: string,
   input: Record<string, unknown>,
   worldPath: string,
   storyId: string,
+  session?: StreamSession | null,
 ): Promise<string> {
   // Check permission before write operations
-  if (!await checkPermission(name, input)) {
+  if (!await checkPermission(name, input, session)) {
     return t().permissionDenied(name);
   }
   switch (name) {
@@ -1221,6 +1348,24 @@ async function executeTool(
       });
       return t().eventUpdatedResult(event.name || evId);
     }
+    case "AskUserQuestion": {
+      const raw = input.questions;
+      const questions: UserQuestion[] = Array.isArray(raw) ? (raw as UserQuestion[]) : [];
+      if (questions.length === 0) {
+        return "未收到任何问题（questions 数组为空）。如果你确实需要用户输入，请带上具体问题重试；否则基于已有信息继续。";
+      }
+      const answers = await askUserQuestions(questions, session);
+      const lines = answers.map((a, i) => {
+        const qText = questions[i]?.question || `问题 ${i + 1}`;
+        const ansText = a.skipped
+          ? "用户跳过了这个问题"
+          : a.custom
+            ? `（自定义回答）${a.answer}`
+            : a.answer;
+        return `${i + 1}. ${qText}\n   用户回答: ${ansText}`;
+      });
+      return `用户对以下问题的回答:\n${lines.join("\n")}`;
+    }
     default:
       return t().unknownTool(name);
   }
@@ -1239,7 +1384,7 @@ export async function runAgentLoop(
   reasoningEffort?: string,
   convId?: string,
   maxTokensOverride?: number,
-  abortRef?: { current: boolean },
+  session?: StreamSession | null,
   thinkingStyle?: string,
   baseUrl?: string,
 ) {
@@ -1271,7 +1416,7 @@ export async function runAgentLoop(
   // Claude Code 做法: 无限循环, 靠自然完成(end_turn)或用户中断退出, 不做硬轮次截断
   while (true) {
     // User pressed stop — bail out immediately, don't start new API calls
-    if (abortRef?.current) return;
+    if (isSessionAborted(session)) return;
     turns++;
 
     try {
@@ -1289,7 +1434,7 @@ export async function runAgentLoop(
       const streamPromise = new Promise<void>((resolve) => { streamResolve = resolve; });
 
       const unlisten = await setupStreamListener(convId || "", (event) => {
-        if (abortRef?.current) return;
+        if (isSessionAborted(session)) return;
         if (streamDone) return;
         switch (event.type) {
           case "text_delta":
@@ -1507,6 +1652,10 @@ export async function runAgentLoop(
 
       fullText += turnText;
 
+      // Signal the UI that this loop's stream is complete — its thinking/text/
+      // tool calls are final, and tool results will follow as they execute.
+      callbacks.onLoopEnd();
+
       // Add assistant message to history (may be partial if truncated)
       const assistantMsg: AgentMessage = { role: "assistant", content: turnText };
       if (pendingToolUses.length > 0) {
@@ -1525,9 +1674,15 @@ export async function runAgentLoop(
 
       totalToolUses += pendingToolUses.length;
       for (const tool of pendingToolUses) {
+        // User pressed stop — don't execute any further tools this turn.
+        // (A tool already blocked on a permission prompt is unblocked by the
+        // abort-aware checkPermission and resolved as denied.)
+        if (isSessionAborted(session)) break;
         console.log("[agent-loop] executing tool:", tool.name, JSON.stringify(tool.input).slice(0, 200));
+        // AskUserQuestion is never cached — every call needs fresh user input.
+        const isAskUser = tool.name === "AskUserQuestion";
         const cacheKey = `${tool.name}::${JSON.stringify(tool.input)}`;
-        const cached = toolCache.get(cacheKey);
+        const cached = isAskUser ? undefined : toolCache.get(cacheKey);
         if (cached !== undefined) {
           const result = `${t().cacheHit}\n${cached}`;
           callbacks.onToolResult({ toolUseId: tool.id, toolName: tool.name, content: result }, tool.name);
@@ -1539,7 +1694,7 @@ export async function runAgentLoop(
           continue;
         }
         try {
-          const result = await executeTool(tool.name, tool.input, worldPath, storyId);
+          const result = await executeTool(tool.name, tool.input, worldPath, storyId, session);
           console.log("[agent-loop] tool done:", tool.name, "resultLen=", result.length);
 
           // ── Invalidate cached reads for modified entities ──
@@ -1579,7 +1734,7 @@ export async function runAgentLoop(
             }
           }
 
-          toolCache.set(cacheKey, result);
+          if (!isAskUser) toolCache.set(cacheKey, result);
           callbacks.onToolResult({ toolUseId: tool.id, toolName: tool.name, content: result }, tool.name);
           messages.push({
             role: "user",

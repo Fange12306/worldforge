@@ -13,7 +13,7 @@ import { useT } from "@/lib/i18n";
 import { MarkdownContent } from "@/components/chat/MarkdownContent";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { X, BookOpen, FileText, ChevronDown, ChevronRight } from "lucide-react";
+import { BookOpen, FileText, ChevronDown, ChevronRight } from "lucide-react";
 
 const INDEX_URL = "knowledge-base/index.json";
 
@@ -47,7 +47,7 @@ function pickLabel(zh?: string, en?: string, language?: string): string {
   return zh || en || "";
 }
 
-export function KnowledgeBasePanel({ onClose }: { onClose: () => void }) {
+export function KnowledgeBasePanel({ onClose, sidebarOpen, rightOpen }: { onClose: () => void; sidebarOpen: boolean; rightOpen: boolean }) {
   const { t, language } = useT();
   const theme = useStore((s) => s.theme);
 
@@ -99,20 +99,20 @@ export function KnowledgeBasePanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="flex flex-col h-full bg-surface-900">
-      {/* Header */}
-      <div className="h-12 flex items-center justify-between px-3 flex-shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <BookOpen className="w-4 h-4 text-brand-500 flex-shrink-0" />
-          <span className="text-sm font-semibold text-ink flex-shrink-0">{t.knowledge.title}</span>
-          <span className="text-[0.625rem] text-ink-muted truncate">
-            {pickLabel(index?.description, index?.descriptionEn, language)}
-          </span>
-        </div>
-        <button onClick={onClose} className="p-1.5 rounded-md text-ink-muted hover:text-ink hover:bg-surface-800 transition-colors">
-          <X className="w-4 h-4" />
+      {/* Header — 与词条/记忆/大纲详情页一致：← 对话 / 标签 / 名称，
+          收起态下用 paddingLeft/Right 让出侧栏展开按钮位置 */}
+      <div
+        className="flex items-center gap-2 px-3 border-b border-surface-700 flex-shrink-0"
+        style={{ height: 40, paddingLeft: sidebarOpen ? 12 : 48, paddingRight: rightOpen ? 8 : 48 }}
+      >
+        <button onClick={onClose} className="text-[0.688rem] text-ink-muted hover:text-ink h-full flex items-center flex-shrink-0">
+          {t.entry.backToChat}
         </button>
+        <span className="text-[0.625rem] text-ink-muted/50">{t.labels.knowledge}</span>
+        <span className="text-[0.688rem] text-ink-secondary truncate flex-1">
+          {pickLabel(index?.description, index?.descriptionEn, language)}
+        </span>
       </div>
-      <div className="mx-4 h-px bg-surface-700" />
 
       {/* Body: category nav (left) + doc view (right) */}
       <div className="flex-1 min-h-0 flex">

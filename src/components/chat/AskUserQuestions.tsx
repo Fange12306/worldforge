@@ -98,8 +98,13 @@ export function AskUserQuestions({ questions, onSubmit }: Props) {
                 <button
                   key={i}
                   onClick={() => submitAnswer(opt, false)}
-                  className="px-3 py-1.5 text-[0.8125rem] rounded-lg bg-surface-700 text-ink-secondary hover:text-ink hover:bg-surface-600 border border-transparent hover:border-brand-500/40 transition-colors text-left max-w-full"
+                  className="group relative px-3 py-1.5 text-[0.8125rem] rounded-lg bg-surface-700 text-ink-secondary hover:text-ink hover:bg-surface-600 border border-transparent hover:border-brand-500/40 transition-colors text-left max-w-full"
                 >
+                  {i === 0 && (
+                    <span className="inline-block mr-1.5 px-1.5 py-0.5 text-[0.625rem] font-medium leading-none rounded bg-brand-500/20 text-brand-300 align-middle">
+                      {at.recommended}
+                    </span>
+                  )}
                   {opt}
                 </button>
               ))}

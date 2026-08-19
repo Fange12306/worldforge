@@ -70,6 +70,92 @@ pub enum StreamEvent {
     Usage { input_tokens: u64, output_tokens: u64, cache_hit_tokens: Option<u64>, cache_miss_tokens: Option<u64>, conversation_id: Option<String> },
 }
 
+/// 跨 chunk 的 <think>...</think> 内联标签解析器。
+///
+/// 国产模型（MiniMax / Qwen / DeepSeek V3 / GLM 等）经常把思维链直接以
+/// `<think>...</think>` 字符串塞进 `content` 流里，而不是用 DeepSeek 那样的
+/// `reasoning_content` 独立字段。SSE 按 chunk 到达，标签可能正好被切在边界
+/// 上（chunk N 以 "<think>" 结尾、chunk N+1 以 "..." 开头），所以必须做
+/// 状态化的逐字符扫描。
+///
+/// 用法：每个流会话持有一个解析器，content 到达时调 `feed`，最后调 `flush`。
+/// 解析器会把 thinking 段和可见文段分别回调出去。
+struct ThinkTagParser {
+    /// 当前是否在 <think> 块内
+    in_think: bool,
+    /// 暂存"看起来像标签开头但还没攒够字"的字符，最长 7（`<think>`）或 8（`</think>`）
+    pending: String,
+}
+
+const THINK_OPEN: &str = "<think>";
+const THINK_CLOSE: &str = "</think>";
+
+impl ThinkTagParser {
+    fn new() -> Self {
+        Self { in_think: false, pending: String::new() }
+    }
+
+    /// 是否是 `<think>` 或 `</think>` 的前缀
+    fn is_tag_prefix(s: &str) -> bool {
+        THINK_OPEN.starts_with(s) || THINK_CLOSE.starts_with(s)
+    }
+
+    /// 把一个完整 token 喂进解析器。`on_think` 接收 think 块内文本，`on_text`
+    /// 接收可见文本。两者都可能拿到空串，调用方需自行忽略。
+    fn feed(
+        &mut self,
+        text: &str,
+        on_think: &mut dyn FnMut(&str),
+        on_text: &mut dyn FnMut(&str),
+    ) {
+        for c in text.chars() {
+            if self.pending.is_empty() {
+                if c == '<' {
+                    self.pending.push(c);
+                } else if self.in_think {
+                    on_think(&c.to_string());
+                } else {
+                    on_text(&c.to_string());
+                }
+            } else {
+                self.pending.push(c);
+                if self.pending == THINK_OPEN {
+                    self.pending.clear();
+                    self.in_think = true;
+                } else if self.pending == THINK_CLOSE {
+                    self.pending.clear();
+                    self.in_think = false;
+                } else if !Self::is_tag_prefix(&self.pending) {
+                    // 不是任何 think 标签的前缀 → 把 pending 当成普通字符吐出去
+                    if self.in_think {
+                        on_think(&self.pending);
+                    } else {
+                        on_text(&self.pending);
+                    }
+                    self.pending.clear();
+                }
+                // is_tag_prefix 仍然为 true → 继续等下一个字符，不做任何事
+            }
+        }
+    }
+
+    /// 流结束时调用，把还没攒够标签字符的残余 pending 当作普通字符吐出去。
+    fn flush(
+        &mut self,
+        on_think: &mut dyn FnMut(&str),
+        on_text: &mut dyn FnMut(&str),
+    ) {
+        if !self.pending.is_empty() {
+            if self.in_think {
+                on_think(&self.pending);
+            } else {
+                on_text(&self.pending);
+            }
+            self.pending.clear();
+        }
+    }
+}
+
 /// Cancel an in-flight streaming request. The HTTP connection is dropped immediately.
 #[tauri::command]
 pub fn cancel_stream(conversation_id: String) -> Result<(), String> {
@@ -671,6 +757,8 @@ async fn stream_openai_compatible(
     let mut usage_output_tokens: u64 = 0;
     let mut usage_cache_hit: Option<u64> = None;
     let mut usage_cache_miss: Option<u64> = None;
+    // 跨 chunk 的 <think>...</think> 标签解析器（国产模型常用内联标签）
+    let mut think_parser = ThinkTagParser::new();
 
     // Register cancellation channel
     let cid_key = conversation_id.clone().unwrap_or_default();
@@ -737,7 +825,20 @@ async fn stream_openai_compatible(
                             }
                             if let Some(delta) = choice["delta"].get("content") {
                                 if let Some(text) = delta.as_str() {
-                                    let _ = app.emit("stream-event", StreamEvent::TextDelta { text: text.to_string(), conversation_id: conversation_id.clone() });
+                                    // 用 <think>...</think> 解析器分流: 标签内进 ThinkingDelta, 标签外进 TextDelta
+                                    let cid = conversation_id.clone();
+                                    let app_ref = &app;
+                                    let mut emit_think = |s: &str| {
+                                        if !s.is_empty() {
+                                            let _ = app_ref.emit("stream-event", StreamEvent::ThinkingDelta { text: s.to_string(), conversation_id: cid.clone() });
+                                        }
+                                    };
+                                    let mut emit_text = |s: &str| {
+                                        if !s.is_empty() {
+                                            let _ = app_ref.emit("stream-event", StreamEvent::TextDelta { text: s.to_string(), conversation_id: cid.clone() });
+                                        }
+                                    };
+                                    think_parser.feed(text, &mut emit_think, &mut emit_text);
                                 }
                             }
                             // Tool calls (OpenAI format) — use per-index buffers to support parallel calls
@@ -778,6 +879,22 @@ async fn stream_openai_compatible(
     // appears to "want to call a tool" but never does.
     log_stream(&format!("stream loop ended, stream_end_reason={:?}, final flush", stream_end_reason));
     flush_tool_buffers(&mut tool_call_buffers, &app, conversation_id.clone());
+    // 流末尾 flush 残余标签字符（边界可能恰好留半个 `<`）
+    {
+        let cid = conversation_id.clone();
+        let app_ref = &app;
+        let mut emit_think = |s: &str| {
+            if !s.is_empty() {
+                let _ = app_ref.emit("stream-event", StreamEvent::ThinkingDelta { text: s.to_string(), conversation_id: cid.clone() });
+            }
+        };
+        let mut emit_text = |s: &str| {
+            if !s.is_empty() {
+                let _ = app_ref.emit("stream-event", StreamEvent::TextDelta { text: s.to_string(), conversation_id: cid.clone() });
+            }
+        };
+        think_parser.flush(&mut emit_think, &mut emit_text);
+    }
 
     // Emit pending usage then StreamEnd after the loop exits.
     // This catches usage from servers (LM Studio) that send usage in a
@@ -818,8 +935,69 @@ fn flush_tool_buffers(
 
 #[cfg(test)]
 mod tests {
+    use super::ThinkTagParser;
+
     /// 回归：SSE 流 chunk 边界切在多字节 UTF-8 字符中间时，不能产生乱码。
     /// 旧的 from_utf8_lossy(每 chunk) 实现会输出 U+FFFD；字节缓冲按 \n 切行则安全。
+    /// 回归：国产模型（M2 / Qwen / GLM / DeepSeek V3）把思维链以 `<think>...</think>`
+    /// 字符串内联在 content 流里。解析器必须把标签内文字分流到 ThinkingDelta，
+    /// 标签外文字保留为 TextDelta。覆盖几种 chunk 边界 case。
+    fn run_parser(input: &str) -> (String, String) {
+        let mut p = ThinkTagParser::new();
+        let mut think = String::new();
+        let mut text = String::new();
+        let mut t = |s: &str| think.push_str(s);
+        let mut v = |s: &str| text.push_str(s);
+        p.feed(input, &mut t, &mut v);
+        p.flush(&mut t, &mut v);
+        (think, text)
+    }
+
+    #[test]
+    fn think_tag_basic_split() {
+        let (think, text) = run_parser("<think>我是思考</think>我是回答");
+        assert_eq!(think, "我是思考");
+        assert_eq!(text, "我是回答");
+    }
+
+    #[test]
+    fn think_tag_with_newlines() {
+        let (think, text) = run_parser("<think>先分析\n再总结</think>\n好的，这是答案。");
+        assert_eq!(think, "先分析\n再总结");
+        assert_eq!(text, "\n好的，这是答案。");
+    }
+
+    #[test]
+    fn think_tag_split_across_chunks() {
+        // 模拟 SSE 边界正好把 <think> 和 </think> 切开
+        let mut p = ThinkTagParser::new();
+        let mut think = String::new();
+        let mut text = String::new();
+        let mut t = |s: &str| think.push_str(s);
+        let mut v = |s: &str| text.push_str(s);
+        for chunk in ["abc<thi", "nk>def</think>a", "nswer"] {
+            p.feed(chunk, &mut t, &mut v);
+        }
+        p.flush(&mut t, &mut v);
+        assert_eq!(text, "abcanswer", "<think> 前的 'abc' + </think> 后的 'answer' 都应保留为可见文本");
+        assert_eq!(think, "def", "标签内文字应进入 thinking");
+    }
+
+    #[test]
+    fn no_think_tag_passes_through() {
+        let (think, text) = run_parser("hello world, no tags here");
+        assert_eq!(think, "");
+        assert_eq!(text, "hello world, no tags here");
+    }
+
+    #[test]
+    fn stray_lt_character_is_kept() {
+        // 模型输出数学表达式 "1 < 2"，< 不应触发 think 状态
+        let (think, text) = run_parser("1 < 2 是对的");
+        assert_eq!(think, "");
+        assert_eq!(text, "1 < 2 是对的");
+    }
+
     #[test]
     fn sse_line_parsing_survives_utf8_boundary_split() {
         let full = "data: {\"delta\":{\"content\":\"核心要点\"}}\n"

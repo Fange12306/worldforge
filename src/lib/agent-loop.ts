@@ -116,7 +116,10 @@ export type ToolResult = {
   content: string;
 };
 
-/** One clarification question the agent asks the user (AskUserQuestion tool). */
+/** One clarification question the agent asks the user (AskUserQuestion tool).
+ *  Options are always strings at this point — the agent-loop normalizer
+ *  flattens the LLM's {label, description} objects (Anthropic spec) and any
+ *  other variant into a plain string before dispatching the event. */
 export type UserQuestion = {
   question: string;
   options?: string[];
@@ -427,7 +430,7 @@ function getTools(): ToolDef[] {
   },
   {
     name: "AskUserQuestion",
-    description: "Ask the user a clarifying question when you genuinely cannot proceed without their input — an ambiguous decision, a key preference, or a choice that changes the content. You may ask several questions at once (they are shown one at a time). Provide 2-5 concise options when possible; the user can also type a custom answer. Use sparingly: only ask when you cannot reasonably infer the answer, and never ask questions you could answer by checking the world data or context. The tool returns the user's answers — continue the task based on them.",
+    description: "Ask the user a clarifying question when you genuinely cannot proceed without their input — an ambiguous decision, a key preference, or a choice that changes the content. You may ask several questions at once (they are shown one at a time). You MUST provide at least 2 distinct options per question (the user can also type a custom answer). If one option is clearly the best choice given the context, place it FIRST in the options array — the UI marks the first option as 推荐. Use sparingly: only ask when you cannot reasonably infer the answer, and never ask questions you could answer by checking the world data or context. The tool returns the user's answers — continue the task based on them.\n\nFORMAT (strict — only one shape accepted): Each option MUST be an object of the form {\"label\": \"<short text>\", \"description\": \"<optional longer text>\"}. The label is the button text shown to the user. NEVER put the label in the object KEY ({\"<label>\": \"\"}) — that is the single most common bug and renders as an empty button. NEVER use a bare string like \"Yes\" — that also renders empty. Examples:\n  CORRECT: {\"label\": \"Yes\"}\n  CORRECT: {\"label\": \"类地球正常世界\", \"description\": \"水、氧、大气、板块构造、类地碳基生命\"}\n  WRONG:   \"Yes\"\n  WRONG:   {\"Yes\": \"\"}",
     input_schema: {
       type: "object",
       properties: {
@@ -438,10 +441,24 @@ function getTools(): ToolDef[] {
             type: "object",
             properties: {
               question: { type: "string", description: "The full question, including enough context for the user to answer directly." },
-              options: { type: "array", items: { type: "string" }, description: "Optional answer choices (2-5 recommended). The user may pick one or type a custom answer." },
+              options: {
+                type: "array",
+                minItems: 2,
+                maxItems: 5,
+                description: "Each item MUST be {\"label\": \"...\", \"description\"?: \"...\"}. No other shape is accepted.",
+                items: {
+                  type: "object",
+                  properties: {
+                    label: { type: "string", description: "Short button text shown to the user. Required." },
+                    description: { type: "string", description: "Optional longer explanation shown on hover." },
+                  },
+                  required: ["label"],
+                  additionalProperties: false,
+                },
+              },
               header: { type: "string", description: "Optional short heading for the question (e.g. '确认' / 'Choose Mode')." },
             },
-            required: ["question"],
+            required: ["question", "options"],
           },
         },
       },
@@ -475,9 +492,26 @@ const DANGEROUS_TOOLS = new Set([
   "Relation",
 ]);
 
+/** Memory has a mixed read/write interface. A call is a write only when it
+ *  carries content, find, replace, append, or delete. Listing or reading a
+ *  specific memory file is a read and should never require permission — the
+ *  agent uses these calls constantly to recall context. */
+function isMemoryWrite(input: Record<string, unknown>): boolean {
+  return Boolean(
+    input.content !== undefined ||
+    input.find !== undefined ||
+    input.replace !== undefined ||
+    input.append !== undefined ||
+    input.delete === true,
+  );
+}
+
 async function checkPermission(name: string, input: Record<string, unknown>, session?: StreamSession | null): Promise<boolean> {
   // Edit mode: auto-approve all write operations without prompting
   if (useStore.getState().mode === "edit") return true;
+
+  // Memory reads (list / read by name) are safe — never prompt.
+  if (name === "Memory" && !isMemoryWrite(input)) return true;
 
   const isWrite = WRITE_TOOLS.has(name) || DANGEROUS_TOOLS.has(name);
   if (!isWrite) return true;
@@ -539,6 +573,14 @@ async function checkPermission(name: string, input: Record<string, unknown>, ses
       OutlineWrite: input.chapter_id ? `Chapter ${input.chapter_id}` : `Ch${input.order} ${input.title || ""}`,
       EventWrite: t().toolEventLabel((input.event_id as string) || "", (input.summary as string) || ""),
       TimelineWrite: t().toolTimelineLabel((input.timeline_id as string) || "", (input.name as string) || ""),
+      Memory: (() => {
+        const file = (input.file_name as string) || "memory";
+        if (input.delete === true) return `删除记忆 · ${file}`;
+        if (input.append) return `追加记忆 · ${file}`;
+        if (input.find !== undefined) return `编辑记忆 · ${file}`;
+        if (input.content !== undefined) return `覆盖写入 · ${file}`;
+        return `写入记忆 · ${file}`;
+      })(),
     };
     const detail = labelMap[name] || `${input.name || input.entry_id || ""}`;
     const evt = new CustomEvent("worldforge-permission", {
@@ -1350,7 +1392,83 @@ async function executeTool(
     }
     case "AskUserQuestion": {
       const raw = input.questions;
-      const questions: UserQuestion[] = Array.isArray(raw) ? (raw as UserQuestion[]) : [];
+      const rawArr: unknown[] = Array.isArray(raw) ? (raw as unknown[]) : [];
+      // Normalize: LLM (especially minimax) may output options in many shapes:
+      //   - plain string                       "Yes"
+      //   - {label: "Yes"}                     (Anthropic spec)
+      //   - {label: "Yes", description: "..."}  (Anthropic spec, full)
+      //   - {description: "..."} only           (minimax occasionally)
+      //   - {value: "Yes"}                      (other variants)
+      //   - {"<long text>": ""}                 (minimax quirk: key = label)
+      //   - {"<label>": "<description>"}        (single-key, key = label)
+      //   - {<unknown-key>: "<text>"}           (arbitrary key + value)
+      //   - ["Yes"]                             (single-element array)
+      // Don't enumerate — exhaust ALL possible string fields by priority.
+      const normalizeOption = (o: unknown): string => {
+        if (o == null) return "";
+        if (typeof o === "string") return o;
+        if (typeof o === "number" || typeof o === "boolean") return String(o);
+        if (Array.isArray(o)) {
+          const first = o[0];
+          if (first == null) return "";
+          if (typeof first === "string") return first;
+          if (typeof first === "number" || typeof first === "boolean") return String(first);
+          return normalizeOption(first);
+        }
+        if (typeof o === "object") {
+          const obj = o as Record<string, unknown>;
+          // 1) Known label-shaped fields in priority order
+          for (const f of ["label", "text", "title", "name", "value"]) {
+            if (typeof obj[f] === "string" && (obj[f] as string).length > 0) {
+              return obj[f] as string;
+            }
+          }
+          // 2) Description-shaped fields (used as label if no label above)
+          for (const f of ["description", "content", "answer"]) {
+            if (typeof obj[f] === "string" && (obj[f] as string).length > 0) {
+              return obj[f] as string;
+            }
+          }
+          // 3) Any other non-empty string field — covers arbitrary key shapes
+          //    like { "<long text>": "<explanation>" } where we want the key.
+          for (const k of Object.keys(obj)) {
+            const v = obj[k];
+            if (typeof v === "string" && v.length > 0) return v;
+            if (typeof v === "number" || typeof v === "boolean") return String(v);
+          }
+          // 4) Last resort: single-key object whose value is empty/null/[] —
+          //    the key itself is the label. (minimax: { "<long text>": "" })
+          const keys = Object.keys(obj);
+          if (keys.length === 1) {
+            const v = obj[keys[0]];
+            if (v == null || v === "" || (Array.isArray(v) && v.length === 0)) {
+              return keys[0];
+            }
+          }
+        }
+        return "";
+      };
+      const questions: UserQuestion[] = rawArr.map((q) => {
+        const qq = (q ?? {}) as { question?: unknown; options?: unknown; header?: unknown };
+        let opts: string[] = Array.isArray(qq.options)
+          ? (qq.options as unknown[]).map(normalizeOption)
+          : [];
+        // Hard-enforce ≥2 options in code: OpenAI-compat tool calling
+        // (minimax etc.) does NOT validate JSON Schema minItems, so the LLM
+        // can hand us 0 or 1 options. Pad with sensible fallbacks so the user
+        // always has a meaningful choice (the custom-answer field is still
+        // available on top).
+        if (opts.length === 0) {
+          opts = ["继续（按你的判断）", "我再想想"];
+        } else if (opts.length === 1) {
+          opts = [...opts, "不用，换一种"];
+        }
+        return {
+          question: typeof qq.question === "string" ? qq.question : String(qq.question || ""),
+          options: opts,
+          header: typeof qq.header === "string" ? qq.header : undefined,
+        };
+      });
       if (questions.length === 0) {
         return "未收到任何问题（questions 数组为空）。如果你确实需要用户输入，请带上具体问题重试；否则基于已有信息继续。";
       }

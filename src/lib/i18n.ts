@@ -215,6 +215,7 @@ const zh = {
     askUser: {
       title: "Agent 提问",
       progress: (cur: number, total: number) => `问题 ${cur}/${total}`,
+      recommended: "推荐",
       customPlaceholder: "输入自定义回答...",
       submit: "回答",
       skip: "跳过此问题",
@@ -363,6 +364,7 @@ const zh = {
     outline: "大纲",
     file: "文件",
     memory: "记忆",
+    knowledge: "知识库",
   },
 
   // Status bar
@@ -747,6 +749,7 @@ const en: typeof zh = {
     askUser: {
       title: "Agent question",
       progress: (cur: number, total: number) => `Question ${cur}/${total}`,
+      recommended: "Recommended",
       customPlaceholder: "Type a custom answer...",
       submit: "Answer",
       skip: "Skip this question",
@@ -891,6 +894,7 @@ const en: typeof zh = {
     outline: "Outline",
     file: "File",
     memory: "Memory",
+    knowledge: "Knowledge",
   },
 
   status: {

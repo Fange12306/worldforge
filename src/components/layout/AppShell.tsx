@@ -272,7 +272,7 @@ function DetailView({ view, onBack, onUpdate, activeWorldId, activeConversationI
   const { t } = useT();
   const w = worlds.find((x) => x.id === activeWorldId);
   if (view.type === "knowledge") {
-    return <KnowledgeBasePanel onClose={onBack} />;
+    return <KnowledgeBasePanel onClose={onBack} sidebarOpen={sidebarOpen} rightOpen={rightOpen} />;
   }
   if (view.type === "simulation") {
     if (!w) return null;

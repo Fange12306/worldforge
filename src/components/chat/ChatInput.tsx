@@ -455,7 +455,17 @@ export function ChatInput({ storyId }: { storyId: string }) {
           thinking,
           toolCalls: tc.length > 0 ? [...tc] : undefined,
         }, convId);
-        appendSessionMessage(world.path, convId, { type: "assistant", content, thinking: thinking || null, timestamp: new Date().toISOString() }).catch(() => {});
+        // Also persist the toolCalls inline on the jsonl assistant line so
+        // reload can reconstruct them without depending on the interleaved
+        // `type: tool_use` lines (which are written immediately on
+        // onToolUse and may end up reordered relative to the assistant).
+        appendSessionMessage(world.path, convId, {
+          type: "assistant",
+          content,
+          thinking: thinking || null,
+          toolCalls: tc.length > 0 ? tc.map((c) => ({ id: c.id, name: c.name, input: c.input, result: c.result })) : undefined,
+          timestamp: new Date().toISOString(),
+        }).catch(() => {});
       }
       loopTextRef.current = "";
       loopThinkingRef.current = "";
@@ -489,12 +499,15 @@ export function ChatInput({ storyId }: { storyId: string }) {
         },
         onToolResult: (result, toolName) => {
           if (isSessionAborted(session)) return;
-          // The loop's message is already persisted (flushed at onLoopEnd) — stream
-          // the result into its tool call entry so the loop bubble updates live.
+          // Stream the result into the matching tool call inside the
+          // assistant message that is already persisted at onLoopEnd.
+          // This is the SINGLE source of truth for tool results — both
+          // for the live UI bubble and for the next turn's model context.
           updateMessageToolResult(storyId, convId, result.toolUseId, result.content);
+          // Persist to jsonl as an inline tool_result entry, deduped by
+          // tool_use_id (the loader in session-writer rebuilds the
+          // assistant.toolCalls[i].result on reload).
           appendSessionMessage(world.path, convId, { type: "tool_result", tool: toolName || result.toolName || "", tool_use_id: result.toolUseId, output: result.content, timestamp: new Date().toISOString() }).catch(() => {});
-          // Persist tool result in conversation so next API call includes full history
-          addMessage(storyId, { role: "system", content: `[工具结果: ${toolName || result.toolName || "tool"}]\n${result.content}` }, convId);
           // Bump refreshKey when world data changes
           if (toolName === "OutlineWrite" || toolName === "EntryWrite" || toolName === "Relation") {
             window.dispatchEvent(new CustomEvent("worldforge-data-changed"));

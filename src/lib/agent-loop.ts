@@ -94,7 +94,7 @@ function normalizeMemFileName(raw: string): string {
 // ── Types ──
 
 export type AgentMessage = {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   content: string;
   tool_calls?: Array<{
     id: string;

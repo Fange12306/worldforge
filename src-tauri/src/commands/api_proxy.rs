@@ -22,6 +22,70 @@ fn log_stream(msg: &str) {
     }
 }
 
+/// Dump the full outgoing request body to a separate file so we can inspect
+/// exactly what the model receives. Writes to `worldforge_request_<conv>.log`
+/// in the OS temp dir. The conversation id is included so multiple parallel
+/// requests don't trample each other.
+fn log_outgoing_body(body: &serde_json::Value, conversation_id: &Option<String>) {
+    let conv = conversation_id.clone().unwrap_or_else(|| "no_conv".to_string());
+    let safe_conv: String = conv.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-').collect();
+    let dir = std::env::temp_dir();
+    let path = dir.join(format!("worldforge_request_{}.log", safe_conv));
+    let serialized = match serde_json::to_string(body) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = std::fs::write(&path, format!("[serialize error: {}]", e));
+            return;
+        }
+    };
+    let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    let summary = format!(
+        "=== outgoing request @ {} ({} bytes, conv={}) ===\nmodel={}\nmsg_count={}\ntool_count={}\nmax_tokens={}\ntool_choice={:?}\nparallel_tool_calls={:?}\nthinking={:?}\nreasoning_effort={:?}\n",
+        ts,
+        serialized.len(),
+        safe_conv,
+        body.get("model").map(|v| v.to_string()).unwrap_or_default(),
+        body.get("messages").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+        body.get("tools").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0),
+        body.get("max_tokens").map(|v| v.to_string()).unwrap_or_default(),
+        body.get("tool_choice").cloned().unwrap_or(serde_json::Value::Null),
+        body.get("parallel_tool_calls").cloned().unwrap_or(serde_json::Value::Null),
+        body.get("thinking").cloned().unwrap_or(serde_json::Value::Null),
+        body.get("reasoning_effort").cloned().unwrap_or(serde_json::Value::Null),
+    );
+    // Per-message preview: (index, role, content_len, has_tool_calls, tool_call_id)
+    let mut msg_preview = String::new();
+    if let Some(arr) = body.get("messages").and_then(|v| v.as_array()) {
+        for (i, m) in arr.iter().enumerate() {
+            let role = m.get("role").map(|v| v.to_string()).unwrap_or_default();
+            let content = m.get("content");
+            let content_str = match content {
+                Some(serde_json::Value::String(s)) => s.clone(),
+                Some(serde_json::Value::Array(_)) => "<array content>".to_string(),
+                Some(other) => other.to_string(),
+                None => String::new(),
+            };
+            let content_len = content_str.len();
+            let tcs = m.get("tool_calls").map(|v| v.as_array().map(|a| a.len()).unwrap_or(0)).unwrap_or(0);
+            let tcid = m.get("tool_call_id").map(|v| v.to_string()).unwrap_or_default();
+            // Safe char-boundary truncation: slice by chars, not bytes (Chinese is 3 bytes/char).
+            // Previously used `&content_str[..200]` which panicked at UTF-8 boundaries.
+            let preview: String = content_str.chars().take(200).collect();
+            let preview = if content_str.chars().count() > 200 { format!("{}…(+{} chars)", preview, content_str.chars().count() - 200) } else { preview };
+            let oneline = preview.replace('\n', "\\n");
+            msg_preview.push_str(&format!(
+                "  [{}] role={} content_len={} tool_calls={} tool_call_id={} content={:?}\n",
+                i, role, content_len, tcs, tcid, oneline,
+            ));
+        }
+    }
+    // Full body is too large for stream.log; write to dedicated file
+    let full = format!("{}{}\n--- message list (preview) ---\n{}--- full body (JSON) ---\n{}\n\n",
+        summary, "", msg_preview, serialized);
+    let _ = std::fs::write(&path, full);
+    eprintln!("[api_proxy] dumped outgoing body ({} bytes) to {}", serialized.len(), path.display());
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
     pub role: String,
@@ -734,6 +798,9 @@ async fn stream_openai_compatible(
     if !key_trimmed.is_empty() {
         req = req.header("Authorization", format!("Bearer {}", key_trimmed));
     }
+    // Dump full outgoing body to a per-conversation file so we can inspect
+    // exactly what the model receives (tool_choice, tools, messages, etc).
+    log_outgoing_body(&body, &conversation_id);
     let response = req
         .json(&body)
         .send()
@@ -817,10 +884,32 @@ async fn stream_openai_compatible(
                     }
                     if let Some(choices) = event["choices"].as_array() {
                         for choice in choices {
-                            // Thinking (DeepSeek reasoner)
-                            if let Some(reasoning) = choice["delta"].get("reasoning_content") {
-                                if let Some(text) = reasoning.as_str() {
-                                    let _ = app.emit("stream-event", StreamEvent::ThinkingDelta { text: text.to_string(), conversation_id: conversation_id.clone() });
+                            // Thinking — check multiple field names in priority order.
+                            // Different OpenAI-compatible providers emit thinking in
+                            // different fields. We probe them all and emit the first
+                            // non-empty one. Logged so the next round of debugging
+                            // can tell us exactly which field the model picked.
+                            //
+                            //   reasoning_content   — DeepSeek reasoner
+                            //   reasoning           — OpenAI o1/o3 style / most OpenAI-compat
+                            //   reasoning_text      — some Chinese providers
+                            //   thinking            — Anthropic-on-OpenAI-router, others
+                            const THINKING_FIELDS: &[&str] = &[
+                                "reasoning_content",
+                                "reasoning",
+                                "reasoning_text",
+                                "thinking",
+                            ];
+                            for field in THINKING_FIELDS {
+                                if let Some(text) = choice["delta"].get(field).and_then(|v| v.as_str()) {
+                                    if !text.is_empty() {
+                                        log_stream(&format!("thinking field hit: {field} (len={})", text.len()));
+                                        let _ = app.emit("stream-event", StreamEvent::ThinkingDelta {
+                                            text: text.to_string(),
+                                            conversation_id: conversation_id.clone(),
+                                        });
+                                        break; // first non-empty wins
+                                    }
                                 }
                             }
                             if let Some(delta) = choice["delta"].get("content") {

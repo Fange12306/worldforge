@@ -128,10 +128,11 @@ pub fn save_active_model(active_model: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
     // Strip trailing path segments like /chat/completions or /v1/chat/completions
+    // (or the legacy /messages suffix some endpoints expose).
     let base = base_url
         .trim_end_matches('/')
         .replace("/chat/completions", "")
-        .replace("/messages", "");  // Anthropic format
+        .replace("/messages", "");
     let models_url = format!("{}/models", base);
 
     let client = reqwest::Client::builder()

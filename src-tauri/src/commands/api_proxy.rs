@@ -239,63 +239,40 @@ pub async fn test_connection(
     base_url: Option<String>,
 ) -> Result<String, String> {
     let default_api_url = match provider.as_str() {
-        "anthropic" => "https://api.anthropic.com/v1/messages",
         "openai" => "https://api.openai.com/v1/chat/completions",
         "deepseek" => "https://api.deepseek.com/v1/chat/completions",
-        _ => return Err(format!("未知 Provider: {}", provider)),
+        _ => "https://api.deepseek.com/v1/chat/completions", // sensible default for custom providers
     };
     let api_url = base_url.as_deref()
-        .filter(|url| !url.trim().is_empty())
-        .unwrap_or(default_api_url);
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+        .map(String::from)
+        .unwrap_or_else(|| default_api_url.to_string());
 
     let client = reqwest::Client::builder()
         .no_proxy()
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
 
-    if provider == "anthropic" {
-        let body = serde_json::json!({
-            "model": model,
-            "max_tokens": 10,
-            "messages": [{"role": "user", "content": "Hi"}],
-        });
-        let resp = client
-            .post(api_url)
-            .header("x-api-key", &api_key)
-            .header("anthropic-version", "2023-06-01")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("连接失败: {}", e))?;
+    let body = serde_json::json!({
+        "model": model,
+        "messages": [{"role": "user", "content": "Hi"}],
+        "max_tokens": 10,
+    });
+    let resp = client
+        .post(&api_url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("连接失败: {}", e))?;
 
-        let status = resp.status();
-        if status.is_success() {
-            Ok(format!("✓ 连接成功 (Anthropic, {})", model))
-        } else {
-            let text = resp.text().await.unwrap_or_default();
-            Err(format!("API 返回 {}: {}", status, text))
-        }
+    let status = resp.status();
+    if status.is_success() {
+        Ok(format!("✓ 连接成功 ({}, {})", provider, model))
     } else {
-        let body = serde_json::json!({
-            "model": model,
-            "messages": [{"role": "user", "content": "Hi"}],
-            "max_tokens": 10,
-        });
-        let resp = client
-            .post(api_url)
-            .header("Authorization", format!("Bearer {}", api_key))
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("连接失败: {}", e))?;
-
-        let status = resp.status();
-        if status.is_success() {
-            Ok(format!("✓ 连接成功 ({}, {})", provider, model))
-        } else {
-            let text = resp.text().await.unwrap_or_default();
-            Err(format!("API 返回 {}: {}", status, text))
-        }
+        let text = resp.text().await.unwrap_or_default();
+        Err(format!("API 返回 {}: {}", status, text))
     }
 }
 
@@ -322,57 +299,17 @@ pub async fn single_chat(
         .timeout(std::time::Duration::from_secs(60))
         .build()
         .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
-    // 与 stream_chat 一致: provider 只用来取 API Key; 请求地址从配置读（任意 provider id 都可配 base_url）,
-    // 无配置时 fallback 到 Anthropic/DeepSeek 默认。格式由 URL 判断, 不再依赖 provider 名写死。
+    // provider 只用来取 API Key; 请求地址从配置读（任意 provider id 都可配 base_url）,
+    // 无配置时 fallback 到 DeepSeek 默认。仅支持 OpenAI-compatible 协议。
     let configured_api_url = crate::commands::api_key::get_api_base_url(provider.clone());
-    let default_api_url = if provider == "anthropic" {
-        "https://api.anthropic.com/v1/messages"
-    } else {
-        "https://api.deepseek.com/v1/chat/completions"
-    };
     let api_url = configured_api_url
         .as_deref()
-        .filter(|u| !u.trim().is_empty())
-        .unwrap_or(default_api_url);
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+        .map(String::from)
+        .unwrap_or_else(|| "https://api.deepseek.com/v1/chat/completions".to_string());
 
-    let is_anthropic = api_url.contains("anthropic.com")
-        || api_url.trim_end_matches('/').ends_with("/v1/messages");
-
-    if is_anthropic {
-        // Anthropic 无 response_format; json=true 时在 system prompt 前置强制 JSON 约束
-        let system = if json {
-            format!("You must respond with valid JSON only, no prose, no markdown, no code fences.\n\n{}", system_prompt)
-        } else {
-            system_prompt
-        };
-        let body = serde_json::json!({
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": user_message}],
-            "system": system,
-            "stream": false,
-        });
-        let resp = client
-            .post(api_url)
-            .header("x-api-key", &api_key)
-            .header("anthropic-version", "2023-06-01")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| format!("请求失败: {}", e))?;
-
-        let status = resp.status();
-        if !status.is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            return Err(format!("API 错误 {}: {}", status, text));
-        }
-
-        let json: serde_json::Value = resp.json().await.map_err(|e| format!("解析响应失败: {}", e))?;
-        json["content"][0]["text"]
-            .as_str()
-            .map(String::from)
-            .ok_or_else(|| format!("无法提取响应文本: {}", json))
-    } else {
+    {
         let msgs = vec![
             serde_json::json!({"role": "system", "content": system_prompt}),
             serde_json::json!({"role": "user", "content": user_message}),
@@ -393,7 +330,7 @@ pub async fn single_chat(
             body["response_format"] = serde_json::json!({"type": "json_object"});
         }
         let resp = client
-            .post(api_url)
+            .post(&api_url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
             .json(&body)
@@ -435,12 +372,19 @@ pub async fn stream_chat(
     reasoning_effort: Option<String>,
     conversation_id: Option<String>,
     thinking_style: Option<String>,
+    // Wire value for `thinking.type` when the model has thinking ON:
+    //   - DeepSeek uses "enabled"
+    //   - MiniMax uses "adaptive"  (per official docs; the API rejects "enabled"
+    //     with `bad_request_error: invalid params, invalid thinking.type:
+    //     "enabled" (allowed: adaptive, disabled)`).
+    // Defaults to "enabled" when not provided (back-compat for old callers).
+    thinking_on_value: Option<String>,
     base_url: Option<String>,
 ) -> Result<(), String> {
     const MAX_RETRIES: u32 = 3;
     let mut last_error = String::new();
     for attempt in 0..MAX_RETRIES {
-        match stream_chat_inner(app.clone(), messages.clone(), system_prompt.clone(), model.clone(), tools.clone(), provider.clone(), max_tokens, reasoning_effort.clone(), conversation_id.clone(), thinking_style.clone(), base_url.clone()).await {
+        match stream_chat_inner(app.clone(), messages.clone(), system_prompt.clone(), model.clone(), tools.clone(), provider.clone(), max_tokens, reasoning_effort.clone(), conversation_id.clone(), thinking_style.clone(), thinking_on_value.clone(), base_url.clone()).await {
             Ok(()) => return Ok(()),
             Err(e) => {
                 last_error = e.clone();
@@ -468,240 +412,23 @@ async fn stream_chat_inner(
     reasoning_effort: Option<String>,
     conversation_id: Option<String>,
     thinking_style: Option<String>,
+    thinking_on_value: Option<String>,
     base_url: Option<String>,
 ) -> Result<(), String> {
     let api_key = crate::commands::api_key::get_api_key(provider.clone())
         .map_err(|e| format!("未配置 API Key: {}", e))?;
 
-    let default_url = match thinking_style.as_deref() {
-        Some("anthropic") => "https://api.anthropic.com/v1/messages",
-        _ => "https://api.deepseek.com/v1/chat/completions", // sensible default for custom providers
-    };
-    let api_url = base_url.as_deref()
-        .filter(|u| !u.trim().is_empty())
-        .unwrap_or(default_url);
-
-    if thinking_style.as_deref() == Some("anthropic") {
-        stream_anthropic(app, messages, system_prompt, model, tools, api_key, api_url, max_tokens, reasoning_effort, conversation_id).await
-    } else {
-        let style = thinking_style.unwrap_or_else(|| "none".to_string());
-        stream_openai_compatible(app, messages, system_prompt, model, tools, api_key, api_url, style, max_tokens, reasoning_effort, conversation_id).await
-    }
-}
-
-async fn stream_anthropic(
-    app: AppHandle,
-    messages: Vec<ChatMessage>,
-    system_prompt: String,
-    model: String,
-    tools: Vec<ToolDef>,
-    api_key: String,
-    api_url: &str,
-    max_tokens: u32,
-    reasoning_effort: Option<String>,
-    conversation_id: Option<String>,
-) -> Result<(), String> {
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .build()
-        .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
-
-    // Convert tools to Anthropic format
-    let anthropic_tools: Vec<Value> = tools
-        .iter()
-        .map(|t| serde_json::json!({
-            "name": t.name,
-            "description": t.description,
-            "input_schema": t.input_schema,
-        }))
-        .collect();
-
-    // Convert messages
-    let anthropic_msgs: Vec<Value> = messages
-        .iter()
-        .map(|m| serde_json::json!({
-            "role": m.role,
-            "content": m.content,
-        }))
-        .collect();
-
-    // Map reasoning_effort to Anthropic thinking config
-    let thinking_config = match reasoning_effort.as_deref() {
-        Some("disabled") => serde_json::json!({"type": "disabled"}),
-        Some("low") => serde_json::json!({"type": "enabled", "budget_tokens": 1024}),
-        Some("medium") => serde_json::json!({"type": "enabled", "budget_tokens": 4096}),
-        Some("high") => serde_json::json!({"type": "enabled", "budget_tokens": 16384}),
-        Some("max") => serde_json::json!({"type": "enabled", "budget_tokens": 32768}),
-        _ => serde_json::json!({"type": "adaptive"}), // "default" or absent → adaptive
-    };
-
-    let mut body = serde_json::json!({
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": anthropic_msgs,
-        "stream": true,
-        "thinking": thinking_config,
-    });
-
-    if !system_prompt.is_empty() {
-        body["system"] = serde_json::json!(system_prompt);
-    }
-    if !anthropic_tools.is_empty() {
-        body["tools"] = serde_json::Value::Array(anthropic_tools);
-    }
-
-    // Enable automatic prompt caching — system prompt + tools + conversation prefix
-    // get 90% discount on cache reads. Minimum 2048 tokens (Sonnet) which our
-    // ~5.8k system prompt easily exceeds.
-    body["cache_control"] = serde_json::json!({"type": "ephemeral"});
-
-    let response = client
-        .post(api_url)
-        .header("x-api-key", &api_key)
-        .header("anthropic-version", "2023-06-01")
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| format!("API 请求失败: {}", e))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let text = response.text().await.unwrap_or_default();
-        return Err(format!("API 错误 {}: {}", status, text));
-    }
-
-    let mut stream = response.bytes_stream();
-    // 字节缓冲：SSE 流按 TCP chunk 到达，多字节 UTF-8 字符可能被切在 chunk 边界。
-    // 必须累积原始字节、按 \n 切出完整行后再解码，否则 from_utf8_lossy 会把
-    // 切半的字符替换成 U+FFFD（乱码），且后续字节到达后也无法恢复。
-    let mut buffer: Vec<u8> = Vec::new();
-    let mut current_tool_id: Option<String> = None;
-    let mut current_tool_name = String::new();
-    let mut current_tool_input = String::new();
-    let mut input_tokens: u64 = 0;
-    let mut output_tokens: u64 = 0;
-
-    // Register cancellation channel
-    let cid_key = conversation_id.clone().unwrap_or_default();
-    let (cancel_tx, mut cancel_rx) = watch::channel(false);
-    CANCEL_MAP.get_or_init(|| Mutex::new(HashMap::new()))
-        .lock().unwrap()
-        .insert(cid_key.clone(), cancel_tx);
-
-    'stream_loop: loop {
-        let chunk = tokio::select! {
-            result = stream.next() => match result {
-                Some(Ok(c)) => c,
-                Some(Err(e)) => {
-                    CANCEL_MAP.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().remove(&cid_key);
-                    return Err(format!("流读取错误: {}", e));
-                }
-                None => break 'stream_loop,
-            },
-            _ = cancel_rx.changed() => {
-                if *cancel_rx.borrow_and_update() { break 'stream_loop; }
-                continue;
-            }
-        };
-        buffer.extend_from_slice(&chunk);
-
-        // Process SSE events: 按 \n 切出完整行后统一解码，行内字节是完整的 UTF-8
-        while let Some(line_end) = buffer.iter().position(|&b| b == b'\n') {
-            let line_bytes: Vec<u8> = buffer.drain(..=line_end).collect();
-            let line = String::from_utf8_lossy(&line_bytes).trim().to_string();
-
-            if line.is_empty() || line.starts_with(':') {
-                continue;
-            }
-
-            if let Some(data) = line.strip_prefix("data: ") {
-                if data == "[DONE]" {
-                    continue;
-                }
-                if let Ok(event) = serde_json::from_str::<Value>(data) {
-                    match event["type"].as_str() {
-                        Some("message_start") => {
-                            if let Some(usage) = event["message"]["usage"].as_object() {
-                                input_tokens = usage.get("input_tokens").and_then(|v| v.as_u64()).unwrap_or(0);
-                            }
-                        }
-                        Some("content_block_delta") => {
-                            let delta_type = event["delta"]["type"].as_str();
-                            if delta_type == Some("thinking_delta") {
-                                if let Some(thinking) = event["delta"]["thinking"].as_str() {
-                                    let _ = app.emit("stream-event", StreamEvent::ThinkingDelta {
-                                        text: thinking.to_string(),
-                                        conversation_id: conversation_id.clone(),
-                                    });
-                                }
-                            } else if delta_type == Some("text_delta") {
-                                if let Some(text) = event["delta"]["text"].as_str() {
-                                    let _ = app.emit("stream-event", StreamEvent::TextDelta {
-                                        text: text.to_string(),
-                                        conversation_id: conversation_id.clone(),
-                                    });
-                                }
-                            } else if delta_type == Some("input_json_delta") {
-                                if let Some(json) = event["delta"]["partial_json"].as_str() {
-                                    current_tool_input.push_str(json);
-                                }
-                            }
-                        }
-                        Some("content_block_start") => {
-                            if event["content_block"]["type"] == "tool_use" {
-                                current_tool_id = event["content_block"]["id"].as_str().map(String::from);
-                                current_tool_name = event["content_block"]["name"].as_str().unwrap_or("").to_string();
-                                current_tool_input = String::new();
-                            }
-                        }
-                        Some("content_block_stop") => {
-                            // Flush pending tool use
-                            if let Some(ref id) = current_tool_id {
-                                if let Ok(input) = serde_json::from_str::<Value>(&current_tool_input) {
-                                    let _ = app.emit("stream-event", StreamEvent::ToolUse {
-                                        id: id.clone(),
-                                        name: current_tool_name.clone(),
-                                        input,
-                                        conversation_id: conversation_id.clone(),
-                                    });
-                                }
-                                current_tool_id = None;
-                                current_tool_name.clear();
-                                current_tool_input.clear();
-                            }
-                        }
-                        Some("message_delta") => {
-                            if let Some(usage) = event["usage"].get("output_tokens") {
-                                output_tokens = usage.as_u64().unwrap_or(0);
-                            }
-                            let stop_reason = event["delta"]["stop_reason"].as_str().unwrap_or("end_turn");
-                            let _ = app.emit("stream-event", StreamEvent::StreamEnd {
-                                stop_reason: stop_reason.to_string(),
-                                conversation_id: conversation_id.clone(),
-                            });
-                            let _ = app.emit("stream-event", StreamEvent::Usage {
-                                input_tokens,
-                                output_tokens,
-                                cache_hit_tokens: None,
-                                cache_miss_tokens: None,
-                                conversation_id: conversation_id.clone(),
-                            });
-                            // Stream is complete — break immediately instead of waiting for TCP close.
-                            // On Windows, TCP connection teardown can add hundreds of milliseconds.
-                            break;
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
-
-    // Clean up cancellation channel
-    CANCEL_MAP.get_or_init(|| Mutex::new(HashMap::new())).lock().unwrap().remove(&cid_key);
-
-    Ok(())
+    // Only OpenAI-compatible protocol is supported. `thinking_style` only
+    // toggles the "deepseek" thinking-extension payload; "none" sends nothing.
+    let api_url = base_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|u| !u.is_empty())
+        .map(String::from)
+        .unwrap_or_else(|| "https://api.deepseek.com/v1/chat/completions".to_string());
+    let style = thinking_style.unwrap_or_else(|| "none".to_string());
+    let on_value = thinking_on_value.unwrap_or_else(|| "enabled".to_string());
+    stream_openai_compatible(app, messages, system_prompt, model, tools, api_key, &api_url, style, on_value, max_tokens, reasoning_effort, conversation_id).await
 }
 
 async fn stream_openai_compatible(
@@ -713,6 +440,7 @@ async fn stream_openai_compatible(
     api_key: String,
     api_url: &str,
     thinking_style: String,
+    thinking_on_value: String,
     _max_tokens: u32,  // OpenAI-compatible: included in body when tool config doesn't provide it
     reasoning_effort: Option<String>,
     conversation_id: Option<String>,
@@ -728,7 +456,17 @@ async fn stream_openai_compatible(
     }
     for m in &messages {
         if let Some(ref id) = m.tool_call_id {
-            let content = m.content.splitn(2, '\n').nth(1).unwrap_or(&m.content);
+            // Strip the legacy `[工具结果: Name]\n` prefix ONLY when present.
+            // In-memory messages from the agent loop carry this prefix; messages
+            // reconstructed from the store by buildModelMessages (model-context.ts)
+            // use the raw tool result without prefix. Unconditional splitting was
+            // dropping the first line of multi-line JSON / file bodies and
+            // corrupting what the model saw in long sessions.
+            let content = if m.content.starts_with("[工具结果:") {
+                m.content.splitn(2, '\n').nth(1).unwrap_or(&m.content)
+            } else {
+                m.content.as_str()
+            };
             msgs.push(serde_json::json!({
                 "role": "tool",
                 "content": content,
@@ -770,23 +508,81 @@ async fn stream_openai_compatible(
     if _max_tokens > 0 {
         body["max_tokens"] = serde_json::json!(_max_tokens);
     }
-    // Apply thinking parameters based on provider's thinking style.
-    // "deepseek": send thinking toggle + reasoning_effort (DeepSeek V4 extension).
-    // "none": skip — standard OpenAI-compatible, no thinking params.
-    if thinking_style == "deepseek" {
-        let effort = reasoning_effort.as_deref().unwrap_or("disabled");
-        match effort {
-            "disabled" | "default" => {
-                body["thinking"] = serde_json::json!({"type": "disabled"});
+    // Apply thinking parameters. The two independent switches are:
+    //   - `thinking_style` (per provider, auto-detected from baseUrl): one of
+    //     3 wire-protocol variants. The user does not pick this — the URL
+    //     decides. (See `detectThinkingStyle` in TS.)
+    //   - `reasoning_effort` + force-disable flag (per model)
+    //
+    // Wire behaviour per style:
+    //   - "openai":           `reasoning_effort: <effort>` only. Standard OpenAI
+    //                        field; default for unknown URLs.
+    //   - "thinking-type":    `thinking: {type: ...}` + `reasoning_effort`.
+    //                        Both DeepSeek V4 and MiniMax use the `thinking`
+    //                        object, but the "on" value differs:
+    //                          - DeepSeek wants "enabled"
+    //                          - MiniMax wants "adaptive"  (per official docs:
+    //                            "(allowed: adaptive, disabled)")
+    //                        The "off" value is "disabled" for both. We pick
+    //                        the "on" value from the frontend-supplied
+    //                        `thinking_on_value` (auto-detected from baseUrl).
+    //   - "enable-thinking":  `enable_thinking: true|false` (DashScope /
+    //                        Aliyun Bailian). Used by Qwen, GLM, Kimi, and
+    //                        MiniMax when accessed through DashScope.
+    let thinking_on_value = thinking_on_value.as_str();
+    match thinking_style.as_str() {
+        "thinking-type" => {
+            if let Some(effort) = reasoning_effort.as_deref() {
+                match effort {
+                    "disabled" | "default" => {
+                        // Both DeepSeek and MiniMax accept "disabled" to turn thinking off.
+                        body["thinking"] = serde_json::json!({"type": "disabled"});
+                    }
+                    _ => {
+                        // Use the provider-specific "on" value (default "enabled" for
+                        // DeepSeek; "adaptive" for MiniMax — the frontend detects this
+                        // from the baseUrl and passes it via `thinking_on_value`).
+                        body["thinking"] = serde_json::json!({"type": thinking_on_value});
+                        // DeepSeek V4 only supports "high" and "max"; low/medium → high
+                        // for the Pro tier. The Flash tier and MiniMax accept low natively;
+                        // the model-side mapping at the API gateway handles that for us.
+                        let mapped = match effort {
+                            "low" | "medium" => "high",
+                            other => other,
+                        };
+                        body["reasoning_effort"] = serde_json::json!(mapped);
+                    }
+                }
             }
-            _ => {
-                body["thinking"] = serde_json::json!({"type": "enabled"});
-                // DeepSeek V4 only supports "high" and "max"; low/medium → high
-                let mapped = match effort {
-                    "low" | "medium" => "high",
-                    other => other,
-                };
-                body["reasoning_effort"] = serde_json::json!(mapped);
+        }
+        "openai" => {
+            if let Some(effort) = reasoning_effort.as_deref() {
+                if effort != "disabled" && effort != "default" {
+                    body["reasoning_effort"] = serde_json::json!(effort);
+                }
+            }
+        }
+        "enable-thinking" => {
+            // DashScope protocol. The key is `enable_thinking: true|false`. We don't
+            // send `thinking_budget` from here — that's a per-model tuning knob that
+            // belongs in the model config if we ever need it.
+            if let Some(effort) = reasoning_effort.as_deref() {
+                match effort {
+                    "disabled" | "default" => {
+                        body["enable_thinking"] = serde_json::json!(false);
+                    }
+                    _ => {
+                        body["enable_thinking"] = serde_json::json!(true);
+                    }
+                }
+            }
+        }
+        _ => {
+            // Unknown / future variants — fall back to OpenAI standard.
+            if let Some(effort) = reasoning_effort.as_deref() {
+                if effort != "disabled" && effort != "default" {
+                    body["reasoning_effort"] = serde_json::json!(effort);
+                }
             }
         }
     }
@@ -814,8 +610,9 @@ async fn stream_openai_compatible(
     }
 
     let mut stream = response.bytes_stream();
-    // 字节缓冲：见 stream_anthropic 注释——chunk 边界可能切在多字节 UTF-8 字符中间，
-    // 必须按 \n 切出完整行后再解码，否则产生 U+FFFD 乱码。
+    // 字节缓冲：SSE 流按 TCP chunk 到达，多字节 UTF-8 字符可能被切在 chunk 边界。
+    // 必须按 \n 切出完整行后再解码，否则 from_utf8_lossy 会把切半的字符替换
+    // 成 U+FFFD（乱码），且后续字节到达后也无法恢复。
     let mut buffer: Vec<u8> = Vec::new();
     let mut tool_call_buffers: std::collections::HashMap<u64, (String, String, String)> = std::collections::HashMap::new();
     let mut stream_end_reason: Option<String> = None;
@@ -1016,6 +813,13 @@ fn flush_tool_buffers(
                 }
                 Err(e) => {
                     log_stream(&format!("failed to parse tool args for {name} (id {id}): {e}"));
+                    // Surface the failure in the visible stream so the user knows a
+                    // tool was dropped — silent drops caused the "I'll edit X:"
+                    // stalls in long sessions because the loop saw zero tool_use.
+                    let _ = app.emit("stream-event", StreamEvent::TextDelta {
+                        text: format!("\n[工具 {name} 参数解析失败,已忽略 — {}]\n", e),
+                        conversation_id: conversation_id.clone(),
+                    });
                 }
             }
         }

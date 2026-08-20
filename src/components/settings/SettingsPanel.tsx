@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useStore, type ModelConfig, type ProviderConfig } from "@/lib/store";
+import { detectThinkingStyle, migrateThinkingStyle, getThinkingMode, defaultReasoningEffort, isThinkingFixed } from "@/lib/thinking-style";
 import { invoke } from "@/lib/api";
 import { X, Eye, EyeOff, SlidersHorizontal, Palette, Bot, UserRound, ArrowLeft, Pencil, Sun, Moon, Plus } from "lucide-react";
 import { MemoryManager } from "./MemoryManager";
@@ -20,10 +21,11 @@ const sectionDefs: Array<{
 ];
 
 const PRESET_PROVIDERS: ProviderConfig[] = [
-  { id: "", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1/chat/completions", thinkingStyle: "deepseek" },
-  { id: "", name: "Anthropic", baseUrl: "https://api.anthropic.com/v1/messages", thinkingStyle: "anthropic" },
-  { id: "", name: "OpenAI", baseUrl: "https://api.openai.com/v1/chat/completions", thinkingStyle: "none" },
-  { id: "", name: "LM Studio", baseUrl: "", thinkingStyle: "none" },
+  { id: "", name: "DeepSeek", baseUrl: "https://api.deepseek.com/v1/chat/completions", thinkingStyle: "thinking-type", thinkingOnValue: "enabled" },
+  { id: "", name: "OpenAI", baseUrl: "https://api.openai.com/v1/chat/completions", thinkingStyle: "openai", thinkingOnValue: "enabled" },
+  { id: "", name: "LM Studio", baseUrl: "", thinkingStyle: "openai", thinkingOnValue: "enabled" },
+  { id: "", name: "MiniMax", baseUrl: "https://api.minimaxi.com/v1/chat/completions", thinkingStyle: "thinking-type", thinkingOnValue: "adaptive" },
+  { id: "", name: "Qwen/DashScope", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", thinkingStyle: "enable-thinking", thinkingOnValue: "enabled" },
 ];
 
 function newProviderId(): string {
@@ -145,6 +147,41 @@ function ModelSection() {
   }, [storeProviders]);
   useEffect(() => { setModels(normalizeModels(llmModels)); }, [llmModels]);
 
+  // Heal stale providers: existing configs (saved before the
+  // `thinkingOnValue` field existed, or where the URL was correct from
+  // the start so the onChange auto-sync never fired) won't have the field
+  // populated. Also migrate any old `thinkingStyle` enum values
+  // (`"deepseek-ext"` → `"thinking-type"`, `"qwen-ext"` → `"enable-thinking"`,
+  // `"none"` → `"openai"`). Backfill everything from baseUrl auto-detection
+  // so Rust gets the right wire values on the very first request.
+  useEffect(() => {
+    setProviders((prev) => {
+      let changed = false;
+      const next = prev.map((p) => {
+        let cur = p;
+        // 1. Migrate old enum values to the unified names.
+        const migratedStyle = migrateThinkingStyle(cur.thinkingStyle);
+        if (migratedStyle !== cur.thinkingStyle) {
+          cur = { ...cur, thinkingStyle: migratedStyle };
+          changed = true;
+        }
+        // 2. Backfill thinkingOnValue if missing AND the URL matches a known
+        //    provider. For unknown URLs, fall back to "enabled".
+        if (!cur.thinkingOnValue) {
+          if (cur.baseUrl) {
+            const detected = detectThinkingStyle(cur.baseUrl);
+            cur = { ...cur, thinkingOnValue: detected.matched ? detected.thinkingOnValue : "enabled" };
+          } else {
+            cur = { ...cur, thinkingOnValue: "enabled" };
+          }
+          changed = true;
+        }
+        return cur;
+      });
+      return changed ? next : prev;
+    });
+  }, [storeProviders]);
+
   // Load persisted config
   useEffect(() => {
     invoke<{ providers?: string; models?: Array<ModelConfig>; activeProviderId?: string; activeModel?: string; compressionThreshold?: number; pruneToolResults?: boolean; pruneKeepTurns?: number }>("load_config")
@@ -196,6 +233,27 @@ function ModelSection() {
     }
   }, [providers]);
 
+  // Persist API keys to disk as the user types (debounced 500ms).
+  // The "Save" button still exists for saving the rest of the provider
+  // config, but the key itself is now auto-saved — otherwise the input
+  // shows the right key but stream_chat (which reads from disk via
+  // get_api_key) keeps using the OLD key until the user manually clicks
+  // Save. This was the source of the "works after save" confusion.
+  useEffect(() => {
+    const timers: Record<string, ReturnType<typeof setTimeout>> = {};
+    for (const [providerId, key] of Object.entries(apiKeys)) {
+      if (!providerId || !key) continue;
+      // Skip if already saved (the load effect above would have populated
+      // the state with the same value; no need to re-write on mount).
+      timers[providerId] = setTimeout(() => {
+        invoke("save_api_key", { provider: providerId, key }).catch(() => {});
+      }, 500);
+    }
+    return () => {
+      for (const t of Object.values(timers)) clearTimeout(t);
+    };
+  }, [apiKeys]);
+
   // SearXNG URL (optional search fallback)
   const [searxngUrl, setSearxngUrl] = useState("");
   useEffect(() => {
@@ -240,7 +298,8 @@ function ModelSection() {
     name: string;
     baseUrl: string;
     thinkingStyle: ProviderConfig["thinkingStyle"];
-  }>({ name: "", baseUrl: "", thinkingStyle: "none" });
+    thinkingOnValue: NonNullable<ProviderConfig["thinkingOnValue"]>;
+  }>({ name: "", baseUrl: "", thinkingStyle: "openai", thinkingOnValue: "enabled" });
 
   // ── Actions ──
 
@@ -256,17 +315,22 @@ function ModelSection() {
 
   const handleAddCustomProvider = () => {
     if (!newProviderForm.name.trim() || !newProviderForm.baseUrl.trim()) return;
+    // If the URL matches a known provider, force the canonical style + value
+    // even if the form's stored values drifted (defensive). The
+    // ThinkingStyleControl hides the dropdown in this case anyway.
+    const detected = detectThinkingStyle(newProviderForm.baseUrl);
     const newProvider: ProviderConfig = {
       id: newProviderId(),
       name: newProviderForm.name.trim(),
       baseUrl: newProviderForm.baseUrl.trim(),
-      thinkingStyle: newProviderForm.thinkingStyle,
+      thinkingStyle: detected.matched ? detected.style : newProviderForm.thinkingStyle,
+      thinkingOnValue: detected.matched ? detected.thinkingOnValue : newProviderForm.thinkingOnValue,
     };
     const updated = [...providers, newProvider];
     setProviders(updated);
     setEditingProviderId(newProvider.id);
     setAddingProvider(false);
-    setNewProviderForm({ name: "", baseUrl: "", thinkingStyle: "none" });
+    setNewProviderForm({ name: "", baseUrl: "", thinkingStyle: "openai", thinkingOnValue: "enabled" });
   };
 
   const handleRemoveProvider = (id: string) => {
@@ -300,7 +364,10 @@ function ModelSection() {
         .map((name) => ({
           name: sanitizeModelName(name),
           providerId: currentProvider.id,
-          reasoningEffort: "disabled" as const,
+          // Pick a sensible default per model name: a fixed-on reasoning
+          // model (M2.x, o1) should NOT default to "disabled" because the
+          // provider will just ignore that.
+          reasoningEffort: defaultReasoningEffort(name),
         }));
       setModels((prev) => [...prev, ...newOnes]);
       setFetchResult({ count: fetched.length });
@@ -322,7 +389,11 @@ function ModelSection() {
       const cleanedModels = normalizeModels(currentModels);
       const testModel = cleanedModels[0]?.name || currentProvider?.name || "";
       const result = await invoke<string>("test_connection", {
-        provider: currentProvider?.thinkingStyle === "anthropic" ? "anthropic" : "openai",
+        // test_connection's "provider" arg is a legacy routing hint. The Rust
+        // side now just uses it to pick a default API URL when no baseUrl is
+        // provided. Pass an OpenAI-style provider by default; "deepseek" only
+        // mattered when Anthropic routing was a thing, which is gone.
+        provider: "openai",
         apiKey: currentApiKey,
         model: testModel,
         baseUrl: currentProvider?.baseUrl,
@@ -452,7 +523,7 @@ function ModelSection() {
                     <button
                       onClick={() => {
                         setAddingProvider(false);
-                        setNewProviderForm({ name: "", baseUrl: "", thinkingStyle: "none" });
+                        setNewProviderForm({ name: "", baseUrl: "", thinkingStyle: "openai", thinkingOnValue: "enabled" });
                       }}
                       className="px-3 py-1.5 text-xs rounded-md text-ink-muted hover:text-ink transition-colors"
                     >
@@ -470,20 +541,29 @@ function ModelSection() {
                     />
                     <input
                       value={newProviderForm.baseUrl}
-                      onChange={(e) => setNewProviderForm((f) => ({ ...f, baseUrl: e.target.value }))}
+                      onChange={(e) => {
+                        const baseUrl = e.target.value;
+                        // When the URL matches a known provider, the thinking style
+                        // AND the "thinking on" wire value are fixed by the protocol
+                        // — we sync the form's values so they don't drift. For
+                        // unknown URLs, keep whatever the user picked (or "openai" /
+                        // "enabled" by default) so they can choose freely.
+                        const detected = detectThinkingStyle(baseUrl);
+                        setNewProviderForm((f) => ({
+                          ...f,
+                          baseUrl,
+                          thinkingStyle: detected.matched ? detected.style : f.thinkingStyle,
+                          thinkingOnValue: detected.matched ? detected.thinkingOnValue : f.thinkingOnValue,
+                        }));
+                      }}
                       onKeyDown={(e) => { if (e.key === "Enter") handleAddCustomProvider(); }}
                       placeholder={t.model.providerUrl}
                       className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
                     />
-                    <select
-                      value={newProviderForm.thinkingStyle}
-                      onChange={(e) => setNewProviderForm((f) => ({ ...f, thinkingStyle: e.target.value as ProviderConfig["thinkingStyle"] }))}
-                      className="w-full h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors"
-                    >
-                      <option value="none">{t.model.customProvider}</option>
-                      <option value="deepseek">DeepSeek</option>
-                      <option value="anthropic">Anthropic</option>
-                    </select>
+                    <ThinkingStyleControl
+                      baseUrl={newProviderForm.baseUrl}
+                      storedStyle={newProviderForm.thinkingStyle}
+                    />
                     <button
                       onClick={handleAddCustomProvider}
                       disabled={!newProviderForm.name.trim() || !newProviderForm.baseUrl.trim()}
@@ -517,7 +597,21 @@ function ModelSection() {
                   <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.baseUrl}</label>
                   <input
                     value={currentProvider.baseUrl}
-                    onChange={(e) => handleUpdateProvider(currentProvider.id, { baseUrl: e.target.value })}
+                    onChange={(e) => {
+                      const baseUrl = e.target.value;
+                      // When the URL matches a known provider, the thinking style
+                      // and `thinking.type` "on" value are baked in (we expose the
+                      // style as read-only below) — also keep the stored values in
+                      // sync so the rest of the code reads the correct ones. For
+                      // unknown URLs, leave stored values alone so the user's
+                      // manual choice persists.
+                      const detected = detectThinkingStyle(baseUrl);
+                      handleUpdateProvider(currentProvider.id, {
+                        baseUrl,
+                        thinkingStyle: detected.matched ? detected.style : currentProvider.thinkingStyle,
+                        thinkingOnValue: detected.matched ? detected.thinkingOnValue : (currentProvider.thinkingOnValue ?? "enabled"),
+                      });
+                    }}
                     placeholder="https://api.example.com/v1/chat/completions"
                     className="w-96 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors font-mono"
                   />
@@ -526,16 +620,11 @@ function ModelSection() {
                 <div className="flex items-start gap-6 min-h-9">
                   <label className="w-28 pt-2 text-xs text-ink-secondary flex-shrink-0">{t.model.thinkingStyle}</label>
                   <div className="w-96 space-y-1.5">
-                    <select
-                      value={currentProvider.thinkingStyle}
-                      onChange={(e) => handleUpdateProvider(currentProvider.id, { thinkingStyle: e.target.value as ProviderConfig["thinkingStyle"] })}
-                      className="w-40 h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2.5 outline-none focus:border-brand-500/30 transition-colors"
-                    >
-                      <option value="none">{t.model.customProvider}</option>
-                      <option value="deepseek">DeepSeek</option>
-                      <option value="anthropic">Anthropic</option>
-                    </select>
-                    <p className="text-[0.625rem] text-ink-muted">{t.model.thinkingStyleHint}</p>
+                    <ThinkingStyleControl
+                      baseUrl={currentProvider.baseUrl}
+                      storedStyle={currentProvider.thinkingStyle}
+                      onChange={(style) => handleUpdateProvider(currentProvider.id, { thinkingStyle: style })}
+                    />
                   </div>
                 </div>
 
@@ -619,7 +708,29 @@ function ModelSection() {
                     </div>
                     {currentModels.map((m, i) => {
                       const globalIdx = models.findIndex((gm) => gm.name === m.name && gm.providerId === m.providerId);
-                      const thinkingEnabled = currentProvider.thinkingStyle !== "none";
+                      // All current ThinkingStyle variants support reasoning params
+                      // (just via different fields). Hide controls only when the
+                      // user has explicitly set `reasoningEffort: "disabled"` for
+                      // the model — the per-model dropdown handles that.
+                      const thinkingEnabled = true;
+                      // Per-model thinking mode. When the model has thinking
+                      // baked in (e.g. o1, M2.x), the user can tune intensity
+                      // but not turn it off — hide the "disable thinking"
+                      // checkbox and force the dropdown to a non-disabled value.
+                      // When the model has no reasoning at all, lock the
+                      // dropdown to "off" and hide the checkbox.
+                      const mode = getThinkingMode(m.name);
+                      const isFixedOn = mode === "fixed-on" && thinkingEnabled;
+                      const isFixedOff = mode === "fixed-off" || !thinkingEnabled;
+                      const hideDisableCheckbox = isFixedOn || isFixedOff || !thinkingEnabled;
+                      // For fixed-on models, default to "high" so the dropdown
+                      // doesn't show a misleading "disabled" value the model
+                      // will ignore anyway.
+                      const effectiveEffort: ModelConfig["reasoningEffort"] = isFixedOn
+                        ? (m.reasoningEffort && m.reasoningEffort !== "disabled" ? m.reasoningEffort : "high")
+                        : isFixedOff
+                          ? "disabled"
+                          : (m.reasoningEffort || "disabled");
                       return (
                         <div key={`${m.name}-${i}`} className="grid grid-cols-[minmax(0,1fr)_120px_104px_100px_68px_32px] gap-2">
                           <input
@@ -642,26 +753,60 @@ function ModelSection() {
                             placeholder={t.model.displayName}
                             className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors"
                           />
-                          <select
-                            value={thinkingEnabled ? (m.reasoningEffort || "disabled") : "disabled"}
-                            disabled={!thinkingEnabled}
-                            onChange={(e) => {
-                              const next = [...models];
-                              next[globalIdx] = { ...next[globalIdx], reasoningEffort: e.target.value as ModelConfig["reasoningEffort"] };
-                              setModels(next);
-                            }}
-                            className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors disabled:opacity-40"
-                          >
-                            <option value="disabled">{t.model.reasoningOff}</option>
-                            {thinkingEnabled && (
-                              <>
-                                <option value="low">{t.model.reasoningLow}</option>
-                                <option value="medium">{t.model.reasoningMedium}</option>
-                                <option value="high">{t.model.reasoningHigh}</option>
-                                <option value="max">{t.model.reasoningMax}</option>
-                              </>
+                          <div className="flex flex-col gap-1">
+                            <select
+                              value={effectiveEffort}
+                              disabled={isFixedOff}
+                              onChange={(e) => {
+                                const next = [...models];
+                                next[globalIdx] = { ...next[globalIdx], reasoningEffort: e.target.value as ModelConfig["reasoningEffort"] };
+                                setModels(next);
+                              }}
+                              className="h-8 rounded-md bg-surface-900 border border-edge text-xs text-ink px-2 outline-none focus:border-brand-500/30 transition-colors disabled:opacity-40"
+                            >
+                              {!isFixedOn && <option value="disabled">{t.model.reasoningOff}</option>}
+                              {thinkingEnabled && (
+                                <>
+                                  <option value="low">{t.model.reasoningLow}</option>
+                                  <option value="medium">{t.model.reasoningMedium}</option>
+                                  <option value="high">{t.model.reasoningHigh}</option>
+                                  <option value="max">{t.model.reasoningMax}</option>
+                                </>
+                              )}
+                            </select>
+                            {isFixedOn && (
+                              <span
+                                data-testid="model-thinking-mode"
+                                className="text-[0.625rem] text-ink-muted leading-none"
+                                title={t.model.thinkingModeFixedOnHint}
+                              >
+                                🔒 {t.model.thinkingModeFixedOn}
+                              </span>
                             )}
-                          </select>
+                            {isFixedOff && thinkingEnabled && (
+                              <span
+                                className="text-[0.625rem] text-ink-muted leading-none"
+                                title={t.model.thinkingModeFixedOffHint}
+                              >
+                                — {t.model.thinkingModeFixedOff}
+                              </span>
+                            )}
+                            {!hideDisableCheckbox && (
+                              <label className="flex items-center gap-1 text-[0.625rem] text-ink-muted cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={!!m.thinkingDisabled}
+                                  onChange={(e) => {
+                                    const next = [...models];
+                                    next[globalIdx] = { ...next[globalIdx], thinkingDisabled: e.target.checked };
+                                    setModels(next);
+                                  }}
+                                  className="w-3 h-3 accent-brand-500"
+                                />
+                                <span>{t.model.thinkingDisabled}</span>
+                              </label>
+                            )}
+                          </div>
                           <input
                             value={m.contextWindow || ""}
                             onChange={(e) => {
@@ -700,7 +845,12 @@ function ModelSection() {
                         onChange={(e) => setNewModelName(e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" && newModelName.trim() && currentProvider) {
-                            setModels([...models, { name: sanitizeModelName(newModelName), providerId: currentProvider.id, reasoningEffort: "disabled" }]);
+                            const name = sanitizeModelName(newModelName);
+                            setModels([...models, {
+                              name,
+                              providerId: currentProvider.id,
+                              reasoningEffort: defaultReasoningEffort(name),
+                            }]);
                             setNewModelName("");
                           }
                         }}
@@ -710,7 +860,12 @@ function ModelSection() {
                       <button
                         onClick={() => {
                           if (newModelName.trim() && currentProvider) {
-                            setModels([...models, { name: sanitizeModelName(newModelName), providerId: currentProvider.id, reasoningEffort: "disabled" }]);
+                            const name = sanitizeModelName(newModelName);
+                            setModels([...models, {
+                              name,
+                              providerId: currentProvider.id,
+                              reasoningEffort: defaultReasoningEffort(name),
+                            }]);
                             setNewModelName("");
                           }
                         }}
@@ -787,6 +942,55 @@ function ModelSection() {
         </p>
       </div>
     </section>
+  );
+}
+
+// ── Thinking Style Control ─────────────────────────────
+
+/**
+ * Read-only display of the resolved thinking protocol for a provider.
+ * The user CANNOT pick — the wire format is fully derived from baseUrl.
+ * The `onChange` prop is kept only for compatibility with the Add Provider
+ * form, but in practice nothing here is user-editable.
+ */
+function ThinkingStyleControl({ baseUrl, storedStyle }: {
+  baseUrl: string;
+  storedStyle: ProviderConfig["thinkingStyle"];
+  onChange?: (style: ProviderConfig["thinkingStyle"]) => void;
+}) {
+  const { t } = useT();
+  const detected = detectThinkingStyle(baseUrl);
+
+  const label = (style: ProviderConfig["thinkingStyle"]) => {
+    switch (style) {
+      case "openai": return t.model.thinkingStyleOpenai;
+      case "thinking-type": return t.model.thinkingStyleDeepseek;
+      case "enable-thinking": return t.model.thinkingStyleQwen;
+    }
+  };
+
+  // Always render a read-only badge — the protocol is derived from the URL.
+  // The stored value is a fallback for unmatched URLs (defaults to "openai").
+  const resolvedStyle = detected.matched ? detected.style : (storedStyle ?? "openai");
+  const hint = detected.matched
+    ? `${t.model.thinkingStyleAutoHint} (${detected.reason})`
+    : t.model.thinkingStyleUnmatchedHint;
+
+  return (
+    <>
+      <div className="flex items-center gap-2 h-8">
+        <span
+          data-testid="thinking-style-locked"
+          className="px-2.5 h-8 inline-flex items-center rounded-md bg-surface-800 border border-edge text-xs text-ink"
+        >
+          {label(resolvedStyle)}
+        </span>
+        <span className="text-[0.625rem] text-ink-muted">
+          · {t.model.thinkingStyleAutoDetected}
+        </span>
+      </div>
+      <p className="text-[0.625rem] text-ink-muted">{hint}</p>
+    </>
   );
 }
 

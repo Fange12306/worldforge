@@ -28,21 +28,7 @@ const LIMITS: Record<string, number> = {
   OutlineRead: 300,
 };
 
-// ── Prune a single tool result message ──
-
-function pruneToolResult(msg: AgentMessage): AgentMessage {
-  if (!msg.content.startsWith("[工具结果:")) return msg;
-
-  const headerMatch = msg.content.match(/^\[工具结果:\s*(\S+)\]\n?/);
-  if (!headerMatch) return msg;
-  const toolName = headerMatch[1];
-  const body = msg.content.slice(headerMatch[0].length);
-
-  if (!body) return msg;
-
-  const pruned = pruneByTool(toolName, body);
-  return { ...msg, content: pruned };
-}
+// ── Prune a single tool result body by tool name ──
 
 function pruneByTool(toolName: string, body: string): string {
   switch (toolName) {
@@ -311,6 +297,40 @@ function pruneMemory(body: string): string {
 // ── Main entry point ──
 
 /**
+ * Tool-result detection. Two shapes appear in the AgentMessage stream:
+ *
+ *   - In-memory (during one agent run): role:"user" + tool_call_id + content
+ *     prefixed with "[工具结果: Name]\n".
+ *   - Persisted & rebuilt (between turns, by buildModelMessages):
+ *     role:"tool" + tool_call_id + raw content (no prefix).
+ *
+ * Both are pruned identically below; we key off `tool_call_id` being set, and
+ * look the tool name up from the prior assistant turn's `tool_calls` array
+ * when no `[工具结果: ...]` prefix is available.
+ */
+function isToolResult(msg: AgentMessage): boolean {
+  if (msg.tool_call_id) return true;
+  if (msg.role === "tool") return true;
+  if (msg.role === "user" && msg.content.startsWith("[工具结果:")) return true;
+  return false;
+}
+
+/** Look up the tool name for a tool result message. Falls back to "tool". */
+function toolNameOf(
+  msg: AgentMessage,
+  toolNameByCallId: Map<string, string>,
+): string {
+  if (msg.tool_call_id) {
+    const fromMap = toolNameByCallId.get(msg.tool_call_id);
+    if (fromMap) return fromMap;
+  }
+  // Legacy prefix path (in-memory messages during one agent run).
+  const m = msg.content.match(/^\[工具结果:\s*(\S+)\]\n?/);
+  if (m) return m[1];
+  return "tool";
+}
+
+/**
  * Prune tool results from turns BEFORE the current user turn.
  *
  * @param messages - Full message array for the conversation
@@ -319,11 +339,22 @@ function pruneMemory(body: string): string {
  *                    EntryRead dedup (same id → name-only) applies everywhere.
  */
 export function pruneToolOutputs(messages: AgentMessage[], keepTurns = DEFAULT_KEEP_TURNS): AgentMessage[] {
-  // 1. Find the start of the current turn: the last user message that is NOT a tool result
+  // 0. Build a lookup from tool_call_id → tool_name using every assistant turn
+  //    in scope. Lets us recognise role:"tool" messages that don't carry the
+  //    legacy [工具结果: Name] prefix.
+  const toolNameByCallId = new Map<string, string>();
+  for (const m of messages) {
+    if (m.role !== "assistant" || !m.tool_calls) continue;
+    for (const tc of m.tool_calls) toolNameByCallId.set(tc.id, tc.function.name);
+  }
+
+  // 1. Find the start of the current turn: the last user/tool message that is NOT a tool result.
+  //    "Current turn" in agent-loop terms = the user message the user just sent,
+  //    which is always a plain user message (no tool_call_id, no [工具结果:] prefix).
   let currentTurnStart = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m.role === "user" && !m.content.startsWith("[工具结果:")) {
+    if (m.role === "user" && !isToolResult(m)) {
       currentTurnStart = i;
       break;
     }
@@ -335,7 +366,7 @@ export function pruneToolOutputs(messages: AgentMessage[], keepTurns = DEFAULT_K
   let turnsFound = 0;
   for (let i = currentTurnStart - 1; i >= 0 && turnsFound < keepTurns; i--) {
     const m = messages[i];
-    if (m.role === "user" && !m.content.startsWith("[工具结果:")) {
+    if (m.role === "user" && !isToolResult(m)) {
       turnsFound++;
       keepZoneStart = i;
     }
@@ -349,34 +380,76 @@ export function pruneToolOutputs(messages: AgentMessage[], keepTurns = DEFAULT_K
   const latestEntryReadIdx = new Map<string, number>();
   for (let i = keepZoneStart; i < currentTurnStart; i++) {
     const msg = messages[i];
-    if (msg.role !== "user") continue;
-    if (!msg.content.startsWith("[工具结果:")) continue;
-    const headerMatch = msg.content.match(/^\[工具结果:\s*(\S+)\]\n?/);
-    if (!headerMatch) continue;
-    if (headerMatch[1] !== "EntryRead") continue;
-    const id = entryIdFromBody(msg.content.slice(headerMatch[0].length));
+    if (!isToolResult(msg)) continue;
+    if (toolNameOf(msg, toolNameByCallId) !== "EntryRead") continue;
+    const id = entryIdFromToolResult(msg);
     if (id) latestEntryReadIdx.set(id, i);
   }
 
   // 4. Pass 2: apply pruning
   return messages.map((msg, i) => {
     if (i >= currentTurnStart) return msg;          // current turn: intact
-    if (msg.role !== "user") return msg;              // assistant messages: intact
-    if (!msg.content.startsWith("[工具结果:")) return msg;
+    if (msg.role === "assistant") return msg;       // assistant messages: intact
+    if (!isToolResult(msg)) return msg;             // plain user/system: intact
+
+    const toolName = toolNameOf(msg, toolNameByCallId);
 
     // ── Keep zone: intact except EntryRead dedup ──
     if (i >= keepZoneStart) {
-      const headerMatch = msg.content.match(/^\[工具结果:\s*(\S+)\]\n?/);
-      if (headerMatch && headerMatch[1] === "EntryRead") {
-        const id = entryIdFromBody(msg.content.slice(headerMatch[0].length));
+      if (toolName === "EntryRead") {
+        const id = entryIdFromToolResult(msg);
         if (id && latestEntryReadIdx.get(id) !== i) {
-          return { ...msg, content: pruneEntryReadNameOnly(msg.content) };
+          return { ...msg, content: pruneEntryReadNameOnlyFromRaw(msg.content) };
         }
       }
       return msg; // other tools: intact
     }
 
     // ── Prune zone: all tool results → censored ──
-    return pruneToolResult(msg);
+    return pruneToolResultByName(msg, toolName);
   });
+}
+
+/** Extract the entry id from a tool result body, regardless of prefix shape. */
+function entryIdFromToolResult(msg: AgentMessage): string | null {
+  const raw = msg.content.startsWith("[工具结果:")
+    ? msg.content.replace(/^\[工具结果:\s*\S+\]\n?/, "")
+    : msg.content;
+  return entryIdFromBody(raw);
+}
+
+/**
+ * Drop a tool result to a name-only "[已裁减: <name> (<type>)]" line, with no
+ * body. Works on the raw content (no prefix) — used for keep-zone dedup.
+ */
+function pruneEntryReadNameOnlyFromRaw(content: string): string {
+  try {
+    const data = JSON.parse(content);
+    return `[已裁减: ${data.name || "?"} (${data.type || "?"})]`;
+  } catch {
+    return "[已裁减: ?]";
+  }
+}
+
+/**
+ * Drop a tool result to a censored form. Dispatches on the tool name so
+ * pruners that need a tool name (EntryRead, FileRead, etc.) work whether
+ * or not the message carries the legacy prefix.
+ */
+function pruneToolResultByName(msg: AgentMessage, toolName: string): AgentMessage {
+  // Normalise to the legacy "[工具结果: Name]\n<body>" shape the per-tool
+  // pruners were originally written for. Cheap, local — never sent to the LLM.
+  const body = msg.content.startsWith("[工具结果:")
+    ? msg.content.replace(/^\[工具结果:\s*\S+\]\n?/, "")
+    : msg.content;
+  const synthesised = `[工具结果: ${toolName}]\n${body}`;
+  const pruned = pruneByTool(toolName, synthesised);
+  // The synthesised prefix never made it to the wire; for tool messages
+  // rebuilt by buildModelMessages, the LLM expects the raw body, not a
+  // `[工具结果: ...]` envelope. Strip it back off.
+  if (!msg.content.startsWith("[工具结果:")) {
+    const stripped = pruned.replace(/^\[工具结果:\s*\S+\]\n?/, "");
+    return { ...msg, content: stripped };
+  }
+  return { ...msg, content: pruned };
 }

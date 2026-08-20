@@ -132,7 +132,8 @@ fn filter_by_timeline(constraints: Vec<Constraint>, timeline_id: &Option<String>
 }
 
 /// Pick the cheapest reliable model for the consistency judge.
-/// Uses haiku for Anthropic, deepseek-chat for DeepSeek, gpt-4o-mini for OpenAI.
+/// Uses deepseek-chat for DeepSeek, gpt-4o-mini for OpenAI; falls back to the
+/// first configured model or a sensible default.
 fn pick_judge_model(provider: &str, models: &[serde_json::Value]) -> String {
     let model_ids: Vec<&str> = models
         .iter()
@@ -141,7 +142,6 @@ fn pick_judge_model(provider: &str, models: &[serde_json::Value]) -> String {
 
     // Preferred cheap models in order
     let cheap_candidates: &[&str] = match provider {
-        "anthropic" => &["claude-haiku-4-5", "claude-haiku-4-5-20251001"],
         "deepseek" => &["deepseek-chat"],
         "openai" => &["gpt-4o-mini"],
         _ => return "deepseek-chat".to_string(),
@@ -160,11 +160,8 @@ fn pick_judge_model(provider: &str, models: &[serde_json::Value]) -> String {
     model_ids
         .first()
         .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            match provider {
-                "anthropic" => "claude-haiku-4-5-20251001".to_string(),
-                "deepseek" => "deepseek-chat".to_string(),
-                _ => "gpt-4o-mini".to_string(),
-            }
+        .unwrap_or_else(|| match provider {
+            "openai" => "gpt-4o-mini".to_string(),
+            _ => "deepseek-chat".to_string(),
         })
 }

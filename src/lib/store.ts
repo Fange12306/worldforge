@@ -40,6 +40,16 @@ export type Conversation = {
   compressedAt?: number;
   compressedSummary?: string;
   compressedTokenSavings?: number;
+  /**
+   * Id of the FIRST message in the keep zone (i.e., the first message that
+   * survived the most recent compression). On the next send, all messages
+   * in the store with an id BEFORE this one are replaced with a summary
+   * message in the LLM-bound view, while the store itself keeps the full
+   * original content (thinking, toolCalls) for UI replay. Stored as a
+   * stable id rather than an index so it survives addMessage / pruning
+   * that change array length.
+   */
+  compressedBeforeId?: string | null;
   // DeepSeek KV cache tracking (automatic disk cache)
   cacheHitTokens: number;
   cacheMissTokens: number;
@@ -67,11 +77,58 @@ export type Message = {
   timestamp: number;
 };
 
+/**
+ * Wire protocol variant for chain-of-thought / reasoning control. Different
+ * LLM providers expose their own non-standard fields on top of the OpenAI
+ * `reasoning_effort` field, so we have to pick one to send.
+ *
+ *   - "openai":        send `reasoning_effort: <effort>` only.
+ *                      Works for OpenAI o1/o3 and any other endpoint that
+ *                      consumes the standard field.
+ *   - "thinking-type":  send `thinking: {type: ...}` + `reasoning_effort: <effort>`.
+ *                      Both DeepSeek V4 and MiniMax use the `thinking` object,
+ *                      but the *value* differs:
+ *                        - DeepSeek uses `enabled` / `disabled`
+ *                        - MiniMax uses `adaptive` / `disabled`
+ *                      The "thinking on" value is auto-detected from the baseUrl
+ *                      and stored in `ProviderConfig.thinkingOnValue`; Rust sends
+ *                      whatever the frontend tells it.
+ *                      Required if you want to actually disable thinking on
+ *                      providers that default-on.
+ *   - "enable-thinking": send `enable_thinking: true|false` (DashScope / Aliyun
+ *                      Bailian protocol). Used by Qwen, GLM, Kimi, and also
+ *                      by MiniMax when accessed through DashScope.
+ *                      Optional companion: `thinking_budget` (token cap).
+ */
+/**
+ * Wire protocol variant for chain-of-thought / reasoning control. Different
+ * OpenAI-compatible providers extend the spec in incompatible ways — we pick
+ * one to send based on the provider's URL.
+ *
+ *   - "openai":           send `reasoning_effort: <effort>` only (the standard
+ *                         OpenAI o1/o3 field). Default for unknown URLs.
+ *   - "thinking-type":    send `thinking: {type: ...}` + `reasoning_effort`.
+ *                         Used by DeepSeek V4 and MiniMax. The "type" value
+ *                         differs by provider (`enabled` for DeepSeek,
+ *                         `adaptive` for MiniMax) — see `thinkingOnValue`.
+ *   - "enable-thinking":  send `enable_thinking: true|false` (DashScope /
+ *                         Aliyun Bailian protocol). Used by Qwen, GLM, Kimi
+ *                         when accessed through DashScope.
+ */
+export type ThinkingStyle = "openai" | "thinking-type" | "enable-thinking";
+
 export type ProviderConfig = {
   id: string;
   name: string;
   baseUrl: string;
-  thinkingStyle: "deepseek" | "anthropic" | "none";
+  thinkingStyle: ThinkingStyle;
+  /**
+   * Wire value to use for `thinking.type` when the model has thinking ON.
+   * Auto-detected from baseUrl; not user-editable. Only meaningful for
+   * thinkingStyle = "deepseek-ext" — DeepSeek wants "enabled", MiniMax
+   * wants "adaptive". Defaults to "enabled" when unknown.
+   */
+  thinkingOnValue?: "enabled" | "adaptive";
 };
 
 export type ModelConfig = {
@@ -79,6 +136,14 @@ export type ModelConfig = {
   alias?: string;
   providerId: string;
   reasoningEffort?: "disabled" | "low" | "medium" | "high" | "max";
+  /**
+   * Hard "don't think" switch. Overrides reasoningEffort: when true, the wire
+   * payload disables the provider's thinking mode regardless of effort.
+   * - thinkingStyle = "openai"   → drop reasoning_effort (provider may still default-on)
+   * - thinkingStyle = "deepseek" → send `thinking: {type: "disabled"}`
+   * - thinkingStyle = "none"     → send nothing (no way to force-off; pick deepseek for that)
+   */
+  thinkingDisabled?: boolean;
   contextWindow?: number;
   maxTokens?: number;
 };
@@ -130,6 +195,14 @@ type AppStore = {
   addMessage: (storyId: string, msg: Omit<Message, "id" | "timestamp"> & { toolCalls?: ToolCall[] }, convId?: string) => void;
   updateMessage: (storyId: string, msgId: string, content: string) => void;
   updateMessageToolResult: (storyId: string, convId: string, toolUseId: string, result: string) => void;
+  /**
+   * Replace the toolCalls array of an existing assistant message. Used by the
+   * agent-loop's recovery path: when a max_tokens truncation leaves a turn
+   * with broken / dangling tool_call_ids, the in-memory message gets cleaned
+   * AND the store is updated so the next send (which rebuilds from the store)
+   * doesn't re-emit the broken turn.
+   */
+  updateMessageToolCalls: (storyId: string, convId: string, msgId: string, toolCalls: ToolCall[]) => void;
 
   // UI
   sidebarOpen: boolean;
@@ -176,12 +249,20 @@ type AppStore = {
   forceCompress: boolean;
   pruneToolResults: boolean;
   pruneKeepTurns: number;
+  /**
+   * Max number of recovery attempts when a stream is cut by max_tokens.
+   * Each retry adds a user prompt asking the model to continue, which
+   * burns one round-trip — high values for models with small output
+   * budgets, low values for models that get stuck repeating themselves.
+   */
+  maxRecoveryAttempts: number;
+  setMaxRecoveryAttempts: (n: number) => void;
   setCompressionThreshold: (threshold: number) => void;
   setCompressing: (v: boolean) => void;
   setForceCompress: (v: boolean) => void;
   setPruneToolResults: (v: boolean) => void;
   setPruneKeepTurns: (v: number) => void;
-  markCompressed: (convId: string, summary: string, tokenSavings: number) => void;
+  markCompressed: (convId: string, summary: string, tokenSavings: number, beforeId?: string | null) => void;
   replaceMessages: (convId: string, msgs: Message[]) => void;
 
   // Streaming (one at a time, tied to a specific conversation)
@@ -511,6 +592,37 @@ export const useStore = create<AppStore>((set, get) => ({
       })),
     })),
 
+  // Replace the toolCalls array on a persisted assistant message. Used by
+  // the agent-loop's recovery path so a max_tokens-truncated turn with
+  // dangling tool_call_ids gets cleaned in the store (not just in-memory).
+  // The next user send rebuilds from the store, so the cleaned version is
+  // what the LLM sees — without it the broken turn is re-emitted verbatim.
+  updateMessageToolCalls: (storyId, convId, msgId, toolCalls) =>
+    set((s) => ({
+      worlds: s.worlds.map((w) => ({
+        ...w,
+        stories: w.stories.map((st) =>
+          st.id === storyId
+            ? {
+                ...st,
+                conversations: st.conversations.map((c) =>
+                  c.id === convId
+                    ? {
+                        ...c,
+                        messages: c.messages.map((m) =>
+                          m.id === msgId
+                            ? { ...m, toolCalls: toolCalls.length > 0 ? toolCalls : undefined }
+                            : m,
+                        ),
+                      }
+                    : c,
+                ),
+              }
+            : st,
+        ),
+      })),
+    })),
+
   sidebarOpen: true,
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
 
@@ -634,12 +746,16 @@ export const useStore = create<AppStore>((set, get) => ({
   forceCompress: false,
   pruneToolResults: false,
   pruneKeepTurns: 3,
+  // Max recovery attempts on max_tokens truncation. Default 3, matches the
+  // pre-config hardcode; can be tuned per deployment.
+  maxRecoveryAttempts: 3,
   setCompressionThreshold: (threshold) => set({ compressionThreshold: threshold }),
   setCompressing: (v) => set({ isCompressing: v }),
   setForceCompress: (v) => set({ forceCompress: v }),
   setPruneToolResults: (v) => set({ pruneToolResults: v }),
   setPruneKeepTurns: (v) => set({ pruneKeepTurns: v }),
-  markCompressed: (convId, summary, tokenSavings) => {
+  setMaxRecoveryAttempts: (n) => set({ maxRecoveryAttempts: Math.max(0, Math.floor(n)) }),
+  markCompressed: (convId, summary, tokenSavings, beforeId) => {
     set((s) => ({
       worlds: s.worlds.map((w) => ({
         ...w,
@@ -652,6 +768,7 @@ export const useStore = create<AppStore>((set, get) => ({
                   compressedAt: Date.now(),
                   compressedSummary: summary,
                   compressedTokenSavings: tokenSavings,
+                  compressedBeforeId: beforeId ?? null,
                 }
               : c
           ),

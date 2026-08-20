@@ -5,13 +5,14 @@
 
 import { invoke } from "./api";
 import { useStore } from "./store";
-import type { Message } from "./store";
+import type { Message, ToolCall } from "./store";
 import type { Entry } from "./types";
 import { estimateTokens } from "./context-window";
 import type { ContextBreakdown } from "./context-window";
 import { compressMessages, RECENT_TURNS_TO_KEEP } from "./context-compression";
 import { getT } from "./i18n";
 import { rewriteSessionMessages, messagesToSessionLines } from "./session-writer";
+import { detectThinkingStyle, migrateThinkingStyle } from "./thinking-style";
 
 function t() {
   return getT(useStore.getState().language).agent;
@@ -102,6 +103,16 @@ export type AgentMessage = {
     function: { name: string; arguments: string };
   }>;
   tool_call_id?: string;
+  /**
+   * Internal: id of the originating store Message, carried through from
+   * buildModelMessages so the compression layer can record a stable
+   * boundary id without depending on array indices (which shift whenever
+   * addMessage / pruning changes the underlying array). Never sent to the
+   * LLM — the wire format is reconstructed from `role` + `content` +
+   * `tool_calls` / `tool_call_id`. New messages generated inside the
+   * agent loop (assistant turns, tool results) leave this undefined.
+   */
+  _msgId?: string;
 };
 
 export type ToolDef = {
@@ -150,6 +161,18 @@ export type StreamCallbacks = {
   onLoopEnd: () => void;
   onComplete: (finalText: string, thinking: string) => void;
   onError: (error: string) => void;
+  /**
+   * Fired when the agent loop rewrites an already-persisted assistant
+   * message — currently used by the max_tokens recovery path to drop
+   * dangling `tool_calls` (and their matching `role: "tool"` results) from
+   * a turn that the LLM didn't actually finish. The store should find the
+   * matching message by content + original tool_call_ids and replace its
+   * toolCalls; if no match, the rewrite is best-effort and ignored.
+   */
+  onAssistantMessageAdjusted?: (
+    match: { content: string; toolCallIds: string[] },
+    updated: { content: string; toolCalls: ToolCall[] },
+  ) => void;
 };
 
 // ── Tool implementations ──
@@ -1393,13 +1416,13 @@ async function executeTool(
     case "AskUserQuestion": {
       const raw = input.questions;
       const rawArr: unknown[] = Array.isArray(raw) ? (raw as unknown[]) : [];
-      // Normalize: LLM (especially minimax) may output options in many shapes:
+      // Normalize: LLM (especially MiniMax) may output options in many shapes:
       //   - plain string                       "Yes"
       //   - {label: "Yes"}                     (Anthropic spec)
       //   - {label: "Yes", description: "..."}  (Anthropic spec, full)
-      //   - {description: "..."} only           (minimax occasionally)
+      //   - {description: "..."} only           (MiniMax occasionally)
       //   - {value: "Yes"}                      (other variants)
-      //   - {"<long text>": ""}                 (minimax quirk: key = label)
+      //   - {"<long text>": ""}                 (MiniMax quirk: key = label)
       //   - {"<label>": "<description>"}        (single-key, key = label)
       //   - {<unknown-key>: "<text>"}           (arbitrary key + value)
       //   - ["Yes"]                             (single-element array)
@@ -1437,7 +1460,7 @@ async function executeTool(
             if (typeof v === "number" || typeof v === "boolean") return String(v);
           }
           // 4) Last resort: single-key object whose value is empty/null/[] —
-          //    the key itself is the label. (minimax: { "<long text>": "" })
+          //    the key itself is the label. (MiniMax: { "<long text>": "" })
           const keys = Object.keys(obj);
           if (keys.length === 1) {
             const v = obj[keys[0]];
@@ -1454,7 +1477,7 @@ async function executeTool(
           ? (qq.options as unknown[]).map(normalizeOption)
           : [];
         // Hard-enforce ≥2 options in code: OpenAI-compat tool calling
-        // (minimax etc.) does NOT validate JSON Schema minItems, so the LLM
+        // (MiniMax etc.) does NOT validate JSON Schema minItems, so the LLM
         // can hand us 0 or 1 options. Pad with sensible fallbacks so the user
         // always has a meaningful choice (the custom-answer field is still
         // available on top).
@@ -1496,7 +1519,7 @@ export async function runAgentLoop(
   systemPrompt: string,
   conversation: AgentMessage[],
   callbacks: StreamCallbacks,
-  provider = "anthropic",
+  provider = "openai",
   model = "claude-sonnet-4-20250514",
   storyId = "",
   reasoningEffort?: string,
@@ -1504,9 +1527,16 @@ export async function runAgentLoop(
   maxTokensOverride?: number,
   session?: StreamSession | null,
   thinkingStyle?: string,
+  /** Wire value for `thinking.type` when the model has thinking ON.
+   *  "enabled" for DeepSeek, "adaptive" for MiniMax. */
+  thinkingOnValue?: "enabled" | "adaptive",
   baseUrl?: string,
 ) {
-  const MAX_RECOVERY = 3;
+  // Recovery budget is read fresh from the store on each iteration so a
+  // settings change takes effect on the next turn without a reload.
+  // Default 3 matches the previous hardcode; users on tight output
+  // budgets can raise it (e.g., to 5-6) and users on models that get
+  // stuck looping can lower it.
   let turns = 0;
   let recoveryCount = 0;
   let totalToolUses = 0;
@@ -1521,11 +1551,11 @@ export async function runAgentLoop(
   const toolCache = new Map<string, string>();
 
   // max_tokens per provider. Each model has a hard API limit on output tokens
-  // — exceeding it causes stop_reason="max_tokens" and recovery kicks in.
-  // Anthropic requires this param; OpenAI-compatible accepts it optionally.
-  // Model config override takes precedence.
+  // — exceeding it causes stop_reason="max_tokens" / finish_reason="length" and
+  // recovery kicks in. OpenAI-compatible accepts it optionally; we send it
+  // explicitly so DeepSeek doesn't run away. Model config override takes
+  // precedence.
   const maxTokensByProvider: Record<string, number> = {
-    anthropic: 64000,
     openai: 16384,
     deepseek: 16384,
   };
@@ -1537,6 +1567,15 @@ export async function runAgentLoop(
     if (isSessionAborted(session)) return;
     turns++;
 
+    // Declare unlisten OUTSIDE the try so the outer finally can call it.
+    // Previously the unlisten lived inside a nested try-finally that exited
+    // as soon as the stream_chat invoke resolved — meaning late events
+    // arriving during tool execution (the for-loop, which can be slow
+    // because each `await executeTool` hits the Rust backend) were lost.
+    // That ordering race manifested as "I will edit X:" in text with no
+    // matching tool_use: a tool_use event arrived AFTER the listener was
+    // already torn down, so it never reached `pendingToolUses`.
+    let unlisten: (() => void) | null = null;
     try {
       // Build tool use tracking for this turn
       const pendingToolUses: { id: string; name: string; input: Record<string, unknown> }[] = [];
@@ -1551,9 +1590,15 @@ export async function runAgentLoop(
       let streamResolve: () => void;
       const streamPromise = new Promise<void>((resolve) => { streamResolve = resolve; });
 
-      const unlisten = await setupStreamListener(convId || "", (event) => {
+      unlisten = await setupStreamListener(convId || "", (event) => {
         if (isSessionAborted(session)) return;
-        if (streamDone) return;
+        // Note: we intentionally do NOT short-circuit on `streamDone`
+        // here. Late events that arrive during tool execution (after the
+        // stream has nominally ended but before the for loop finishes)
+        // can still be valid tool_use events that the LLM emitted right
+        // before the cut. The stream_end handler itself is idempotent
+        // (it only resolves the promise once) so duplicate stream_end
+        // events are safe.
         switch (event.type) {
           case "text_delta":
             turnText += event.text || "";
@@ -1660,43 +1705,75 @@ export async function runAgentLoop(
             // Replace messages array in-place (agent loop's working copy — LLM sees summary)
             messages.length = 0;
             messages.push(...result.messages);
-            // Sync compressed messages back to store, preserving metadata for kept zone
+            // Sync compressed messages back to store. We no longer strip
+            // thinking / toolCalls from the compressed zone, and we no longer
+            // re-id the kept zone — both of those previously destroyed UI
+            // state (folded thinking blocks, "Tools used" summaries, and
+            // any external references to the original message ids). Instead
+            // we insert a single summary message at the boundary id, which
+            // serves as both the visual marker (rendered as a collapsible
+            // banner by ChatWindow) and the LLM-side replacement for the
+            // compressed zone.
             if (convId) {
               const now = Date.now();
-              const SEP = "之前的对话已被压缩";
+              const SUMMARY_PREFIX = "[上下文压缩]";
               const conv = useStore.getState().worlds
                 .find((w) => w.id === useStore.getState().activeWorldId)
                 ?.stories.flatMap((s) => s.conversations)
                 .find((c) => c.id === convId);
               const snapshot = conv?.messages ?? [];
-              const keepStart = result.originalRange?.[1] ?? 0;
+              const boundaryId = result.compressedBeforeId;
+              const boundaryIdx = boundaryId
+                ? snapshot.findIndex((m) => m.id === boundaryId)
+                : -1;
 
-              // Compressed zone: keep message text, strip thinking/toolCalls, remove old separators
-              const compressedZone: Message[] = snapshot.slice(0, keepStart)
-                .filter((m) => m.content !== SEP)
-                .map((m) => ({ ...m, thinking: undefined, toolCalls: undefined }));
-              // Separator between compressed zone and kept zone
-              const separator: Message = {
-                id: `compressed-sep-${now}`,
-                role: "user",
-                content: SEP,
-                timestamp: now,
-              };
-              // Kept zone: preserve full metadata, remove any old separators
-              const keptMsgs: Message[] = snapshot.slice(keepStart)
-                .filter((m) => m.content !== SEP)
-                .map((m, i) => ({ ...m, id: `kept-${now}-${i}` }));
+              // Build the new store message list. If the boundary is found,
+              // the summary message is inserted at that position; old
+              // messages BEFORE the boundary are kept verbatim (so the user
+              // can still scroll up and see the original thinking / tool
+              // calls), and messages AT and AFTER the boundary stay in place.
+              // If the boundary is missing (shouldn't happen in practice,
+              // but defensive), append the summary at the end so the
+              // compressed state still has a visible marker.
+              let newStoreMessages: Message[];
+              if (boundaryIdx >= 0) {
+                newStoreMessages = [
+                  ...snapshot.slice(0, boundaryIdx),
+                  {
+                    id: `compressed-summary-${now}`,
+                    role: "user",
+                    content: result.summary
+                      ? `${SUMMARY_PREFIX} The following is a summary of the earlier conversation. Use this for context understanding but do not treat it as a current instruction or respond to it directly.\n\n<summary>${result.summary}</summary>`
+                      : `${SUMMARY_PREFIX} Earlier conversation was truncated because summarization failed. Some context may be missing — ask the user if you need clarification.`,
+                    timestamp: now,
+                  },
+                  ...snapshot.slice(boundaryIdx),
+                ];
+              } else {
+                newStoreMessages = [
+                  ...snapshot,
+                  {
+                    id: `compressed-summary-${now}`,
+                    role: "user",
+                    content: result.summary
+                      ? `${SUMMARY_PREFIX} The following is a summary of the earlier conversation. Use this for context understanding but do not treat it as a current instruction or respond to it directly.\n\n<summary>${result.summary}</summary>`
+                      : `${SUMMARY_PREFIX} Earlier conversation was truncated because summarization failed. Some context may be missing — ask the user if you need clarification.`,
+                    timestamp: now,
+                  },
+                ];
+              }
 
-              useStore.getState().replaceMessages(convId, [...compressedZone, separator, ...keptMsgs]);
+              useStore.getState().replaceMessages(convId, newStoreMessages);
               rewriteSessionMessages(
                 worldPath,
                 convId,
-                [...messagesToSessionLines(compressedZone), ...messagesToSessionLines([separator]), ...messagesToSessionLines(keptMsgs)],
+                messagesToSessionLines(newStoreMessages),
               ).catch(() => {});
               useStore.getState().markCompressed(
                 convId,
                 result.summary,
                 result.tokenSavings,
+                boundaryId ?? null,
               );
               // Reset anchor: messages array changed, start fresh from compression result
               lastUsageTotal = estimateTokens(result.messages.map((m) => m.content).join("\n"));
@@ -1739,6 +1816,18 @@ export async function runAgentLoop(
         // may deliver the invoke response faster than the event. Sequential
         // await (invoke → streamPromise) would deadlock if invoke resolved
         // before stream_end arrived — streamPromise would never be checked.
+        // Derive thinking fields from baseUrl at request time so we never
+        // depend on stale store state. The SettingsPanel keeps a parallel
+        // self-heal, but that runs in component scope — it can't help us
+        // here when the user hits Send before ever opening settings.
+        // (Back-compat: still honor explicit stored values if the URL is empty.)
+        const detected = baseUrl ? detectThinkingStyle(baseUrl) : null;
+        const resolvedStyle = detected
+          ? detected.style
+          : (thinkingStyle ? migrateThinkingStyle(thinkingStyle) : "openai");
+        const resolvedOnValue = detected
+          ? detected.thinkingOnValue
+          : (thinkingOnValue || "enabled");
         const invokePromise = invoke("stream_chat", {
           messages,
           systemPrompt: systemPrompt,
@@ -1748,7 +1837,11 @@ export async function runAgentLoop(
           maxTokens,
           reasoningEffort: reasoningEffort || null,
           conversationId: convId || null,
-          thinkingStyle: thinkingStyle || null,
+          thinkingStyle: resolvedStyle,
+          // Wire value for `thinking.type` when the model has thinking ON.
+          // Auto-detected from baseUrl: "enabled" for DeepSeek, "adaptive"
+          // for MiniMax. Fallback to stored value, then "enabled" for back-compat.
+          thinkingOnValue: resolvedOnValue,
           baseUrl: baseUrl || null,
         });
 
@@ -1763,18 +1856,24 @@ export async function runAgentLoop(
 
         // Now ensure both are settled
         await invokePromise;
-      } finally {
-        // Always clean up listener — prevents double-event bugs on interruption
-        unlisten();
+      } catch {
+        // Errors from invoke / stream setup propagate to the outermost
+        // catch (onError) below. The listener is cleaned up by the
+        // outer finally that wraps this whole iteration.
       }
+
+      // (unlisten is called by the outer finally, AFTER the entire
+      // iteration is done — including tool execution and the recovery /
+      // completion check. That keeps the listener alive long enough to
+      // catch late tool_use events that arrive during the for loop.)
 
       fullText += turnText;
 
-      // Signal the UI that this loop's stream is complete — its thinking/text/
-      // tool calls are final, and tool results will follow as they execute.
-      callbacks.onLoopEnd();
-
-      // Add assistant message to history (may be partial if truncated)
+      // Build assistant message but do NOT fire onLoopEnd yet — that fires
+      // after all tool results land, so the persisted message has a complete
+      // (assistant + tool_calls + tool results) snapshot. Persisting between
+      // stream end and tool execution was leaving empty tc.result on disk,
+      // and the reload path silently dropped those tool messages.
       const assistantMsg: AgentMessage = { role: "assistant", content: turnText };
       if (pendingToolUses.length > 0) {
         assistantMsg.tool_calls = pendingToolUses.map((tc) => ({
@@ -1873,22 +1972,129 @@ export async function runAgentLoop(
         }
       }
 
+      // All tool results are in. Now it's safe to let the UI persist this
+      // loop's message — its toolCalls have full results, and the jsonl
+      // assistant line will be written with the final state in one shot.
+      callbacks.onLoopEnd();
+
       // ── Max tokens recovery (modeled after Claude Code's query.ts) ──
-      // Anthropic: stop_reason="max_tokens", OpenAI-compatible: finish_reason="length"
-      // Both mean output was truncated. Recovery continues from where it cut off.
+      // OpenAI-compatible: finish_reason="length". Output was truncated;
+      // recovery continues from where it cut off.
+      const maxRecovery = useStore.getState().maxRecoveryAttempts;
       const isTruncated = lastStopReason === "max_tokens" || lastStopReason === "length";
-      if (isTruncated && recoveryCount < MAX_RECOVERY) {
-        console.log("[agent-loop] max_tokens recovery attempt", recoveryCount + 1, "/", MAX_RECOVERY);
+      if (isTruncated && recoveryCount < maxRecovery) {
+        console.log("[agent-loop] max_tokens recovery attempt", recoveryCount + 1, "/", maxRecovery);
         recoveryCount++;
+        // ── Structural fix: drop broken tool_calls from the just-flushed turn ──
+        // If the truncation left a tool_use with a dangling / half-written
+        // tool_call_id, the next iteration would send an assistant turn that
+        // either (a) is rejected by strict-mode APIs, or (b) is misinterpreted
+        // by the model — which then "responds" by just announcing intent in
+        // text instead of re-issuing the call. Find the just-pushed
+        // assistant message, strip its tool_calls, and drop the corresponding
+        // `role: "tool"` results so the LLM doesn't see orphans.
+        const originalAssistantIdx = messages.length - 1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === "assistant") { /* walk to the last assistant turn we just produced */
+            // We need the most recent assistant message that came from THIS iteration.
+            // Since the for loop only pushes `role: "user"` (tool result) and the
+            // assistantMsg was pushed BEFORE the for loop, the assistant message
+            // for this iteration is the LAST `assistant` in the array.
+            break;
+          }
+        }
+        // Walk back: find the most recent assistant turn.
+        let assistantIdx = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+          if (messages[i].role === "assistant") {
+            assistantIdx = i;
+            break;
+          }
+        }
+        if (assistantIdx >= 0) {
+          const lastAssistant = messages[assistantIdx];
+          if (lastAssistant.tool_calls && lastAssistant.tool_calls.length > 0) {
+            const droppedIds = new Set(lastAssistant.tool_calls.map((tc) => tc.id));
+            // Build a cleaned version (text only — thinking is UI metadata
+            // that's not part of the wire format anyway) in place.
+            const cleaned: AgentMessage = { role: "assistant", content: lastAssistant.content };
+            messages[assistantIdx] = cleaned;
+            // Drop the orphan `role: "tool"` messages that referenced the
+            // dropped tool_call_ids. They live between this assistant turn
+            // and the end of the array; everything else is preserved.
+            const before = messages.slice(0, assistantIdx + 1);
+            const after = messages.slice(assistantIdx + 1).filter(
+              (m) => !(m.role === "user" && m.tool_call_id && droppedIds.has(m.tool_call_id)),
+            );
+            messages.length = 0;
+            messages.push(...before, ...after);
+            // Sync the cleaned turn to the store so the NEXT user send
+            // (which rebuilds from the store) doesn't re-emit the broken
+            // turn. ChatInput matches by content + original tool_call_ids.
+            callbacks.onAssistantMessageAdjusted?.(
+              { content: lastAssistant.content, toolCallIds: [...droppedIds] },
+              { content: cleaned.content, toolCalls: [] },
+            );
+          }
+        }
+        // Strengthened recovery prompt. The previous "Re-issue it now" wording
+        // was too soft — many models responded by just announcing intent in
+        // text ("I will edit X:") and ending the turn, which is exactly the
+        // bug the user reported. The new wording (a) explicitly forbids the
+        // text-only response, (b) makes the action a MUST, and (c) tells the
+        // model the previous tool_call is no longer in the turn, so it
+        // doesn't believe the work was already done.
+        let lostTool: string;
+        if (pendingToolUses.length > 0) {
+          const names = pendingToolUses.map((t) => t.name).join(", ");
+          const roleTool = 'role: "tool"';
+          lostTool = `\n\nIMPORTANT — your previous turn was cut by max_tokens mid-tool-call. The tool_use (${names}) was just dropped from your previous turn in this conversation. Its ${roleTool} result is also gone. The tool may have run with truncated JSON, or not at all — treat the work as UNDONE.\n\nYou MUST re-emit the tool_use (${names}) in this turn, with the COMPLETE input JSON, before continuing any other work. Do NOT just write "I will ${names}: ..." in text and stop — the user is reading text and waiting for the actual tool execution. If you re-emit the tool, the next turn will give you the result; if you only write intent text, the conversation stalls.`;
+        } else {
+          lostTool = "";
+        }
         messages.push({
           role: "user",
-          content: `Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces. Do NOT re-read the same entries unless their content has changed this turn.`,
+          content: `Output token limit hit. Resume directly — no apology, no recap of what you were doing. Pick up mid-thought if that is where the cut happened. Break remaining work into smaller pieces so each individual response stays under the token cap. Do NOT re-read the same entries unless their content has changed this turn.${lostTool}`,
         });
         continue;
       }
       if (isTruncated) {
-        callbacks.onError(t().maxTokensExhausted(MAX_RECOVERY));
+        callbacks.onError(t().maxTokensExhausted(maxRecovery));
         return;
+      }
+
+      // ── Explicit terminal-stop handling ──
+      // Previously the only stop_reason the loop treated specially was
+      // "length" / "max_tokens" (recovery). Everything else — including
+      // "refusal" and "content_filter" — fell through to the normal
+      // onComplete path silently, so a model that explicitly refused
+      // looked identical to a model that finished naturally. Surface
+      // those two explicitly: log a warning so dev-tools show it, and
+      // dispatch a CustomEvent so the UI layer can opt into a marker
+      // (e.g., a small "refused" badge) without coupling agent-loop to
+      // any specific UI component.
+      if (lastStopReason === "refusal" || lastStopReason === "content_filter") {
+        console.warn(`[agent-loop] model returned ${lastStopReason}; treating as terminal`);
+        if (typeof window !== "undefined" && convId) {
+          window.dispatchEvent(new CustomEvent("worldforge-stream-end", {
+            detail: { stopReason: lastStopReason, conversationId: convId },
+          }));
+        }
+      } else if (
+        lastStopReason &&
+        lastStopReason !== "stop" &&
+        lastStopReason !== "end_turn" &&
+        lastStopReason !== "tool_use" &&
+        lastStopReason !== "tool_calls" &&
+        lastStopReason !== "function_call" &&
+        lastStopReason !== "stop_sequence" &&
+        lastStopReason !== ""
+      ) {
+        // Unknown stop_reason — the model did something we didn't
+        // anticipate. Log it at info level so the operator can see
+        // what the provider is returning, but don't disrupt the user
+        // (the loop still terminates normally).
+        console.info(`[agent-loop] unrecognized stop_reason: ${lastStopReason}`);
       }
 
       // If no tool calls and no recovery needed, we're done
@@ -1900,6 +2106,12 @@ export async function runAgentLoop(
     } catch (e: any) {
       callbacks.onError(String(e));
       return;
+    } finally {
+      // Always unregister the listener at the end of the iteration —
+      // covers both the success path (continue / return) and the catch
+      // path (onError). The cleanup closure is idempotent (see
+      // setupStreamListener) so a double-call is safe.
+      if (unlisten) unlisten();
     }
   }
 
@@ -1930,9 +2142,17 @@ async function setupStreamListener(
   conversationId: string,
   handler: (event: StreamEventPayload) => void,
 ): Promise<() => void> {
-  // Clean up any previous listener for this same conversation
+  // Retire any previous listener for this same conversation. We DON'T
+  // unconditionally delete the map entry here: if a newer setup has
+  // already replaced us in the map, the older loop's finally block
+  // would otherwise wipe the newer entry on its way out (and Tauri would
+  // still be delivering events to a "ghost" listener, causing duplicate
+  // tool_use / tool_result events). The cleanup closure is the only
+  // authoritative place that touches the map; it now both no-ops on a
+  // second call AND identity-checks before deleting, so two listeners
+  // can never see each other's state.
   const prev = _activeListeners.get(conversationId);
-  if (prev) { prev(); _activeListeners.delete(conversationId); }
+  if (prev) prev();
   try {
     const { listen } = await import("@tauri-apps/api/event");
     const unlisten = await listen<any>("stream-event", (event) => {
@@ -1941,7 +2161,19 @@ async function setupStreamListener(
       if (payload.conversation_id !== conversationId) return;
       handler(payload);
     });
-    const cleanup = () => { unlisten(); _activeListeners.delete(conversationId); };
+    let retired = false;
+    const cleanup = () => {
+      if (retired) return;
+      retired = true;
+      unlisten();
+      // Only clear the map entry if it's still ours. If a newer setup
+      // has already taken this conversationId's slot, leave its entry
+      // alone — Tauri unlisten is idempotent, but the map's pointer is
+      // the newer setup's responsibility.
+      if (_activeListeners.get(conversationId) === cleanup) {
+        _activeListeners.delete(conversationId);
+      }
+    };
     _activeListeners.set(conversationId, cleanup);
     return cleanup;
   } catch (e) {

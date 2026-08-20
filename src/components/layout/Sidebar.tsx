@@ -129,7 +129,13 @@ export function Sidebar() {
                               convMsgs.push({ id: `msg_${convMsgs.length}`, role: "user", content: m.content, timestamp: Date.now() });
                               pendingMap.clear(); pendingOrder.length = 0;
                             } else if (m.type === "assistant") {
-                              const toolCalls = pendingOrder.map((tid) => pendingMap.get(tid)!).filter(Boolean);
+                              // Drop pending toolCalls whose result is empty
+                              // (tool_use without matching tool_result, e.g.
+                              // from an aborted stream). See AppShell.tsx for
+                              // the full rationale.
+                              const toolCalls = pendingOrder
+                                .map((tid) => pendingMap.get(tid))
+                                .filter((tc): tc is NonNullable<typeof tc> => tc != null && tc.result.length > 0);
                               convMsgs.push({ id: `msg_${convMsgs.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: toolCalls.length > 0 ? toolCalls : undefined, timestamp: Date.now() });
                               pendingMap.clear(); pendingOrder.length = 0;
                             } else if (m.type === "system") {

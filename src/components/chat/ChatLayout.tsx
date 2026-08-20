@@ -86,7 +86,9 @@ export function ChatLayout() {
             pendingMap.clear(); pendingOrder.length = 0;
             lastAssistant = null;
           } else if (m.type === "assistant") {
-            const toolCalls = pendingOrder.map((tid) => pendingMap.get(tid)!).filter(Boolean);
+            const toolCalls = pendingOrder
+              .map((tid) => pendingMap.get(tid))
+              .filter((tc): tc is NonNullable<typeof tc> => tc != null && tc.result.length > 0);
             const msg: StoreMessage = { id: `msg_${convMsgs.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: toolCalls.length > 0 ? toolCalls : undefined, timestamp: Date.now() };
             convMsgs.push(msg);
             lastAssistant = msg;

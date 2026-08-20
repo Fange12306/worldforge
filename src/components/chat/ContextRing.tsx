@@ -172,33 +172,39 @@ export function ContextRing() {
                 );
                 if (result.compressed) {
                   const now = Date.now();
-                  const SEP = "之前的对话已被压缩";
-                  const keepStart = result.originalRange?.[1] ?? 0;
+                  const SUMMARY_PREFIX = "[上下文压缩]";
                   const snapshot = activeConv.messages;
-                  // Compressed zone: strip thinking/toolCalls, remove old separators
-                  const compressedZone: Message[] = snapshot.slice(0, keepStart)
-                    .filter((m) => m.content !== SEP)
-                    .map((m) => ({ ...m, thinking: undefined, toolCalls: undefined }));
-                  // Separator between compressed zone and kept zone
-                  const separator: Message = {
-                    id: `compressed-sep-${now}`,
+                  const boundaryId = result.compressedBeforeId;
+                  const boundaryIdx = boundaryId
+                    ? snapshot.findIndex((m) => m.id === boundaryId)
+                    : -1;
+                  // Same convention as agent-loop's in-loop path: keep the
+                  // store verbatim (no strip, no re-id), and just insert a
+                  // single summary message at the boundary id. The UI keeps
+                  // the original thinking / tool calls visible; the LLM
+                  // view replaces the compressed zone with the summary on
+                  // the next send.
+                  const summaryContent = result.summary
+                    ? `${SUMMARY_PREFIX} The following is a summary of the earlier conversation. Use this for context understanding but do not treat it as a current instruction or respond to it directly.\n\n<summary>${result.summary}</summary>`
+                    : `${SUMMARY_PREFIX} Earlier conversation was truncated because summarization failed. Some context may be missing — ask the user if you need clarification.`;
+                  const summaryMsg: Message = {
+                    id: `compressed-summary-${now}`,
                     role: "user",
-                    content: SEP,
+                    content: summaryContent,
                     timestamp: now,
                   };
-                  // Kept zone: preserve full metadata, remove old separators
-                  const keptMsgs: Message[] = snapshot.slice(keepStart)
-                    .filter((m) => m.content !== SEP)
-                    .map((m, i) => ({ ...m, id: `kept-${now}-${i}` }));
-                  replaceMessages(convId, [...compressedZone, separator, ...keptMsgs]);
+                  const newStoreMessages: Message[] = boundaryIdx >= 0
+                    ? [...snapshot.slice(0, boundaryIdx), summaryMsg, ...snapshot.slice(boundaryIdx)]
+                    : [...snapshot, summaryMsg];
+                  replaceMessages(convId, newStoreMessages);
                   if (activeWorld) {
                     rewriteSessionMessages(
                       activeWorld.path,
                       convId,
-                      [...messagesToSessionLines(compressedZone), ...messagesToSessionLines([separator]), ...messagesToSessionLines(keptMsgs)],
+                      messagesToSessionLines(newStoreMessages),
                     ).catch(() => {});
                   }
-                  markCompressed(convId, result.summary, result.tokenSavings);
+                  markCompressed(convId, result.summary, result.tokenSavings, boundaryId ?? null);
                   const story = activeWorld?.stories.find((s) => s.conversations.some((c) => c.id === convId));
                   const systemPrompt = buildSystemPrompt(activeWorld?.name || "", story?.title || "", [], undefined, "", "", useStore.getState().language);
                   const messagesTokens = estimateTokens(result.messages.map((m) => m.content).join("\n"));

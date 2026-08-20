@@ -164,7 +164,9 @@ export function AppShell() {
               for (const m of msgs) {
                 if (m.type === "user") { result.push({ id: `msg_${result.length}`, role: "user", content: m.content, timestamp: Date.now() }); pendingMap.clear(); pendingOrder.length = 0; }
                 else if (m.type === "assistant") {
-                  const toolCalls = pendingOrder.map((tid) => pendingMap.get(tid)!).filter(Boolean);
+                  const toolCalls = pendingOrder
+                    .map((tid) => pendingMap.get(tid))
+                    .filter((tc): tc is NonNullable<typeof tc> => tc != null && tc.result.length > 0);
                   result.push({ id: `msg_${result.length}`, role: "assistant", content: m.content, thinking: m.thinking, toolCalls: toolCalls.length > 0 ? toolCalls : undefined, timestamp: Date.now() });
                   pendingMap.clear(); pendingOrder.length = 0;
                 }

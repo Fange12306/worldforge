@@ -30,6 +30,15 @@ export type CompressionResult = {
   summary: string;
   tokenSavings: number;
   originalRange: [number, number] | null;
+  /**
+   * Id of the first message in the keep zone (i.e., the first message that
+   * survives compression in the LLM-bound view). Stored in the conversation
+   * metadata so the next send can replace every earlier store message with
+   * a single summary message in the LLM view, while the store itself keeps
+   * the original (thinking, toolCalls) intact for UI replay. Null when the
+   * caller didn't pass message ids (e.g. compression was skipped).
+   */
+  compressedBeforeId: string | null;
 };
 
 // ── Helpers ──
@@ -141,12 +150,20 @@ function fallbackTruncate(
   keepTurns: number,
 ): CompressionResult {
   if (turns.length <= keepTurns) {
-    return { messages, compressed: false, summary: "", tokenSavings: 0, originalRange: null };
+    return { messages, compressed: false, summary: "", tokenSavings: 0, originalRange: null, compressedBeforeId: null };
   }
   const compressionZone = turns.slice(0, turns.length - keepTurns);
   const kept = turns.slice(turns.length - keepTurns);
   const saved = estimateMessageTokens(compressionZone.flat());
   const keptMsgs = kept.flat();
+  // Walk the keep zone to find a stable boundary id, same as the LLM path.
+  let compressedBeforeId: string | null = null;
+  for (const m of keptMsgs) {
+    if (m._msgId) {
+      compressedBeforeId = m._msgId;
+      break;
+    }
+  }
   const marker: AgentMessage = {
     role: "user",
     content:
@@ -158,6 +175,7 @@ function fallbackTruncate(
     summary: "",
     tokenSavings: saved,
     originalRange: [0, compressionZone.flat().length] as [number, number],
+    compressedBeforeId,
   };
 }
 
@@ -173,7 +191,7 @@ export async function compressMessages(
 ): Promise<CompressionResult> {
   // 1. Threshold check
   if (contextWindowSize <= 0 || contextUsed / contextWindowSize < config.threshold) {
-    return { messages, compressed: false, summary: "", tokenSavings: 0, originalRange: null };
+    return { messages, compressed: false, summary: "", tokenSavings: 0, originalRange: null, compressedBeforeId: null };
   }
 
   // 2. Group into turns
@@ -181,7 +199,7 @@ export async function compressMessages(
   const keepTurnsCount = config.keepTurns ?? RECENT_TURNS_TO_KEEP;
   if (turns.length <= keepTurnsCount + 1) {
     // Too short to compress meaningfully
-    return { messages, compressed: false, summary: "", tokenSavings: 0, originalRange: null };
+    return { messages, compressed: false, summary: "", tokenSavings: 0, originalRange: null, compressedBeforeId: null };
   }
 
   // 3. Split into compression zone and keep zone
@@ -192,7 +210,7 @@ export async function compressMessages(
 
   // 4. Minimum turns in compression zone
   if (compressionZone.length < COMPRESSION_MIN_TURNS) {
-    return { messages, compressed: false, summary: "", tokenSavings: 0, originalRange: null };
+    return { messages, compressed: false, summary: "", tokenSavings: 0, originalRange: null, compressedBeforeId: null };
   }
 
   // Estimate token savings
@@ -204,6 +222,19 @@ export async function compressMessages(
     .map((m) => extractSummary(m.content))
     .filter(Boolean);
   const newTranscript = compressionMessages.filter((m) => !m.content.startsWith("[上下文压缩]"));
+
+  // Record the boundary id (first keep-zone message that carries an originating
+  // store id). The conversation metadata stores this so a future send can
+  // rebuild the LLM view by slicing from this id onwards. If the keep zone
+  // contains no id-bearing message (e.g., all messages are in-loop generated),
+  // we fall back to null and the LLM view will degrade to the full history.
+  let compressedBeforeId: string | null = null;
+  for (const m of keepMessages) {
+    if (m._msgId) {
+      compressedBeforeId = m._msgId;
+      break;
+    }
+  }
 
   // 6. Build prompt and call LLM for summary
   let summary = "";
@@ -240,5 +271,6 @@ export async function compressMessages(
     summary,
     tokenSavings,
     originalRange: [0, compressionMessages.length] as [number, number],
+    compressedBeforeId,
   };
 }

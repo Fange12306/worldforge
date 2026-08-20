@@ -3,7 +3,7 @@ import { useStore, type Message, type ToolCall, type UploadedFile } from "@/lib/
 import { invoke } from "@/lib/api";
 import { runAgentLoop, resetPermissions, beginStreamSession, abortActiveStream, isSessionAborted, type AgentMessage } from "@/lib/agent-loop";
 import { buildSystemPrompt } from "@/lib/system-prompt";
-import { buildModelMessages } from "@/lib/model-context";
+import { buildModelMessages, applyCompressionToLLMView } from "@/lib/model-context";
 import { pruneToolOutputs } from "@/lib/prune-tool-outputs";
 import { appendSessionMessage, rewriteSessionMessages, messagesToSessionLines } from "@/lib/session-writer";
 import { ArrowUp, Square, X, Paperclip, Loader2 } from "lucide-react";
@@ -113,6 +113,7 @@ export function ChatInput({ storyId }: { storyId: string }) {
   const appendStreamText = useStore((s) => s.appendStreamText);
   const appendStreamThinking = useStore((s) => s.appendStreamThinking);
   const addStreamToolCall = useStore((s) => s.addStreamToolCall);
+  const updateStreamToolResult = useStore((s) => s.updateStreamToolResult);
   const setIsThinking = useStore((s) => s.setIsThinking);
   const setIsToolRunning = useStore((s) => s.setIsToolRunning);
   const updateMessageToolResult = useStore((s) => s.updateMessageToolResult);
@@ -413,7 +414,16 @@ export function ChatInput({ storyId }: { storyId: string }) {
       .find((w) => w.id === activeWorldId)
       ?.stories.find((s) => s.id === storyId)
       ?.conversations.find((c) => c.id === activeConversationId);
-    const history: AgentMessage[] = buildModelMessages(latestConv?.messages ?? []);
+    // Apply compression to the LLM-bound view BEFORE buildModelMessages so
+    // the model never re-sees messages that were already collapsed into the
+    // summary on a previous turn. The store itself is untouched: the user can
+    // still scroll up through the original thinking / tool calls. The
+    // boundary id is a stable Message id set by the most recent in-loop
+    // compression (see agent-loop.ts). If the boundary is missing (e.g.,
+    // messages were edited / deleted), we fall back to the full history
+    // rather than risk dropping live context.
+    const viewForLLM = applyCompressionToLLMView(latestConv?.messages ?? [], latestConv);
+    const history: AgentMessage[] = buildModelMessages(viewForLLM);
     // Prune old tool results if enabled (reduces context usage between user turns)
     const { pruneToolResults, pruneKeepTurns } = useStore.getState();
     const prunedHistory = pruneToolResults ? pruneToolOutputs(history, pruneKeepTurns) : history;
@@ -438,15 +448,23 @@ export function ChatInput({ storyId }: { storyId: string }) {
     loopThinkingRef.current = "";
     loopToolCallsRef.current = [];
 
-    // Persist the current loop's partial (text/thinking/tool calls) as its own
-    // assistant message, then reset for the next loop. With `stopped`, appends
-    // the "已取消" suffix and falls back to the store's live stream state (the
-    // refs may be empty if ChatInput remounted mid-turn).
+    // Persist the current loop's assistant message and reset live-stream state.
+    //
+    // The agent loop fires onLoopEnd only AFTER all tool results are in, so
+    // by the time this runs `s.streamToolCalls` has the tool calls WITH their
+    // results. The refs (`loopToolCallsRef.current`) are only useful for the
+    // very first paint where streaming starts before any state is committed;
+    // they are empty of `result`. Prefer the live store.
     const flushLoop = (opts?: { stopped?: boolean }) => {
       const s = useStore.getState();
-      const text = loopTextRef.current || (opts?.stopped ? s.streamText : "");
-      const thinking = (loopThinkingRef.current || (opts?.stopped ? s.streamThinking : "")).trim() || undefined;
-      const tc = loopToolCallsRef.current.length > 0 ? loopToolCallsRef.current : (opts?.stopped ? s.streamToolCalls : []);
+      const text = opts?.stopped ? s.streamText : s.streamText || loopTextRef.current;
+      const thinking = (opts?.stopped ? s.streamThinking : s.streamThinking || loopThinkingRef.current).trim() || undefined;
+      // Prefer the live store — it has the results. Refs are a fallback for the
+      // stop path or for the unusual case where the ref was populated but the
+      // store lag hasn't caught up.
+      const liveTc = s.streamToolCalls;
+      const refTc = loopToolCallsRef.current;
+      const tc = liveTc.length > 0 ? liveTc : (refTc.length > 0 ? refTc : []);
       const content = opts?.stopped ? `${text} ${t.chat.stopped}`.trim() : text;
       if (content.trim() || thinking || tc.length > 0) {
         addMessage(storyId, {
@@ -455,10 +473,10 @@ export function ChatInput({ storyId }: { storyId: string }) {
           thinking,
           toolCalls: tc.length > 0 ? [...tc] : undefined,
         }, convId);
-        // Also persist the toolCalls inline on the jsonl assistant line so
-        // reload can reconstruct them without depending on the interleaved
-        // `type: tool_use` lines (which are written immediately on
-        // onToolUse and may end up reordered relative to the assistant).
+        // Persist the toolCalls inline on the jsonl assistant line so reload
+        // can reconstruct them without depending on the interleaved
+        // `type: tool_use` lines (which are written immediately on onToolUse
+        // and may end up reordered relative to the assistant).
         appendSessionMessage(world.path, convId, {
           type: "assistant",
           content,
@@ -475,11 +493,17 @@ export function ChatInput({ storyId }: { storyId: string }) {
 
     try {
       const currentModelConfig = llmModels.find((m) => m.name === activeModel);
-      const reasoningEffort = currentModelConfig?.reasoningEffort;
+      // `thinkingDisabled` is the explicit "off" switch and wins over
+      // `reasoningEffort`. Collapse the two into a single effective value the
+      // backend can act on (the openai / deepseek / none dispatch in api_proxy
+      // only looks at reasoning_effort to decide what to send).
+      const rawEffort = currentModelConfig?.reasoningEffort;
+      const effectiveEffort = currentModelConfig?.thinkingDisabled ? "disabled" : rawEffort;
       const maxTokens = currentModelConfig?.maxTokens;
       const currentProvider = providers.find((p) => p.id === currentModelConfig?.providerId);
       const thinkingStyle = currentProvider?.thinkingStyle;
       const baseUrl = currentProvider?.baseUrl;
+      const thinkingOnValue = currentProvider?.thinkingOnValue;
 
       await runAgentLoop(world.path, systemPrompt, prunedHistory, {
         onTextDelta: (t) => { if (isSessionAborted(session)) return; appendStreamText(t); loopTextRef.current += t;
@@ -499,22 +523,24 @@ export function ChatInput({ storyId }: { storyId: string }) {
         },
         onToolResult: (result, toolName) => {
           if (isSessionAborted(session)) return;
-          // Stream the result into the matching tool call inside the
-          // assistant message that is already persisted at onLoopEnd.
-          // This is the SINGLE source of truth for tool results — both
-          // for the live UI bubble and for the next turn's model context.
+          // Stream the result into the matching tool call. Three writes, all
+          // keyed by toolUseId:
+          //   1. streamToolCalls  — live UI bubble (read by flushLoop on the
+          //                          moved onLoopEnd so the persisted message
+          //                          has results on the first write)
+          //   2. Message.toolCalls — in-store copy for buildModelMessages next turn
+          //   3. jsonl tool_result — additive, deduped on reload
+          updateStreamToolResult(result.toolUseId, result.content);
           updateMessageToolResult(storyId, convId, result.toolUseId, result.content);
-          // Persist to jsonl as an inline tool_result entry, deduped by
-          // tool_use_id (the loader in session-writer rebuilds the
-          // assistant.toolCalls[i].result on reload).
           appendSessionMessage(world.path, convId, { type: "tool_result", tool: toolName || result.toolName || "", tool_use_id: result.toolUseId, output: result.content, timestamp: new Date().toISOString() }).catch(() => {});
-          // Bump refreshKey when world data changes
           if (toolName === "OutlineWrite" || toolName === "EntryWrite" || toolName === "Relation") {
             window.dispatchEvent(new CustomEvent("worldforge-data-changed"));
           }
         },
-        // Loop boundary: this loop's stream is done — persist it as its own
-        // message and reset the live-stream state for the next loop.
+        // Loop boundary: stream + all tool results for this loop are in —
+        // persist the message with its full toolCall results and reset the
+        // live-stream state for the next loop. Fires AFTER tool execution
+        // (not before), so the first write to the store has the final shape.
         onLoopEnd: () => {
           if (isSessionAborted(session)) return;
           flushLoop();
@@ -542,7 +568,46 @@ export function ChatInput({ storyId }: { storyId: string }) {
           }
           clearStreamText();
         },
-      }, llmProvider, activeModel, storyId, reasoningEffort, convId, maxTokens, session, thinkingStyle, baseUrl);
+        // Recovery-path cleanup: the agent loop dropped a broken tool_call
+        // from a max_tokens-truncated turn (see agent-loop.ts). Mirror the
+        // change in the store so the next user send — which rebuilds the
+        // LLM view from the store via buildModelMessages — doesn't
+        // re-emit the dangling tool_call_id. Match by content + the set
+        // of dropped tool_call_ids (the latter distinguishes two assistant
+        // turns that happen to have the same text).
+        onAssistantMessageAdjusted: (match, updated) => {
+          if (isSessionAborted(session)) return;
+          const latestConv = useStore.getState().worlds
+            .find((w) => w.id === activeWorldId)
+            ?.stories.find((s) => s.id === storyId)
+            ?.conversations.find((c) => c.id === convId);
+          if (!latestConv) return;
+          const targetIds = new Set(match.toolCallIds);
+          const matchIds = [...targetIds].sort().join(",");
+          // Walk from the most recent assistant turn backwards — the
+          // recovery adjustment always targets the just-flushed turn.
+          for (let i = latestConv.messages.length - 1; i >= 0; i--) {
+            const m = latestConv.messages[i];
+            if (m.role !== "assistant") continue;
+            if (m.content !== match.content) continue;
+            const mIds = (m.toolCalls ?? []).map((tc) => tc.id).sort().join(",");
+            if (mIds !== matchIds) continue;
+            useStore.getState().updateMessageToolCalls(storyId, convId, m.id, updated.toolCalls);
+            // Also rewrite the jsonl assistant line so a future reload
+            // doesn't reconstruct the broken toolCalls from the on-disk
+            // tool_use / tool_result pair lines. (load_session also
+            // filters dangling tool_use defensively, so this is belt-
+            // and-suspenders.)
+            if (world) {
+              const newLines = messagesToSessionLines(latestConv.messages.map((mm) =>
+                mm.id === m.id ? { ...mm, toolCalls: updated.toolCalls.length > 0 ? updated.toolCalls : undefined } : mm,
+              ));
+              rewriteSessionMessages(world.path, convId, newLines).catch(() => {});
+            }
+            break;
+          }
+        },
+      }, llmProvider, activeModel, storyId, effectiveEffort, convId, maxTokens, session, thinkingStyle, thinkingOnValue, baseUrl);
     } catch (e: any) {
       setStreaming(false);
       if (!isSessionAborted(session)) addMessage(storyId, { role: "assistant", content: `Error: ${e}` }, convId);
@@ -713,14 +778,28 @@ export function ChatInput({ storyId }: { storyId: string }) {
                   const s = useStore.getState();
                   const text = loopTextRef.current || s.streamText;
                   const thinking = (loopThinkingRef.current || s.streamThinking).trim() || undefined;
-                  const tc = loopToolCallsRef.current.length > 0 ? loopToolCallsRef.current : s.streamToolCalls;
+                  const allTc = loopToolCallsRef.current.length > 0 ? loopToolCallsRef.current : s.streamToolCalls;
+                  // Critical: drop any tool_call whose result is empty.
+                  // Abort can land between onToolUse and onToolResult, leaving
+                  // a toolCall with `result: ""` (the default set when the
+                  // tool_use event first arrived). Persisting it would
+                  // (a) emit a `role: "tool", content: ""` on the next send,
+                  // and (b) put a dangling tool_use line in the jsonl that
+                  // looks like a real tool call. Both are exactly the
+                  // "我编辑一下 XX:" bug — the model has no good way to
+                  // handle an empty tool result and tends to just announce
+                  // intent in text instead of re-issuing the call. Only
+                  // completed tool calls (non-empty result) are kept.
+                  const completedTc = allTc.filter(
+                    (c) => typeof c.result === "string" && c.result.length > 0,
+                  );
                   const finalContent = `${text} ${t.chat.stopped}`.trim();
-                  if (finalContent.trim() || thinking || tc.length > 0) {
+                  if (finalContent.trim() || thinking || completedTc.length > 0) {
                     if (scid) addMessage(storyId, {
                       role: "assistant",
                       content: finalContent,
                       thinking,
-                      toolCalls: tc.length > 0 ? [...tc] : undefined,
+                      toolCalls: completedTc.length > 0 ? [...completedTc] : undefined,
                     }, scid);
                     if (world && scid) appendSessionMessage(world.path, scid, { type: "assistant", content: finalContent, thinking: thinking || null, timestamp: new Date().toISOString() }).catch(() => {});
                   }
